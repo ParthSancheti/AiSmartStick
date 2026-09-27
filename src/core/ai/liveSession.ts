@@ -75,7 +75,11 @@ export class LiveSession {
                 }
               }
               if (results.length > 0) {
-                this.session.send({ toolResponse: { functionResponses: results } });
+                if (typeof this.session.sendToolResponse === 'function') {
+                  this.session.sendToolResponse({ functionResponses: results });
+                } else {
+                  this.session.send({ toolResponse: { functionResponses: results } });
+                }
               }
             }
           },
@@ -92,7 +96,11 @@ export class LiveSession {
       this.mic = new MicStream();
       this.mic.onData = (base64) => {
         if (this.active && this.session) {
-          this.session.send({ realtimeInput: { mediaChunks: [{ mimeType: 'audio/pcm;rate=16000', data: base64 }] } });
+          if (typeof this.session.sendRealtimeInput === 'function') {
+            this.session.sendRealtimeInput([{ mimeType: 'audio/pcm;rate=16000', data: base64 }]);
+          } else {
+            this.session.send({ realtimeInput: { mediaChunks: [{ mimeType: 'audio/pcm;rate=16000', data: base64 }] } });
+          }
         }
       };
       await this.mic.start();

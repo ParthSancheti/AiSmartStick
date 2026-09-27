@@ -5,7 +5,7 @@
  *  Triggers: SOS push, SOS resolved, device disconnect / critical battery, geofence, stale location
  *  sweep, camera request wake-up.
  */
-export { assistantTurn, assistantVision } from './assistant';
+export { assistantTurn, assistantVision, getLiveToken } from './assistant';
 export { mapsSearch, mapsPlace, mapsRoute, mapsReverse, mapsAutocomplete } from './maps';
 export { createPairingCode, claimPairingCode, revokeRelationship, updateRelationship } from './pairing';
 export { deleteAccount } from './account';

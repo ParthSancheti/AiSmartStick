@@ -1,8 +1,8 @@
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { CALLABLE, requireAuth, db } from './common';
 
-const REPO_OWNER = 'project-owner'; // In a real app, this comes from config
-const REPO_NAME = 'ai-smart-stick';
+const REPO_OWNER = 'ParthSancheti'; // The real github repo owner
+const REPO_NAME = 'AiSmartStick';
 
 export const getLatestFirmwareRelease = onCall({ ...CALLABLE, timeoutSeconds: 30, memory: '256MiB' }, async (request) => {
   requireAuth(request);
