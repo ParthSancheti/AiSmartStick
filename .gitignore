@@ -1,0 +1,10 @@
+node_modules
+dist
+dist-demo
+dist-preview
+.env
+.env.local
+.firebaserc
+functions/lib
+functions/src/shared
+android/app/google-services.json

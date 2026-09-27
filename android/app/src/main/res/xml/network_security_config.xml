@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The stick is reached over plain HTTP on the phone's own WPA2 hotspot at an IP that Android assigns
+  (it cannot be listed as a domain here). Every stick request is HMAC-signed and the stick must prove
+  its key (DEVICE_PROTOCOL.md), so cleartext is allowed for the LAN. All cloud traffic (Firebase,
+  Maps, Gemini via Functions) is HTTPS regardless.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

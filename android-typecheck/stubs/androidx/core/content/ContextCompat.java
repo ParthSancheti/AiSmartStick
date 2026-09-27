@@ -1,0 +1,1 @@
+package androidx.core.content; public class ContextCompat { public static int checkSelfPermission(android.content.Context c, String p){return 0;} public static void startForegroundService(android.content.Context c, android.content.Intent i){} }

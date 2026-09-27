@@ -1,0 +1,181 @@
+rules_version = '2';
+
+// AI Smart Stick — Firestore Security Rules.
+// Principles: the authenticated UID is the identity; a guardian's access exists only through an
+// ACTIVE relationship document that clients can never write (Cloud Functions create it after a
+// pairing-code claim); every guardian capability is a permission flag on that document.
+// Knowing someone's UID gives nothing: all guardian reads resolve relationships/{userUid}_{auth.uid}.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function isOwner(uid) { return signedIn() && request.auth.uid == uid; }
+    function relPath(uid) { return /databases/$(database)/documents/relationships/$(uid + '_' + request.auth.uid); }
+    function isGuardianOf(uid) { return signedIn() && exists(relPath(uid)) && get(relPath(uid)).data.status == 'active'; }
+    function can(uid, perm) { return isGuardianOf(uid) && get(relPath(uid)).data.permissions[perm] == true; }
+    function changed() { return request.resource.data.diff(resource.data).affectedKeys(); }
+    function onlyKeys(keys) { return changed().hasOnly(keys); }
+    function unchangedOrMe(key) { return !(key in changed()) || request.resource.data[key] == request.auth.uid; }
+
+    match /users/{uid} {
+      allow read: if isOwner(uid) || isGuardianOf(uid);
+      allow create: if isOwner(uid)
+        && request.resource.data.uid == uid
+        && request.resource.data.role in ['user', 'guardian']
+        && request.resource.data.guardianRelationshipId == null
+        && request.resource.data.watchesUserUid == null;
+      // Role and relationship pointers are server-managed.
+      allow update: if isOwner(uid) && !changed().hasAny(['uid', 'role', 'guardianRelationshipId', 'watchesUserUid', 'homeLocation', 'createdAt']);
+      allow delete: if false;
+
+      match /settings/{doc} {
+        allow read: if isOwner(uid) || isGuardianOf(uid);
+        allow write: if isOwner(uid);
+        // A permitted guardian may change ONLY the SOS options of the stick user.
+        allow create: if doc == 'app' && can(uid, 'safetySettings')
+          && request.resource.data.keys().hasOnly(['sosTriggers', 'sosCancelSec', 'sosMessage', 'lowBatteryAt', 'updatedAt', 'updatedBy']);
+        allow update: if doc == 'app' && can(uid, 'safetySettings')
+          && onlyKeys(['sosTriggers', 'sosCancelSec', 'sosMessage', 'lowBatteryAt', 'updatedAt', 'updatedBy'])
+          && request.resource.data.updatedBy == request.auth.uid;
+      }
+
+      match /contacts/{id} {
+        allow read: if isOwner(uid) || can(uid, 'sos');
+        allow write: if isOwner(uid);
+      }
+
+      // Stick metadata only; the device key never leaves the phone.
+      match /devices/{deviceId} {
+        allow read: if isOwner(uid) || isGuardianOf(uid);
+        allow write: if isOwner(uid) && !request.resource.data.keys().hasAny(['deviceKey', 'keyB64', 'key']);
+      }
+
+      // Throttled live summaries written by the user's phone.
+      match /live/{doc} {
+        allow read: if isOwner(uid) || (doc == 'location' ? can(uid, 'location') : isGuardianOf(uid));
+        allow write: if isOwner(uid) && doc in ['device', 'location', 'safety', 'navigation'];
+      }
+
+      // Append-only history (idempotent ids).
+      match /activity/{eventId} {
+        allow read: if isOwner(uid) || can(uid, 'activity');
+        allow create: if isOwner(uid)
+          && request.resource.data.eventId == eventId
+          && request.resource.data.kind in ['safety', 'navigation', 'device', 'vision', 'message']
+          && request.resource.data.title is string && request.resource.data.title.size() < 200;
+        allow update, delete: if false;
+      }
+      match /walkSessions/{id} {
+        allow read: if isOwner(uid) || can(uid, 'activity');
+        allow create: if isOwner(uid) && request.resource.data.distanceM is number && request.resource.data.distanceM < 100000;
+        allow update, delete: if false;
+      }
+      match /navigationSessions/{id} {
+        allow read: if isOwner(uid) || can(uid, 'activity');
+        allow create: if isOwner(uid);
+        allow update, delete: if false;
+      }
+
+      match /sosEvents/{sosId} {
+        allow read: if isOwner(uid) || can(uid, 'sos');
+        allow create: if isOwner(uid) && request.resource.data.sosId == sosId && request.resource.data.state == 'active';
+        allow update: if (isOwner(uid) && onlyKeys(['state', 'resolvedAt', 'resolvedBy', 'smsFallback']))
+          || (can(uid, 'sos')
+              && onlyKeys(['state', 'acknowledgedAt', 'acknowledgedBy', 'onTheWayAt', 'resolvedAt', 'resolvedBy'])
+              && request.resource.data.state in ['acknowledged', 'resolved']
+              && unchangedOrMe('acknowledgedBy') && unchangedOrMe('resolvedBy'));
+        allow delete: if false;
+      }
+
+      // Guardian remote commands: created ONLY by the sendRemoteCommand function; the user's phone
+      // updates status/result; the guardian reads them to see the acknowledgement.
+      match /deviceCommands/{cid} {
+        allow read: if isOwner(uid) || isGuardianOf(uid);
+        allow create, delete: if false;
+        allow update: if isOwner(uid)
+          && onlyKeys(['status', 'result', 'error', 'updatedAt'])
+          && request.resource.data.status in ['received', 'executing', 'completed', 'failed', 'expired'];
+      }
+
+      // Medical profile: owner writes; the linked guardian may read (emergency contact, `sos` permission).
+      match /medical/{doc} {
+        allow read: if isOwner(uid) || can(uid, 'sos');
+        allow write: if isOwner(uid) && doc == 'profile';
+      }
+
+      // Guardian → user voice messages.
+      match /notifications/{nid} {
+        allow read: if isOwner(uid) || (can(uid, 'messages') && resource.data.fromUid == request.auth.uid);
+        allow create: if can(uid, 'messages')
+          && request.resource.data.type == 'guardian_message'
+          && request.resource.data.fromUid == request.auth.uid
+          && request.resource.data.text is string && request.resource.data.text.size() <= 300
+          && request.resource.data.spokenAt == null;
+        allow update: if isOwner(uid) && onlyKeys(['spokenAt']);
+        allow delete: if isOwner(uid);
+      }
+
+      // Written only by the assistant Cloud Function.
+      match /aiConversations/{cid} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if false;
+        match /messages/{mid} {
+          allow read, delete: if isOwner(uid);
+          allow write: if false;
+        }
+      }
+
+      match /fcmTokens/{token} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid) && request.resource.data.token == token;
+      }
+
+      // Server-only bookkeeping (quotas, geofence state, notification de-dup).
+      match /private/{doc} {
+        allow read, write: if false;
+      }
+    }
+
+    // Created/changed only by Cloud Functions (claimPairingCode, revokeRelationship, updateRelationship).
+    match /relationships/{rid} {
+      allow read: if signedIn() && (resource.data.userUid == request.auth.uid || resource.data.guardianUid == request.auth.uid);
+      allow write: if false;
+    }
+
+    match /pairingSessions/{code} {
+      allow read, write: if false;
+    }
+
+    // Device registry: first owner wins; the owner must unpair (delete) before someone else can pair.
+    match /devices/{deviceId} {
+      allow read: if signedIn() && resource.data.ownerUid == request.auth.uid;
+      allow create: if signedIn() && request.resource.data.ownerUid == request.auth.uid && !request.resource.data.keys().hasAny(['deviceKey', 'keyB64', 'key']);
+      allow update: if signedIn() && resource.data.ownerUid == request.auth.uid && request.resource.data.ownerUid == request.auth.uid;
+      allow delete: if signedIn() && resource.data.ownerUid == request.auth.uid;
+    }
+
+    // WebRTC signalling for guardian camera requests. Metadata only; a TTL policy on expireAt deletes it.
+    match /cameraSessions/{sid} {
+      function participant() { return signedIn() && (resource.data.userUid == request.auth.uid || resource.data.guardianUid == request.auth.uid); }
+      function session() { return get(/databases/$(database)/documents/cameraSessions/$(sid)).data; }
+      allow read: if participant();
+      allow create: if signedIn()
+        && request.resource.data.guardianUid == request.auth.uid
+        && can(request.resource.data.userUid, 'camera')
+        && request.resource.data.state == 'requested'
+        && request.resource.data.expireAt is timestamp
+        && request.resource.data.expireAt < request.time + duration.value(15, 'm');
+      allow update: if participant() && onlyKeys(['state', 'reason', 'answer', 'updatedAt']);
+      allow delete: if false;
+
+      match /guardianCandidates/{cid} {
+        allow read: if signedIn() && (session().userUid == request.auth.uid || session().guardianUid == request.auth.uid);
+        allow create: if signedIn() && session().guardianUid == request.auth.uid;
+      }
+      match /userCandidates/{cid} {
+        allow read: if signedIn() && (session().userUid == request.auth.uid || session().guardianUid == request.auth.uid);
+        allow create: if signedIn() && session().userUid == request.auth.uid;
+      }
+    }
+  }
+}

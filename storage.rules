@@ -1,0 +1,10 @@
+rules_version = '2';
+// AI Smart Stick stores NO camera media. Guardian photos travel phone-to-phone (WebRTC) only.
+// Cloud Storage is intentionally closed; open a narrow path here only for a future, user-created saved item.
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,0 +1,1 @@
+package androidx.security.crypto; public class MasterKey { public enum KeyScheme { AES256_GCM } public static class Builder { public Builder(android.content.Context c){} public Builder setKeyScheme(KeyScheme s){return this;} public MasterKey build() throws java.security.GeneralSecurityException, java.io.IOException {return null;} } }
