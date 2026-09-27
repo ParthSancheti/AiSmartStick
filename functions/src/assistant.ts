@@ -1,7 +1,7 @@
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { GoogleGenAI, type Content, type Part } from '@google/genai';
 import { FieldValue } from 'firebase-admin/firestore';
-import { CALLABLE, GEMINI_API_KEY, GEMINI_MODEL, GEMINI_VISION_MODEL, db, quota, requireAuth, str } from './common';
+import { CALLABLE, GEMINI_API_KEY, GEMINI_LIVE_MODEL, GEMINI_FLASH_MODEL, GEMINI_VISION_MODEL, db, quota, requireAuth, str } from './common';
 import { TOOLS, TOOL_BY_NAME } from './shared/tools';
 import { toGeminiParameters, validateArgs } from './shared/validate';
 import type { Action, AssistantTurnRequest, AssistantTurnResponse, ToolResult, VisionRequest, VisionResult } from './shared/assistantContract';
