@@ -55,10 +55,8 @@ export class LiveSession {
 
             const parts = msg.serverContent?.modelTurn?.parts;
             if (parts) {
-              for (const part of parts) {
-                // Ignore part.text as we use outputTranscription for speech
-                // Ignore part.inlineData (audio) as we don't play native audio
-              }
+              // Ignore part.text as we use outputTranscription for speech
+              // Ignore part.inlineData (audio) as we don't play native audio
             }
             const calls = msg.toolCall?.functionCalls;
             if (calls) {

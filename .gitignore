@@ -8,3 +8,6 @@ dist-preview
 functions/lib
 functions/src/shared
 android/app/google-services.json
+node_modules/  
+functions/node_modules/  
+npm-debug.log* 
