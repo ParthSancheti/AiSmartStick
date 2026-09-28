@@ -209,10 +209,6 @@ public class AissNativePlugin extends Plugin {
     @PluginMethod
     public void setupRequest(PluginCall call) {
         final Network net = setupNetwork;
-        if (net == null) {
-            call.reject("Not connected to the stick setup network");
-            return;
-        }
         final String method = call.getString("method", "GET");
         final String path = call.getString("path", "/");
         final String body = call.getString("body");
@@ -221,7 +217,9 @@ public class AissNativePlugin extends Plugin {
             HttpURLConnection c = null;
             try {
                 // Bound to the setup network specifically, regardless of the default route.
-                c = (HttpURLConnection) net.openConnection(new URL(SETUP_HOST + path));
+                // If net is null (e.g. already connected manually via OS settings), fallback to default route.
+                URL url = new URL(SETUP_HOST + path);
+                c = (HttpURLConnection) (net != null ? net.openConnection(url) : url.openConnection());
                 c.setRequestMethod(method);
                 c.setConnectTimeout(timeout);
                 c.setReadTimeout(timeout);
@@ -255,16 +253,13 @@ public class AissNativePlugin extends Plugin {
     @PluginMethod
     public void requestBinary(PluginCall call) {
         final Network net = setupNetwork;
-        if (net == null) {
-            call.reject("Not connected to the stick setup network");
-            return;
-        }
         final String path = call.getString("path", "/");
         final int timeout = call.getInt("timeoutMs", 8000);
         io.execute(() -> {
             HttpURLConnection c = null;
             try {
-                c = (HttpURLConnection) net.openConnection(new URL(SETUP_HOST + path));
+                URL url = new URL(SETUP_HOST + path);
+                c = (HttpURLConnection) (net != null ? net.openConnection(url) : url.openConnection());
                 c.setRequestMethod("GET");
                 c.setConnectTimeout(timeout);
                 c.setReadTimeout(timeout);
@@ -607,6 +602,14 @@ public class AissNativePlugin extends Plugin {
         } catch (Exception e) {
             getContext().startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getContext().getPackageName())).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
         }
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void openWifiSettings(PluginCall call) {
+        Intent intent = new Intent(Settings.Panel.ACTION_WIFI);
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        getContext().startActivity(intent);
         call.resolve();
     }
 

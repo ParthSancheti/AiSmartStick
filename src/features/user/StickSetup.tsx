@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Check, ChevronLeft, Loader2, RefreshCw, Wifi } from 'lucide-react';
+import { Check, ChevronLeft, Loader2, RefreshCw, Wifi, Settings2 } from 'lucide-react';
 import { StickVisual } from '../../components/StickVisual';
 import { Glass, GlassButton } from '../../components/glass';
 import { Atmosphere } from '../../components/Atmosphere';
 import { AppScreen, SafeAreaContent, FloatingHeader } from '../../components/Layout';
 import { useProvisioning, searchForStick, provisionStick, cancelProvisioning } from '../../core/provisioning/provisioning';
+import { AissNative } from '../../core/native/aissNative';
 
 const STEPS = [
   { id: 'searching', label: 'Searching for SmartStick', desc: 'Finding the setup network...' },
@@ -113,8 +114,13 @@ export function StickSetup({ onDone, onCancel }: { onDone: () => void; onCancel:
           {/* STEP 4: ERROR */}
           {isError && (
             <motion.div key="error" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
+              {p.error === 'Please turn on your Wi-Fi and try again.' ? (
+                <GlassButton variant="teal" size="lg" className="w-full" onClick={() => AissNative.openWifiSettings()}>
+                  <Settings2 size={18} className="mr-2" /> Turn on Wi-Fi
+                </GlassButton>
+              ) : null}
               <GlassButton variant="teal" size="lg" className="w-full" onClick={() => searchForStick()}>
-                <RefreshCw size={18} /> Try Again
+                <RefreshCw size={18} className="mr-2" /> Try Again
               </GlassButton>
               <button type="button" className="w-full py-2 text-[14px] font-semibold text-ink-2 underline" onClick={() => setShowDiag((v) => !v)}>
                 {showDiag ? 'Hide' : 'Show'} diagnostics

@@ -136,8 +136,11 @@ export async function provisionStick(input: { setupCode: string; hotspotSsid: st
 
     set({ step: 'reading_device_info' });
     const info = await setupJson<DeviceInfoPacket>('GET', DEVICE_API.device);
-    diag(`stick ${info.deviceId} firmware ${info.firmware} protocol v${info.protocolVersion}`);
+    diag(`stick ${info.deviceId} firmware ${info.firmware} protocol v${info.protocolVersion} paired ${info.paired}`);
     if (info.protocolVersion !== PROTOCOL_VERSION) throw new Error(`This stick's firmware speaks protocol v${info.protocolVersion}. Update it to v${PROTOCOL_VERSION} first.`);
+    if (info.paired) {
+      throw new Error("This stick is already set up. If you don't see it on your dashboard, please factory reset it (hold the button for 5 seconds while turning it on) and try again.");
+    }
     set({ deviceId: info.deviceId, firmware: info.firmware });
 
     set({ step: 'configuring_network' });
