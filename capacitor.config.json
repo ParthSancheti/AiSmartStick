@@ -1,6 +1,6 @@
 {
   "appId": "in.aismartstick.app",
-  "appName": "AI Smart Stick",
+  "appName": "AI SmartStick",
   "webDir": "dist",
   "android": {
     "allowMixedContent": false,

@@ -481,7 +481,7 @@ export function GuardianSettings() {
                 label="Sign out" detail=""
                 onClick={() => {
                   if (mode === 'real') void signOut();
-                  useSession.setState({ guardianOnboarded: false, entryRole: layout === 'single' && ENV.appTarget === 'both' ? null : useSession.getState().entryRole });
+                  useSession.setState({ guardianOnboarded: false, entryRole: null });
                 }} 
               />
             </div>

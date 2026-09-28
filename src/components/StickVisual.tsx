@@ -3,7 +3,7 @@ import type { LinkState } from '../core/types';
 import { useDevice } from '../core/store/device';
 
 /**
- * 2.5D render of the AI Smart Stick: handle + button, sensor pod (2 ultrasonic eyes + camera), reflective bands.
+ * 2.5D render of the AI SmartStick: handle + button, sensor pod (2 ultrasonic eyes + camera), reflective bands.
  * Orientation comes from ONE source: the filtered MPU6050 state in the device store (pose="live").
  * The Guardian passes its own link/obstacle values from the cloud feed and pose={null}.
  */

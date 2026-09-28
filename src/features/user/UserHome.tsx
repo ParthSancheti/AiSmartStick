@@ -18,6 +18,7 @@ import { useActivity } from '../../core/store/activity';
 import { EventRow } from '../guardian/parts';
 import { StickVisual } from '../../components/StickVisual';
 import { Atmosphere } from '../../components/Atmosphere';
+import { AppScreen, SafeAreaContent, FloatingHeader } from '../../components/Layout';
 import { AiOrb, orbPhaseFor } from '../../components/AiOrb';
 import { useSafety } from '../../core/store/safety';
 import { AccountAvatar } from '../../components/Avatar';
@@ -29,7 +30,7 @@ import { BRAND } from '../../core/brand/brand';
 import { startSos } from '../../core/safety/sos';
 import { AudioSubpage } from './AudioSubpage';
 import { useRuntime } from '../../core/runtime/mode';
-import { ENV, firebaseConfigured } from '../../core/runtime/env';
+import { firebaseConfigured } from '../../core/runtime/env';
 import { signOut } from '../../core/auth/authService';
 import { useAuth } from '../../core/auth/authStore';
 import { useSafetyEval } from '../../core/safety/safetyRuntime';
@@ -57,7 +58,7 @@ function ProfileMenu({ open, onClose }: { open: boolean; onClose: () => void }) 
   const mode = useRuntime((s) => s.mode);
   const user = useAuth((s) => s.user);
   const l = linkLabel(link);
-  const canSwitchRole = mode === 'demo' || ENV.appTarget === 'both';
+  const canSwitchRole = true;
 
   return (
     <AnimatePresence>
@@ -120,12 +121,12 @@ function TopNav() {
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
-    <div className="w-full relative z-20 pt-10 flex-shrink-0">
+    <FloatingHeader>
       <motion.div
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-        className="glass flex items-center justify-between h-[68px] rounded-[34px] px-2 shadow-2xl mx-1"
+        className="glass flex items-center justify-between h-[68px] rounded-[34px] px-2 shadow-2xl mx-1 pointer-events-auto"
       >
         <div className="flex items-center gap-3 pl-2">
           <BrandLogo variant="icon" size={44} />
@@ -141,8 +142,10 @@ function TopNav() {
           <AccountAvatar size={40} />
         </button>
       </motion.div>
-      <ProfileMenu open={menuOpen} onClose={() => setMenuOpen(false)} />
-    </div>
+      <div className="pointer-events-auto">
+        <ProfileMenu open={menuOpen} onClose={() => setMenuOpen(false)} />
+      </div>
+    </FloatingHeader>
   );
 }
 
@@ -388,7 +391,7 @@ function WalkingSubpage({ open, onClose }: { open: boolean; onClose: () => void 
 
           {/* Top Bar Floating */}
           <div className="pt-12 px-4 z-10 shrink-0 pointer-events-none">
-             <div className="glass bg-surface/90 backdrop-blur-xl rounded-[28px] p-2 flex items-center justify-between shadow-[0_10px_30px_rgba(0,0,0,0.08)] pointer-events-auto border border-glass-border">
+             <div className="glass bg-surface/90 backdrop-blur-md rounded-[28px] p-2 flex items-center justify-between shadow-[0_10px_30px_rgba(0,0,0,0.08)] pointer-events-auto border border-glass-border">
                <button onClick={onClose} aria-label="Back" className="h-12 w-12 rounded-full flex items-center justify-center text-ink hover:bg-black/5 transition-colors shrink-0 interactive">
                  <ChevronLeft size={24} />
                </button>
@@ -409,7 +412,7 @@ function WalkingSubpage({ open, onClose }: { open: boolean; onClose: () => void 
           <div className="flex-1 flex flex-col justify-end px-4 pb-6 z-10 pointer-events-none">
 
              {/* Directions Floating Card */}
-             <div className="glass bg-surface/95 backdrop-blur-2xl rounded-[32px] p-6 shadow-[0_20px_40px_rgba(0,0,0,0.12)] pointer-events-auto border border-glass-border mb-4 relative overflow-hidden">
+             <div className="glass bg-surface/95 backdrop-blur-md rounded-[32px] p-6 shadow-[0_20px_40px_rgba(0,0,0,0.12)] pointer-events-auto border border-glass-border mb-4 relative overflow-hidden">
                 <div className="absolute top-0 right-0 p-6 opacity-[0.03] text-info pointer-events-none">
                    <Footprints size={120} />
                 </div>
@@ -940,9 +943,10 @@ export function UserHome() {
   const phoneName = mode === 'demo' ? 'Demo phone' : phoneLabel(phone);
 
   return (
-    <div className="absolute inset-0 flex flex-col px-4 pb-4" style={{ paddingTop: 'calc(var(--island, 0px) + 10px)' }}>
+    <AppScreen>
       <TopNav />
-      <div className="flex-1 overflow-y-auto no-scrollbar pb-6 px-1 flex flex-col mt-6" {...bind}>
+      <SafeAreaContent className="px-5 pb-4" {...bind}>
+        <div className="h-24 shrink-0" /> {/* Spacer for TopNav */}
 
         {/* Big Stick Card */}
         <div className="glass rounded-[36px] p-5 flex border border-glass-border shadow-2xl relative overflow-hidden shrink-0 min-h-[260px] mb-6">
@@ -1075,7 +1079,7 @@ export function UserHome() {
              </div>
           </div>
         </div>
-      </div>
+      </SafeAreaContent>
 
       <SafetyCenterSubpage open={safetyCenterOpen} onClose={() => setSafetyCenterOpen(false)} />
       <AiChatSubpage open={chatOpen} onClose={() => setChatOpen(false)} />
@@ -1085,6 +1089,6 @@ export function UserHome() {
       <HealthSubpage open={healthOpen} onClose={() => setHealthOpen(false)} />
       <LiveAiSubpage open={liveAiOpen} onClose={() => setLiveAiOpen(false)} />
       <AudioSubpage open={audioOpen} onClose={() => setAudioOpen(false)} />
-    </div>
+    </AppScreen>
   );
 }

@@ -312,7 +312,7 @@ static esp_err_t hOtaStatus(httpd_req_t *r) {
 static esp_err_t hOta(httpd_req_t *r) {
   if (!identity::authorized(r, "POST", nullptr, 0)) return error(r, 401, "unauthorized");
   ecu::Sensors s = ecu::snapshot();
-  if (!s.batOk || (s.charging != 1 && s.powerMw < 30) || motor::busy()) return error(r, 409, "ota_failed", "battery low or system busy");
+  if (!s.batOk || (s.charging != 1 && s.powerMw < 30) || motor::running()) return error(r, 409, "ota_failed", "battery low or system busy");
 
   const esp_partition_t *update_partition = esp_ota_get_next_update_partition(NULL);
   if (!update_partition) return error(r, 500, "ota_failed", "no ota partition");

@@ -74,16 +74,14 @@ public class AissNativePlugin extends Plugin {
     private WifiManager.MulticastLock multicastLock;
     private SharedPreferences securePrefs;
 
-    private String wifiAlias() {
-        return Build.VERSION.SDK_INT >= 33 ? "nearbyWifi" : "location";
-    }
-
-    // ── Setup network ────────────────────────────────────────────
-
     @PluginMethod
     public void scanForSetupNetworks(PluginCall call) {
-        if (getPermissionState(wifiAlias()) != PermissionState.GRANTED) {
-            requestPermissionForAlias(wifiAlias(), call, "scanPermCallback");
+        boolean locGranted = getPermissionState("location") == PermissionState.GRANTED;
+        boolean nearbyGranted = Build.VERSION.SDK_INT < 33 || getPermissionState("nearbyWifi") == PermissionState.GRANTED;
+
+        if (!locGranted || !nearbyGranted) {
+            String[] aliases = Build.VERSION.SDK_INT >= 33 ? new String[]{"location", "nearbyWifi"} : new String[]{"location"};
+            requestPermissionForAliases(aliases, call, "scanPermCallback");
             return;
         }
         doScan(call);
@@ -91,8 +89,13 @@ public class AissNativePlugin extends Plugin {
 
     @PermissionCallback
     private void scanPermCallback(PluginCall call) {
-        if (getPermissionState(wifiAlias()) == PermissionState.GRANTED) doScan(call);
-        else call.reject("Wi-Fi scanning permission denied");
+        boolean locGranted = getPermissionState("location") == PermissionState.GRANTED;
+        boolean nearbyGranted = Build.VERSION.SDK_INT < 33 || getPermissionState("nearbyWifi") == PermissionState.GRANTED;
+        if (locGranted && nearbyGranted) {
+            doScan(call);
+        } else {
+            call.reject("Wi-Fi scanning permission denied");
+        }
     }
 
     @SuppressWarnings("deprecation")
@@ -107,11 +110,14 @@ public class AissNativePlugin extends Plugin {
         JSArray arr = new JSArray();
         List<ScanResult> results = wm.getScanResults();
         for (ScanResult r : results) {
-            if (r.SSID != null && r.SSID.startsWith(prefix) && r.frequency < 3000) {
-                JSObject o = new JSObject();
-                o.put("ssid", r.SSID);
-                o.put("rssi", r.level);
-                arr.put(o);
+            if (r.SSID != null) {
+                String ssid = r.SSID.replace("\"", "");
+                if (ssid.startsWith(prefix) && r.frequency < 3000) {
+                    JSObject o = new JSObject();
+                    o.put("ssid", ssid);
+                    o.put("rssi", r.level);
+                    arr.put(o);
+                }
             }
         }
         JSObject ret = new JSObject();

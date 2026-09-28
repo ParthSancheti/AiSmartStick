@@ -33,7 +33,7 @@ function text(): { title: string; body: string } {
   const nav = useNavView.getState();
   if (sos === 'active') return { title: 'SOS active', body: 'Sharing your location with your guardian' };
   if (nav.active && nav.destination) return { title: `Walking to ${nav.destination.name}`, body: `Stick ${linkLabelText(d.link)}` };
-  return { title: 'AI Smart Stick', body: d.link === 'connected' || d.link === 'degraded' ? 'Stick connected · SOS ready' : `Stick ${linkLabelText(d.link)}` };
+  return { title: 'AI SmartStick', body: d.link === 'connected' || d.link === 'degraded' ? 'Stick connected · SOS ready' : `Stick ${linkLabelText(d.link)}` };
 }
 
 let lastKey = '';

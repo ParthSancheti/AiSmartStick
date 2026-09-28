@@ -37,7 +37,7 @@ export class LiveSession {
           generationConfig: {
             responseModalities: ["AUDIO"] as any
           },
-          systemInstruction: { parts: [{ text: "You are the AI Smart Stick voice assistant. Answer briefly. You are in a Live Session." }] },
+          systemInstruction: { parts: [{ text: "You are the AI SmartStick voice assistant. Answer briefly. You are in a Live Session." }] },
           tools: tools as any
         },
         callbacks: {

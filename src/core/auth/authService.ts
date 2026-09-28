@@ -6,7 +6,6 @@ import { fb, FirebaseNotConfigured } from '../firebase/app';
 import { paths, type AccountRole, type UserDoc } from '../../../shared/firestoreSchema';
 import { useAuth } from './authStore';
 import { friendlyError } from '../errors';
-import { ENV } from '../runtime/env';
 import { isDemo } from '../runtime/mode';
 
 /**
@@ -44,9 +43,9 @@ export function startAuth(onSignedIn: (uid: string) => void, onSignedOut: () => 
   return unsub;
 }
 
-/** Role comes from the build target (the stick user's app vs. the guardian app), never from a toggle. */
+/** Role comes from the initial role selection. */
 export function roleForThisApp(fallback: AccountRole): AccountRole {
-  return ENV.appTarget === 'guardian' ? 'guardian' : ENV.appTarget === 'user' ? 'user' : fallback;
+  return fallback;
 }
 
 async function loadOrCreateProfile(uid: string, name: string | null, email: string | null, photo: string | null): Promise<UserDoc> {

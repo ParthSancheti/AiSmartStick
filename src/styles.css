@@ -73,10 +73,10 @@
   --focus: #0a8576;
   --disabled: rgba(17, 24, 39, 0.35);
 
-  --glass-bg: rgba(255, 255, 255, 0.25);
+  --glass-bg: rgba(255, 255, 255, 0.35);
   --glass-border: rgba(255, 255, 255, 0.4);
   --glass-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.1);
-  --glass-blur: 40px;
+  --glass-blur: 16px;
   --solid-surface: #ffffff;
 
   --blob-1: #9333ea;
@@ -97,8 +97,6 @@
 
   color-scheme: light;
   box-sizing: border-box;
-  padding-top: env(safe-area-inset-top, 0px);
-  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 @media (prefers-color-scheme: dark) {

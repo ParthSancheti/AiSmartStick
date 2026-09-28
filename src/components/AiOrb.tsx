@@ -78,14 +78,12 @@ export function AiOrb({ size = 220, phase, holdProgress = 0 }: { size?: number; 
             key={i}
             aria-hidden
             className="absolute inset-0 border-2 border-mint/60"
-            style={{ borderRadius: '50%' }}
-            initial={{ scale: 1, opacity: 0.7 }}
             animate={{ 
                scale: 1.6, 
-               opacity: 0,
-               borderRadius: ['50%', '45% 55% 40% 60%', '50%'] 
+               opacity: 0
             }}
             transition={{ duration: 1.8, repeat: Infinity, delay: i * 0.6, ease: 'easeOut' }}
+            style={{ borderRadius: '50%', willChange: 'transform, opacity' }}
           />
         ))}
         
@@ -97,14 +95,12 @@ export function AiOrb({ size = 220, phase, holdProgress = 0 }: { size?: number; 
             key={`sos-${i}`}
             aria-hidden
             className="absolute inset-0 border-4 border-sos/80"
-            style={{ borderRadius: '50%' }}
-            initial={{ scale: 1, opacity: 0.9 }}
             animate={{ 
                scale: 1.8, 
-               opacity: 0,
-               borderRadius: ['50%', '60% 40% 55% 45%', '50%'] 
+               opacity: 0
             }}
             transition={{ duration: 1, repeat: Infinity, delay: i * 0.3, ease: 'easeOut' }}
+            style={{ borderRadius: '50%', willChange: 'transform, opacity' }}
           />
         ))}
 
@@ -112,10 +108,9 @@ export function AiOrb({ size = 220, phase, holdProgress = 0 }: { size?: number; 
       <motion.div
         aria-hidden
         className="relative overflow-hidden grid place-items-center"
-        style={{ width: size, height: size, boxShadow: isSos ? '0 30px 60px -28px rgba(239,68,68,.7)' : '0 30px 60px -28px rgba(37,99,235,.4)' }}
+        style={{ width: size, height: size, borderRadius: '50%', willChange: 'transform', boxShadow: isSos ? '0 30px 60px -28px rgba(239,68,68,.7)' : '0 30px 60px -28px rgba(37,99,235,.4)' }}
         animate={reduce ? undefined : { 
-          scale: pulse.scale,
-          borderRadius: ['50%', '42% 58% 65% 35%', '58% 42% 35% 65%', '50%']
+          scale: pulse.scale
         }}
         transition={{ duration: pulse.duration, repeat: Infinity, ease: 'easeInOut' }}
       >
@@ -129,7 +124,8 @@ export function AiOrb({ size = 220, phase, holdProgress = 0 }: { size?: number; 
               : isError
               ? 'conic-gradient(from 0deg, #f59e0b, #b45309, #78350f, #f59e0b)'
               : 'conic-gradient(from 0deg, #22d3ee, #2563eb, #9333ea, #ec4899, #22d3ee)',
-            filter: `blur(${Math.round(size / 12)}px)`,
+            filter: `blur(${Math.round(size / 16)}px)`,
+            willChange: 'transform',
           }}
           animate={reduce || isError ? undefined : { rotate: 360 }}
           transition={{ duration: SPIN[phase] || 1, repeat: Infinity, ease: 'linear' }}

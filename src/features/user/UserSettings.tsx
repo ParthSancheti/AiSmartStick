@@ -765,7 +765,7 @@ function PrivacySubpage({ open, onClose }: { open: boolean; onClose: () => void 
               />
               {bg.supported && batt && !batt.ignoring && (
                 <div className="px-4 py-3">
-                  <p className="text-[14px] leading-snug text-amber-ink">Android battery saving may stop AI Smart Stick in the background{/xiaomi|redmi|samsung|oppo|vivo|realme/i.test(batt.manufacturer) ? ` (common on ${batt.manufacturer})` : ''}.</p>
+                  <p className="text-[14px] leading-snug text-amber-ink">Android battery saving may stop AI SmartStick in the background{/xiaomi|redmi|samsung|oppo|vivo|realme/i.test(batt.manufacturer) ? ` (common on ${batt.manufacturer})` : ''}.</p>
                   <button type="button" className="mt-2 text-[14.5px] font-semibold text-teal-ink underline" onClick={() => void AissNative.openBatteryOptimizationSettings().catch(() => undefined)}>Open battery settings → choose “Don’t optimise”</button>
                 </div>
               )}
@@ -964,7 +964,7 @@ export function UserSettings() {
                 <div className="absolute -top-10 -left-10 w-40 h-40 bg-teal/15 rounded-full blur-2xl pointer-events-none" />
                 <div className="flex-1 flex flex-col justify-center items-center relative z-10 w-full">
                   <StickVisual height={160} />
-                  <p className="text-[15px] font-bold text-ink mt-3 tracking-wide uppercase opacity-80">AI Smart Stick</p>
+                  <p className="text-[15px] font-bold text-ink mt-3 tracking-wide uppercase opacity-80">AI SmartStick</p>
                 </div>
               </button>
 
@@ -1151,7 +1151,7 @@ export function UserSettings() {
               </div>
             </div>
 
-            {layout === 'single' && (mode === 'demo' || ENV.appTarget === 'both') && (
+            {layout === 'single' && (
               <GlassButton size="lg" className="mt-3 w-full" onClick={() => useSession.setState({ entryRole: 'guardian' })}>
                 Switch to the Guardian app (demo)
               </GlassButton>

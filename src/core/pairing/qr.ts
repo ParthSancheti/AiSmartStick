@@ -35,7 +35,7 @@ export async function scanPairingQr(): Promise<ScanOutcome> {
     const { barcodes } = await BarcodeScanner.scan({ formats: [BarcodeFormat.QrCode] });
     if (!barcodes.length) return { error: 'cancelled', message: 'No code scanned.' };
     const code = parsePairingPayload(barcodes[0].rawValue);
-    return code ? { code } : { error: 'invalid', message: 'That QR code is not an AI Smart Stick pairing code.' };
+    return code ? { code } : { error: 'invalid', message: 'That QR code is not an AI SmartStick pairing code.' };
   } catch (e) {
     const msg = (e as Error).message ?? '';
     return /cancel/i.test(msg) ? { error: 'cancelled', message: 'Scan cancelled.' } : { error: 'failed', message: `Scanner unavailable: ${msg}` };

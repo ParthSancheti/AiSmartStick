@@ -8,8 +8,6 @@ const e = import.meta.env;
 export const ENV = {
   /** 'real' (default for production builds) or 'demo'. */
   appMode: (e.VITE_APP_MODE as string | undefined) ?? (e.PROD ? 'real' : 'demo'),
-  /** Which app this build is: the stick user's Android app, the guardian PWA, or both (dev). */
-  appTarget: ((e.VITE_APP_TARGET as string | undefined) ?? 'both') as 'user' | 'guardian' | 'both',
   firebase: {
     apiKey: e.VITE_FIREBASE_API_KEY as string | undefined,
     authDomain: e.VITE_FIREBASE_AUTH_DOMAIN as string | undefined,

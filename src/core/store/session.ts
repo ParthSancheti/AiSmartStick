@@ -75,7 +75,7 @@ export const defaultSettings: Settings = {
   simSpeed: 6,
   sosTriggers: { button: true, voice: true, fall: true },
   sosCancelSec: 5,
-  sosMessage: 'Emergency! I need help. My live location is shared in the AI Smart Stick app.',
+  sosMessage: 'Emergency! I need help. My live location is shared in the AI SmartStick app.',
   siren: true,
   lowBatteryAt: 20,
   locationSharing: true,
@@ -93,7 +93,7 @@ const demoContacts: Contact[] = [
 ];
 
 interface SessionData {
-  /** For the combined dev build only; shipped builds are single-role (ENV.appTarget). */
+  /** For the combined dev build only; shipped builds are single-role. */
   entryRole: Role | null;
   guardianOnboarded: boolean;
   userOnboarded: boolean;

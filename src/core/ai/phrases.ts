@@ -1,7 +1,7 @@
 import type { Place, ReplyLang, RouteStep, SosTrigger } from '../types';
 
 /**
- * Everything the AI Smart Stick assistant says, in English and Hindi. Persona: a calm, friendly
+ * Everything the AI SmartStick assistant says, in English and Hindi. Persona: a calm, friendly
  * companion. Short sentences, directions as left/right and metres, never robotic.
  * When the real Gemini backend is live, these stay as the offline fallback and
  * as the fixed safety lines (SOS, disconnects) that should never be improvised.
@@ -32,8 +32,8 @@ export const P = {
     hi: 'माफ़ कीजिए, मैं समझ नहीं पाया। बटन दबाकर फिर से बोलिए।',
   },
   micBlocked: {
-    en: "I can't use the microphone. Please allow microphone access for AI Smart Stick.",
-    hi: 'माइक्रोफ़ोन की अनुमति नहीं है। कृपया AI Smart Stick को माइक की अनुमति दीजिए।',
+    en: "I can't use the microphone. Please allow microphone access for AI SmartStick.",
+    hi: 'माइक्रोफ़ोन की अनुमति नहीं है। कृपया AI SmartStick को माइक की अनुमति दीजिए।',
   },
   brainError: {
     en: "Something went wrong on my side. Please try again in a moment.",
@@ -165,8 +165,8 @@ export const P = {
   }),
 
   hello: {
-    en: "Hi, I'm your AI Smart Stick assistant. I'll walk with you and tell you what's around. First, let's link this phone with your family.",
-    hi: 'नमस्ते, मैं आपका AI Smart Stick असिस्टेंट हूँ। मैं आपके साथ चलूँगा और आसपास की बातें बताऊँगा। पहले इस फ़ोन को अपने परिवार से जोड़ते हैं।',
+    en: "Hi, I'm your AI SmartStick assistant. I'll walk with you and tell you what's around. First, let's link this phone with your family.",
+    hi: 'नमस्ते, मैं आपका AI SmartStick असिस्टेंट हूँ। मैं आपके साथ चलूँगा और आसपास की बातें बताऊँगा। पहले इस फ़ोन को अपने परिवार से जोड़ते हैं।',
   },
   askCode: {
     en: 'Type or say the six digit code shown on your family member’s phone.',

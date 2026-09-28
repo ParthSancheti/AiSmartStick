@@ -5,6 +5,7 @@ import { useNow } from '../../hooks/useNow';
 import { TopNav, useSafetyStatus, SafetyHalo } from './parts';
 import { StickVisual } from '../../components/StickVisual';
 import { MapView } from '../../components/MapView';
+import { AppScreen, SafeAreaContent } from '../../components/Layout';
 import { useFeed, feedFresh } from '../../core/sync/guardianFeed';
 import { AissNative } from '../../core/native/aissNative';
 import { BRAND } from '../../core/brand/brand';
@@ -31,10 +32,10 @@ export function GuardianHome() {
   };
 
   return (
-    <div className="absolute inset-0 flex flex-col px-4 pb-4" style={{ paddingTop: 'calc(var(--island, 0px) + 10px)' }}>
+    <AppScreen>
       <TopNav />
-      
-      <div className="flex-1 overflow-y-auto no-scrollbar pb-[120px] px-1 pt-2 flex flex-col gap-4 relative z-10">
+      <SafeAreaContent className="px-5 pb-[120px] pt-4" style={{ zIndex: 10 }}>
+        <div className="h-16 shrink-0" />
         
         {/* 1. PRIMARY SAFETY CARD */}
         <button 
@@ -167,7 +168,7 @@ export function GuardianHome() {
             </div>
           </button>
         </div>
-      </div>
-    </div>
+      </SafeAreaContent>
+    </AppScreen>
   );
 }

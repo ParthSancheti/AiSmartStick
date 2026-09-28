@@ -34,7 +34,7 @@ export class AissNativeWeb extends WebPlugin implements AissNativePlugin {
     return this.checkPermissions();
   }
   private no(): never {
-    throw this.unavailable('Requires the AI Smart Stick Android app');
+    throw this.unavailable('Requires the AI SmartStick Android app');
   }
   async scanForSetupNetworks(): Promise<{ networks: { ssid: string; rssi: number }[] }> {
     return this.no();

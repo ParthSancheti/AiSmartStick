@@ -7,7 +7,7 @@ import { ttsEngine } from './tts';
  * UnifiedAudioOrchestrator — the ONE speech path (one TTS engine, one queue, one mono output).
  * Every speaking feature (assistant replies, vision results, navigation, safety, SOS, camera
  * notices, guardian messages, system) enqueues here; nothing calls a TTS engine directly.
- * It controls only AI Smart Stick audio, never other apps' media.
+ * It controls only AI SmartStick audio, never other apps' media.
  *
  *   P0 critical   emergency / SOS / obstacle danger        interrupts everything
  *   P1 high       critical navigation, disconnects, battery, guardian messages

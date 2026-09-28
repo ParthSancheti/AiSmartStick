@@ -15,29 +15,19 @@ import { fb } from '../firebase/app';
 import { paths } from '../../../shared/firestoreSchema';
 import { wait } from '../util';
 
-/**
- * First-time stick setup (DEVICE_PROTOCOL.md §Provisioning):
- *  1 user holds the stick button 5 s → stick raises WPA2 AP "AISmartStick-XXXX" (password = setup code on its label)
- *  2 app scans for that AP → "Stick detected"
- *  3 Android joins it via WifiNetworkSpecifier (one system prompt) → "Connecting to Stick"
- *  4 app sends hotspot SSID/password + a fresh 32-byte device key → "Sending network configuration"
- *  5 stick leaves AP mode and joins the hotspot → "Connecting Stick to phone network"
- *  6 app hears the stick's SIGNED UDP announcement → challenge/response proves the key → "Authenticating"
- *  7 pairing saved (key in Android Keystore storage, metadata in Firestore) → "Connected"
- * Android does not let apps read the hotspot password, so the user types it once (step 4 form).
- */
 export type ProvStep =
   | 'idle'
   | 'searching'
-  | 'detected'
-  | 'connecting_ap'
-  | 'sending_config'
-  | 'joining_network'
+  | 'stick_found'
+  | 'connecting_to_stick'
+  | 'stick_connected'
+  | 'reading_device_info'
+  | 'configuring_network'
+  | 'waiting_for_stick_network'
+  | 'verifying_stick'
   | 'authenticating'
-  | 'finalizing'
-  | 'connected'
-  | 'failed'
-  | 'retrying';
+  | 'completed'
+  | 'error';
 
 interface ProvState {
   step: ProvStep;
@@ -48,10 +38,19 @@ interface ProvState {
   diagnostics: string[];
 }
 
-export const useProvisioning = create<ProvState>(() => ({ step: 'idle', ssid: null, deviceId: null, firmware: null, error: null, diagnostics: [] }));
+export const useProvisioning = create<ProvState>(() => ({
+  step: 'idle',
+  ssid: null,
+  deviceId: null,
+  firmware: null,
+  error: null,
+  diagnostics: [],
+}));
 
 const set = (p: Partial<ProvState>) => useProvisioning.setState(p);
-const diag = (line: string) => useProvisioning.setState((s) => ({ diagnostics: [...s.diagnostics, `${new Date().toLocaleTimeString()}  ${line}`].slice(-40) }));
+const diag = (line: string) => useProvisioning.setState((s) => ({
+  diagnostics: [...s.diagnostics, `${new Date().toLocaleTimeString()}  ${line}`].slice(-40)
+}));
 
 let cancelled = false;
 
@@ -66,15 +65,15 @@ const check = () => {
   if (cancelled) throw new Abort();
 };
 
-/** Step 1–2: look for the stick's setup network. */
 export async function searchForStick() {
   cancelled = false;
   set({ step: 'searching', error: null, ssid: null, diagnostics: [] });
   if (isDemo()) {
     await wait(1600);
-    if (!cancelled) set({ step: 'detected', ssid: `${SETUP_AP_PREFIX}4F2A` });
+    if (!cancelled) set({ step: 'stick_found', ssid: `${SETUP_AP_PREFIX}4F2A` });
     return;
   }
+  
   const until = Date.now() + 90_000;
   while (!cancelled && Date.now() < until) {
     try {
@@ -82,77 +81,87 @@ export async function searchForStick() {
       diag(`scan: ${networks.length} setup network(s)`);
       if (networks.length) {
         const best = [...networks].sort((a, b) => b.rssi - a.rssi)[0];
-        set({ step: 'detected', ssid: best.ssid });
+        set({ step: 'stick_found', ssid: best.ssid });
         return;
       }
     } catch (e) {
       diag(`scan failed: ${(e as Error).message}`);
-      set({ step: 'failed', error: 'Wi-Fi scanning is unavailable. Allow "Nearby devices" / location permission and turn Wi-Fi on.' });
+      set({ step: 'error', error: 'Wi-Fi scanning is unavailable. Allow "Nearby devices" / location permission and turn Wi-Fi on.' });
       return;
     }
     await wait(3000);
   }
-  if (!cancelled) set({ step: 'failed', error: 'No stick in setup mode found. Hold the stick button for 5 seconds until it buzzes twice, then try again.' });
+  if (!cancelled) set({ step: 'error', error: 'No stick in setup mode found. Hold the stick button for 5 seconds until it buzzes twice, then try again.' });
 }
 
-/** Steps 3–7. `setupCode` is printed on the stick; hotspot credentials are typed by the user once. */
 export async function provisionStick(input: { setupCode: string; hotspotSsid: string; hotspotPassword: string }) {
   cancelled = false;
   const ssid = useProvisioning.getState().ssid;
-  if (!ssid) return set({ step: 'failed', error: 'No stick detected yet.' });
+  if (!ssid) return set({ step: 'error', error: 'No stick detected yet.' });
   if (isDemo()) return demoProvision();
   const uid = currentUid();
-  if (!uid) return set({ step: 'failed', error: 'Sign in first.' });
+  if (!uid) return set({ step: 'error', error: 'Sign in first.' });
+  
   try {
-    set({ step: 'connecting_ap', error: null });
+    set({ step: 'connecting_to_stick', error: null });
     diag(`joining ${ssid}`);
     const { connected } = await AissNative.connectToSetupNetwork({ ssid, passphrase: input.setupCode.trim(), timeoutMs: 30000 });
     check();
     if (!connected) throw new Error('Could not join the stick’s setup network. Check the setup code on the stick label.');
+    set({ step: 'stick_connected' });
 
+    set({ step: 'reading_device_info' });
     const info = await setupJson<DeviceInfoPacket>('GET', DEVICE_API.device);
     diag(`stick ${info.deviceId} firmware ${info.firmware} protocol v${info.protocolVersion}`);
     if (info.protocolVersion !== PROTOCOL_VERSION) throw new Error(`This stick's firmware speaks protocol v${info.protocolVersion}. Update it to v${PROTOCOL_VERSION} first.`);
     set({ deviceId: info.deviceId, firmware: info.firmware });
 
-    set({ step: 'sending_config' });
+    set({ step: 'configuring_network' });
     const keyB64 = toB64(randomBytes(32));
     const packet: ProvisioningPacket = { v: 1, ssid: input.hotspotSsid.trim(), password: input.hotspotPassword, deviceKey: keyB64, ownerHash: await sha256Hex(uid), nonce: toHex(randomBytes(12)) };
     const result = await setupJson<ProvisioningResult>('POST', DEVICE_API.provision, packet);
     check();
     if (!result.ok) throw new Error(`The stick refused the configuration (${result.error ?? 'unknown'}).`);
+    
+    // Crucial: Release the temporary Wi-Fi network immediately so phone restores internet
     await AissNative.releaseSetupNetwork();
 
-    set({ step: 'joining_network' });
+    set({ step: 'waiting_for_stick_network' });
     diag('waiting for the stick on the hotspot (make sure the hotspot is ON, 2.4 GHz)');
     const ip = await waitForAnnouncement({ deviceId: info.deviceId, keyB64 }, 120_000);
     check();
     diag(`announcement from ${ip}`);
 
+    set({ step: 'verifying_stick' });
+    // Add brief wait for TCP stack
+    await wait(1000);
+    
     set({ step: 'authenticating' });
     await verifyProof(ip, info.deviceId, keyB64);
     check();
 
-    set({ step: 'finalizing' });
     const dev: PairedDevice = { deviceId: info.deviceId, model: info.model, firmware: info.firmware, protocolVersion: info.protocolVersion, keyB64, host: ip, ownerUid: uid, pairedAt: Date.now() };
     await savePairedDevice(dev);
+    
     const meta = { deviceId: dev.deviceId, model: dev.model, firmware: dev.firmware, protocolVersion: dev.protocolVersion, pairedAt: dev.pairedAt, authState: 'verified', revokedAt: null };
     await Promise.all([
       setDoc(doc(fb().db, paths.devices(uid), dev.deviceId), meta),
       setDoc(doc(fb().db, paths.deviceRegistry(dev.deviceId)), { ownerUid: uid, ...meta }),
     ]).catch((e) => diag(`cloud save deferred: ${(e as Error).message}`));
+    
     await attachPairedDevice(dev);
-    logEvent({ kind: 'device', severity: 'success', title: 'AI Smart Stick paired', detail: `${dev.deviceId}, firmware ${dev.firmware}` });
-    set({ step: 'connected' });
+    logEvent({ kind: 'device', severity: 'success', title: 'AI SmartStick paired', detail: `${dev.deviceId}, firmware ${dev.firmware}` });
+    
+    set({ step: 'completed' });
   } catch (e) {
     await AissNative.releaseSetupNetwork().catch(() => undefined);
     if (e instanceof Abort) return;
     diag(`error: ${(e as Error).message}`);
-    set({ step: 'failed', error: (e as Error).message });
+    set({ step: 'error', error: (e as Error).message });
   }
 }
 
-async function setupJson<T>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<T> {
+async function setupJson<T>(method: "GET" | "POST", path: string, body?: unknown): Promise<T> {
   const r = await AissNative.setupRequest({ method, path, body: body ? JSON.stringify(body) : undefined, timeoutMs: 8000 });
   if (r.status < 200 || r.status >= 300) throw new Error(`Stick answered HTTP ${r.status}`);
   return JSON.parse(r.body) as T;
@@ -175,7 +184,6 @@ async function waitForAnnouncement(dev: { deviceId: string; keyB64: string }, ti
         const a = JSON.parse(json) as DiscoveryAnnouncement;
         if (await verifyAnnouncement(a, dev)) done(() => resolve(a.ip || fromIp));
       } catch {
-        /* ignore */
       }
     }).then((h) => (handle = h));
   });
@@ -189,15 +197,14 @@ async function verifyProof(ip: string, deviceId: string, keyB64: string) {
   if (info.deviceId !== deviceId || !info.proof || !safeEqual(info.proof, expect)) throw new Error('The stick could not prove it received the key. Reset it (hold the button while switching it on), then set up again.');
 }
 
-/** DEMO: same states, simulated timings, then the mock stick links. */
 async function demoProvision() {
-  const steps: ProvStep[] = ['connecting_ap', 'sending_config', 'joining_network', 'authenticating', 'finalizing'];
+  const steps: ProvStep[] = ['connecting_to_stick', 'stick_connected', 'reading_device_info', 'configuring_network', 'waiting_for_stick_network', 'verifying_stick', 'authenticating'];
   for (const s of steps) {
     if (cancelled) return;
     set({ step: s });
-    await wait(s === 'joining_network' ? 2200 : 1100);
+    await wait(s === 'waiting_for_stick_network' ? 2200 : 1100);
   }
   if (cancelled) return;
   getMock()?.setLinked(true);
-  set({ step: 'connected', deviceId: 'DEMO-4F2A', firmware: '1.0.0-demo' });
+  set({ step: 'completed', deviceId: 'DEMO-4F2A', firmware: '1.0.0-demo' });
 }

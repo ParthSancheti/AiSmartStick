@@ -23,6 +23,7 @@ import { BrandLogo } from '../../core/brand/BrandLogo';
 import { useDevice, isLinked } from '../../core/store/device';
 import { scanPairingQr } from '../../core/pairing/qr';
 import { friendlyError } from '../../core/errors';
+import { AissNative } from '../../core/native/aissNative';
 
 type Step = 'hello' | 'signin' | 'code' | 'linking' | 'stick' | 'buzz' | 'done';
 
@@ -60,6 +61,14 @@ export function UserOnboarding() {
   const [shake, setShake] = useState(0);
   const [codeError, setCodeError] = useState<string | null>(null);
   const typing = useRef(false);
+
+  // Keep app alive while setting up so the voice doesn't stop if user turns off screen
+  useEffect(() => {
+    AissNative.startBackgroundService({ title: 'Setting up AI SmartStick', body: 'The assistant is speaking.' }).catch(() => {});
+    return () => {
+      AissNative.stopBackgroundService().catch(() => {});
+    };
+  }, []);
 
   // Resume where a real user left off: already signed in → code; already linked → stick.
   useEffect(() => {
@@ -170,10 +179,15 @@ export function UserOnboarding() {
               </div>
               <div className="mb-3"><BrandLogo variant="full" size={34} /></div>
               <Title>Hi, I'm your {BRAND.name} assistant</Title>
-              <Body>I'll walk with you and tell you what's around. First, let's link this phone with your family.</Body>
-              <GlassButton variant="teal" size="xl" className="mt-6 w-full" onClick={() => setStep(demo ? 'code' : 'signin')}>
-                Continue
-              </GlassButton>
+              <Body>I'll walk with you and tell you what's around. First, let's link this phone with your family. If you don't want to link right now, you can set up the stick directly.</Body>
+              <div className="mt-6 grid gap-3">
+                <GlassButton variant="teal" size="xl" className="w-full" onClick={() => setStep(demo ? 'code' : 'signin')}>
+                  Link with family
+                </GlassButton>
+                <GlassButton size="lg" className="w-full" onClick={() => setStep('stick')}>
+                  Set up without family
+                </GlassButton>
+              </div>
             </Frame>
           )}
 

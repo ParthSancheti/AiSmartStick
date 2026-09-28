@@ -1,4 +1,4 @@
-import logoUrl from './logo.svg';
+import logoUrl from './logo.png';
 import { BRAND } from './brand';
 
 /**

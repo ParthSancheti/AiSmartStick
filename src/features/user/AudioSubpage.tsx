@@ -44,7 +44,7 @@ const Cool3DSpeaker = () => (
 );
 
 /**
- * AI Smart Stick audio output. Shows the REAL current route (Android AudioManager) and controls
+ * AI SmartStick audio output. Shows the REAL current route (Android AudioManager) and controls
  * only this app's own audio: assistant voice on/off, volume, test. Pairing earbuds happens in
  * Android Bluetooth settings; the app follows whatever route the system picks.
  */
@@ -96,7 +96,7 @@ export function AudioSubpage({ open, onClose }: { open: boolean; onClose: () => 
                           <motion.div className="absolute inset-4 rounded-full border-2 border-info/40" animate={{ scale: [1, 1.5, 2], opacity: [0.8, 0.4, 0] }} transition={{ duration: 2, repeat: Infinity, ease: 'easeOut', delay: 0.5 }} />
                         </>
                       )}
-                      <div className="w-40 h-40 rounded-[32px] glass flex items-center justify-center z-10 border border-info/30 shadow-[0_20px_60px_-20px_var(--info)] bg-info/10 backdrop-blur-xl" style={{ perspective: 1000 }}>
+                      <div className="w-40 h-40 rounded-[32px] glass flex items-center justify-center z-10 border border-info/30 shadow-[0_20px_60px_-20px_var(--info)] bg-info/10 backdrop-blur-md" style={{ perspective: 1000 }}>
                         {showcase === 'earbuds' ? <Cool3DHeadphone /> : <Cool3DSpeaker />}
                       </div>
                     </div>
@@ -109,7 +109,7 @@ export function AudioSubpage({ open, onClose }: { open: boolean; onClose: () => 
             )}
 
             <div className="flex flex-col gap-3 mt-8">
-               <h3 className="text-sm font-bold text-ink-3 uppercase tracking-wider mb-2 pl-2">AI Smart Stick audio</h3>
+               <h3 className="text-sm font-bold text-ink-3 uppercase tracking-wider mb-2 pl-2">AI SmartStick audio</h3>
 
                <button type="button" onClick={() => update({ voiceOut: !s.voiceOut })} className="glass w-full rounded-[24px] p-5 flex items-center justify-between border border-glass-border interactive">
                  <div className="flex items-center gap-4">
@@ -132,7 +132,7 @@ export function AudioSubpage({ open, onClose }: { open: boolean; onClose: () => 
                    <Bluetooth size={20} /> Connect earbuds in Bluetooth settings <Settings2 size={18} className="text-ink-3" />
                  </button>
                )}
-               <p className="px-2 text-[13px] leading-snug text-ink-3">The stick itself has no speaker. This controls only AI Smart Stick speech and sounds, not music or other apps.</p>
+               <p className="px-2 text-[13px] leading-snug text-ink-3">The stick itself has no speaker. This controls only AI SmartStick speech and sounds, not music or other apps.</p>
             </div>
           </div>
           </div>

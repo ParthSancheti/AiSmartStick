@@ -4,7 +4,6 @@ import { startWorld } from './sim/world';
 import { unlockAudio } from './feedback/earcons';
 import { useSession } from './store/session';
 import { useRuntime } from './runtime/mode';
-import { ENV } from './runtime/env';
 import { startAuth, clearLocalAccountData } from './auth/authService';
 import { useAuth } from './auth/authStore';
 import { watchRelationship, stopRelationshipWatch, useRelationship } from './pairing/pairingService';
@@ -87,7 +86,7 @@ function bootDemo() {
 function bootReal() {
   void startNetworkMonitor();
   const isUserApp = () => {
-    const role = useAuth.getState().role ?? (ENV.appTarget === 'guardian' ? 'guardian' : ENV.appTarget === 'user' ? 'user' : useSession.getState().entryRole);
+    const role = useAuth.getState().role ?? useSession.getState().entryRole;
     return role !== 'guardian';
   };
   let relUnsub: (() => void) | null = null;

@@ -11,14 +11,13 @@ import { GuardianApp } from './features/guardian/GuardianApp';
 import { Stage } from './features/stage/Stage';
 import { EntryFlow } from './features/entry/EntryFlow';
 import { useRuntime } from './core/runtime/mode';
-import { ENV } from './core/runtime/env';
 
 function SinglePhone() {
   const demoOpen = useUI((s) => s.demoOpen);
   const entryRole = useSession((s) => s.entryRole);
   const demo = useRuntime((s) => s.mode) === 'demo';
   // Shipped builds are single-role; the combined dev build asks once.
-  const role = ENV.appTarget === 'user' ? 'user' : ENV.appTarget === 'guardian' ? 'guardian' : entryRole;
+  const role = entryRole;
   const taps = useRef<number[]>([]);
 
   const cornerTap = () => {

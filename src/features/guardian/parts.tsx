@@ -7,7 +7,6 @@ import { useNow } from '../../hooks/useNow';
 import { clock, meters, timeAgo } from '../../core/util';
 import { useFeed, feedFresh } from '../../core/sync/guardianFeed';
 import { useRuntime } from '../../core/runtime/mode';
-import { ENV } from '../../core/runtime/env';
 import { signOut } from '../../core/auth/authService';
 import { useAuth } from '../../core/auth/authStore';
 import { AccountAvatar } from '../../components/Avatar';
@@ -33,7 +32,7 @@ export function GuardianProfileMenu({ open, onClose }: { open: boolean; onClose:
   const setUI = useUI((s) => s.set);
   const mode = useRuntime((s) => s.mode);
   const user = useAuth((s) => s.user);
-  const canSwitch = mode === 'demo' || ENV.appTarget === 'both';
+  const canSwitch = true;
 
   return (
     <AnimatePresence>

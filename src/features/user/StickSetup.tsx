@@ -1,147 +1,170 @@
 import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Check, ChevronLeft, Loader2, RefreshCw, Settings2, TriangleAlert, Wifi } from 'lucide-react';
+import { Check, ChevronLeft, Loader2, RefreshCw, Wifi, Settings2 } from 'lucide-react';
 import { StickVisual } from '../../components/StickVisual';
 import { Glass, GlassButton } from '../../components/glass';
 import { Atmosphere } from '../../components/Atmosphere';
-import { useProvisioning, searchForStick, provisionStick, cancelProvisioning, type ProvStep } from '../../core/provisioning/provisioning';
+import { AppScreen, SafeAreaContent, FloatingHeader } from '../../components/Layout';
+import { useProvisioning, searchForStick, provisionStick, cancelProvisioning } from '../../core/provisioning/provisioning';
 import { AissNative } from '../../core/native/aissNative';
 import { useRuntime } from '../../core/runtime/mode';
-import { BRAND } from '../../core/brand/brand';
 
-const STEPS: { id: ProvStep; label: string; help: string }[] = [
-  { id: 'searching', label: 'Searching for AI Smart Stick', help: 'Hold the stick button for 5 seconds until it buzzes twice. Keep the stick close to the phone.' },
-  { id: 'detected', label: 'Stick detected', help: 'Enter the setup code from the stick label and your hotspot details.' },
-  { id: 'connecting_ap', label: 'Connecting to Stick', help: 'Android will ask to connect to the stick. Tap Connect.' },
-  { id: 'sending_config', label: 'Sending network configuration', help: 'Your hotspot name and a new secret key are sent to the stick. The key never leaves this phone otherwise.' },
-  { id: 'joining_network', label: 'Connecting Stick to phone network', help: 'Turn your hotspot ON now (2.4 GHz). The stick joins it within a minute.' },
-  { id: 'authenticating', label: 'Authenticating Stick', help: 'Checking the stick really holds this phone’s key.' },
-  { id: 'finalizing', label: 'Finalizing', help: 'Saving the pairing on this phone and in your account.' },
+const STEPS = [
+  { id: 'searching', label: 'Searching for SmartStick', desc: 'Finding the setup network...' },
+  { id: 'stick_found', label: 'Stick Found', desc: 'Enter setup details below.' },
+  { id: 'connecting_to_stick', label: 'Connecting', desc: 'Connecting to stick Wi-Fi...' },
+  { id: 'stick_connected', label: 'Connected', desc: 'Reading device information...' },
+  { id: 'reading_device_info', label: 'Reading Info', desc: 'Verifying protocol...' },
+  { id: 'configuring_network', label: 'Configuring', desc: 'Sending network credentials...' },
+  { id: 'waiting_for_stick_network', label: 'Waiting', desc: 'Waiting for stick to join hotspot...' },
+  { id: 'verifying_stick', label: 'Verifying', desc: 'Checking connection...' },
+  { id: 'authenticating', label: 'Authenticating', desc: 'Securing the link...' },
+  { id: 'completed', label: 'Completed', desc: 'Stick is ready.' },
 ];
-
-const order = (s: ProvStep) => STEPS.findIndex((x) => x.id === s);
 
 export function StickSetup({ onDone, onCancel }: { onDone: () => void; onCancel: () => void }) {
   const p = useProvisioning();
   const demo = useRuntime((s) => s.mode) === 'demo';
   const [code, setCode] = useState(demo ? '12345678' : '');
-  const [ssid, setSsid] = useState(demo ? 'Aarav’s phone' : '');
-  const [pw, setPw] = useState(demo ? '••••••••' : '');
+  const [ssid, setSsid] = useState(demo ? 'AndroidAP' : '');
+  const [pw, setPw] = useState(demo ? 'password' : '');
   const [showDiag, setShowDiag] = useState(false);
 
   useEffect(() => {
     if (p.step === 'idle') void searchForStick();
     return () => {
-      if (useProvisioning.getState().step !== 'connected') cancelProvisioning();
+      if (useProvisioning.getState().step !== 'completed') cancelProvisioning();
     };
-    // run once on mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const current = STEPS[order(p.step)] ?? null;
-  const busy = order(p.step) >= order('connecting_ap') && p.step !== 'failed';
-  const canSend = code.trim().length >= 8 && ssid.trim().length > 0 && pw.length >= 8;
+
+  const currentStepInfo = STEPS.find(s => s.id === p.step) || { label: p.step, desc: '' };
+  const isError = p.step === 'error';
+  const isCompleted = p.step === 'completed';
 
   return (
-    <div className="absolute inset-0 z-[90] flex flex-col bg-bg">
+    <AppScreen className="z-[90] bg-bg">
       <Atmosphere variant="user" />
-      <div className="relative z-10 flex items-center gap-4 px-4" style={{ paddingTop: 'calc(var(--island, 0px) + 22px)' }}>
-        <button type="button" onClick={() => { cancelProvisioning(); onCancel(); }} aria-label="Cancel setup" className="glass interactive grid h-12 w-12 place-items-center rounded-full text-ink">
-          <ChevronLeft size={24} />
-        </button>
-        <h1 className="text-[24px] font-bold text-ink">Set up your stick</h1>
-      </div>
+      <FloatingHeader className="pt-4 pb-0 items-center">
+        <div className="flex items-center gap-4 w-full">
+          <button type="button" onClick={() => { cancelProvisioning(); onCancel(); }} aria-label="Cancel setup" className="glass interactive grid h-12 w-12 shrink-0 place-items-center rounded-full text-ink">
+            <ChevronLeft size={24} />
+          </button>
+          <h1 className="text-[24px] font-bold text-ink">Set up your SmartStick</h1>
+        </div>
+      </FloatingHeader>
 
-      <div className="relative z-10 flex-1 overflow-y-auto px-4 pb-10 no-scrollbar">
-        <div className="flex flex-col items-center pt-4">
+      <SafeAreaContent className="px-4 pb-10 z-10">
+        <div className="h-16 shrink-0" />
+        
+        <div className="flex flex-col items-center pt-4 mb-6">
           <motion.div animate={p.step === 'searching' ? { rotate: [-3, 3, -3] } : { rotate: 0 }} transition={{ duration: 1.6, repeat: p.step === 'searching' ? Infinity : 0 }}>
-            <StickVisual height={170} link={p.step === 'connected' ? 'connected' : busy ? 'connecting' : 'searching'} obstacleCm={null} pose={null} />
+            <StickVisual height={170} link={isCompleted ? 'connected' : isError ? 'searching' : 'connecting'} obstacleCm={null} pose={null} />
           </motion.div>
-          <p className="mt-3 text-center text-[22px] font-extrabold text-ink" aria-live="polite">
-            {p.step === 'connected' ? `${BRAND.name} Connected` : p.step === 'failed' ? 'Setup did not finish' : current?.label ?? 'Getting ready'}
+          <p className="mt-4 text-center text-[22px] font-extrabold text-ink" aria-live="polite">
+            {isError ? 'Setup Failed' : currentStepInfo.label}
           </p>
-          {current && p.step !== 'failed' && p.step !== 'connected' && <p className="mt-1 max-w-[32ch] text-center text-[15px] leading-snug text-ink-2">{current.help}</p>}
+          <p className="mt-1 text-center text-[15px] leading-snug text-ink-2">
+            {isError ? p.error : currentStepInfo.desc}
+          </p>
         </div>
 
-        {/* Progress */}
-        <Glass className="mt-5 rounded-[26px] p-4">
-          <ol className="space-y-2.5">
-            {STEPS.map((s, i) => {
-              const cur = order(p.step);
-              const done = p.step === 'connected' || i < cur;
-              const active = i === cur && p.step !== 'connected';
-              return (
-                <li key={s.id} className="flex items-center gap-3">
-                  <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-full text-[12px] font-bold ${done ? 'bg-ok text-white' : active ? 'bg-teal text-on-teal' : 'bg-ink/[0.07] text-ink-3'}`}>
-                    {done ? <Check size={15} strokeWidth={3} /> : active ? <Loader2 size={15} className="animate-spin" /> : i + 1}
-                  </span>
-                  <span className={`text-[15px] ${active ? 'font-bold text-ink' : done ? 'font-medium text-ink-2' : 'text-ink-3'}`}>{s.label}</span>
-                </li>
-              );
-            })}
-          </ol>
-        </Glass>
-
         <AnimatePresence mode="wait">
-          {p.step === 'detected' && (
-            <motion.div key="form" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="mt-4 space-y-3">
-              <Glass className="rounded-[22px] p-4">
-                <p className="text-[13px] font-bold uppercase tracking-wider text-ink-3">Found</p>
-                <p className="mt-1 flex items-center gap-2 text-[17px] font-semibold text-ink"><Wifi size={18} className="text-teal" /> {p.ssid}</p>
+          {/* STEP 1: SEARCHING */}
+          {p.step === 'searching' && (
+            <motion.div key="searching" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex justify-center p-6">
+              <Loader2 className="animate-spin text-teal" size={32} />
+            </motion.div>
+          )}
+
+          {/* STEP 2: STICK FOUND (Form) */}
+          {p.step === 'stick_found' && (
+            <motion.div key="form" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-4">
+              <Glass className="rounded-[22px] p-5 flex items-center justify-between">
+                <div>
+                  <p className="text-[13px] font-bold uppercase tracking-wider text-ink-3">Found Stick</p>
+                  <p className="mt-1 flex items-center gap-2 text-[17px] font-semibold text-ink"><Wifi size={18} className="text-teal" /> {p.ssid}</p>
+                </div>
+                <Check size={24} className="text-teal" />
               </Glass>
-              <Field label="Setup code (8 characters on the stick label)" value={code} onChange={setCode} autoComplete="one-time-code" />
-              <Field label="Your phone hotspot name" value={ssid} onChange={setSsid} />
-              <Field label="Hotspot password" value={pw} onChange={setPw} type="password" />
-              <p className="px-1 text-[13.5px] leading-snug text-ink-3">Android does not let apps read your hotspot password, so it is typed once here and sent only to the stick. Use 2.4 GHz (“Extend compatibility” on some phones).</p>
+              
+              <div className="space-y-3">
+                <Field label="Setup Code (8 characters on stick)" value={code} onChange={setCode} />
+                <Field label="Phone Hotspot Name" value={ssid} onChange={setSsid} />
+                <Field label="Hotspot Password" value={pw} onChange={setPw} type="password" />
+              </div>
+              
+              <p className="text-[13px] text-ink-3 px-2 text-center mt-2">
+                Your hotspot details will be sent directly to the stick over a secure local connection.
+              </p>
+
               {!demo && (
-                <GlassButton size="lg" className="w-full" onClick={() => void AissNative.openHotspotSettings().catch(() => undefined)}>
-                  <Settings2 size={18} /> Open hotspot settings
+                <GlassButton size="lg" className="w-full mt-2" onClick={() => void AissNative.openHotspotSettings().catch(() => undefined)}>
+                  <Settings2 size={18} /> Open Hotspot Settings
                 </GlassButton>
               )}
-              <GlassButton variant="teal" size="lg" className="w-full" disabled={!canSend} onClick={() => void provisionStick({ setupCode: code, hotspotSsid: ssid, hotspotPassword: pw })}>
-                Connect stick
+
+              <GlassButton variant="teal" size="lg" className="w-full mt-4" disabled={code.trim().length < 8 || ssid.trim().length === 0 || pw.length < 8} onClick={() => provisionStick({ setupCode: code, hotspotSsid: ssid, hotspotPassword: pw })}>
+                Connect Automatically
               </GlassButton>
             </motion.div>
           )}
 
-          {p.step === 'failed' && (
-            <motion.div key="fail" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mt-4 space-y-3">
-              <p className="flex items-start gap-2 rounded-[18px] bg-amber-soft px-4 py-3 text-[15px] font-medium text-amber-ink" role="alert">
-                <TriangleAlert size={18} className="mt-0.5 shrink-0" /> {p.error}
-              </p>
-              <GlassButton variant="teal" size="lg" className="w-full" onClick={() => { useProvisioning.setState({ step: 'retrying' }); void searchForStick(); }}>
-                <RefreshCw size={18} /> Try again
+          {/* STEP 3: PROGRESS / PROVISIONING */}
+          {(!isError && p.step !== 'idle' && p.step !== 'searching' && p.step !== 'stick_found' && p.step !== 'completed') && (
+            <motion.div key="progress" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
+              <Glass className="rounded-[26px] p-5">
+                <div className="flex items-center gap-4">
+                  <div className="bg-teal/10 p-3 rounded-full">
+                    <Loader2 className="animate-spin text-teal" size={24} />
+                  </div>
+                  <div>
+                    <p className="text-[16px] font-bold text-ink">{currentStepInfo.label}</p>
+                    <p className="text-[14px] text-ink-2">{currentStepInfo.desc}</p>
+                  </div>
+                </div>
+              </Glass>
+            </motion.div>
+          )}
+
+          {/* STEP 4: ERROR */}
+          {isError && (
+            <motion.div key="error" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
+              <GlassButton variant="teal" size="lg" className="w-full" onClick={() => searchForStick()}>
+                <RefreshCw size={18} /> Try Again
               </GlassButton>
               <button type="button" className="w-full py-2 text-[14px] font-semibold text-ink-2 underline" onClick={() => setShowDiag((v) => !v)}>
                 {showDiag ? 'Hide' : 'Show'} diagnostics
               </button>
               {showDiag && (
-                <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-[16px] bg-ink/[0.06] p-3 text-[12px] text-ink-2">{p.diagnostics.join('\n') || 'No diagnostics yet.'}</pre>
+                <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-[16px] bg-ink/[0.06] p-3 text-[12px] text-ink-2">{p.diagnostics.join('\n') || 'No diagnostics available.'}</pre>
               )}
             </motion.div>
           )}
 
-          {p.step === 'connected' && (
-            <motion.div key="ok" initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} className="mt-4 space-y-3">
-              <Glass className="rounded-[22px] p-4 text-[15px] text-ink-2">
-                Stick {p.deviceId} · firmware {p.firmware}. From now on it reconnects automatically whenever your hotspot is on.
+          {/* STEP 5: COMPLETED */}
+          {isCompleted && (
+            <motion.div key="completed" initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} className="space-y-4">
+              <Glass className="rounded-[22px] p-5 text-[15px] text-ink-2 text-center">
+                SmartStick {p.deviceId} is fully paired and configured! It will automatically reconnect whenever your hotspot is active.
               </Glass>
               <GlassButton variant="teal" size="lg" className="w-full" onClick={onDone}>
-                Done
+                Continue
               </GlassButton>
             </motion.div>
           )}
         </AnimatePresence>
-      </div>
-    </div>
+      </SafeAreaContent>
+    </AppScreen>
   );
 }
 
-function Field({ label, value, onChange, type = 'text', autoComplete }: { label: string; value: string; onChange: (v: string) => void; type?: string; autoComplete?: string }) {
+function Field({ label, value, onChange, type = 'text' }: { label: string; value: string; onChange: (v: string) => void; type?: string }) {
   return (
     <label className="glass block rounded-[20px] border border-glass-border p-4">
       <span className="mb-1.5 block text-[13px] font-bold uppercase text-ink-3">{label}</span>
-      <input type={type} value={value} autoComplete={autoComplete} onChange={(e) => onChange(e.target.value)} className="w-full bg-transparent text-[18px] font-semibold text-ink outline-none" />
+      <input type={type} value={value} onChange={(e) => onChange(e.target.value)} className="w-full bg-transparent text-[18px] font-semibold text-ink outline-none" />
     </label>
   );
 }
