@@ -25,9 +25,6 @@ const STEPS = [
 export function StickSetup({ onDone, onCancel }: { onDone: () => void; onCancel: () => void }) {
   const p = useProvisioning();
   const demo = useRuntime((s) => s.mode) === 'demo';
-  const [code, setCode] = useState(demo ? '12345678' : '');
-  const [ssid, setSsid] = useState(demo ? 'AndroidAP' : '');
-  const [pw, setPw] = useState(demo ? 'password' : '');
   const [showDiag, setShowDiag] = useState(false);
 
   useEffect(() => {
@@ -89,24 +86,12 @@ export function StickSetup({ onDone, onCancel }: { onDone: () => void; onCancel:
                 <Check size={24} className="text-teal" />
               </Glass>
               
-              <div className="space-y-3">
-                <Field label="Setup Code (8 characters on stick)" value={code} onChange={setCode} />
-                <Field label="Phone Hotspot Name" value={ssid} onChange={setSsid} />
-                <Field label="Hotspot Password" value={pw} onChange={setPw} type="password" />
-              </div>
-              
               <p className="text-[13px] text-ink-3 px-2 text-center mt-2">
-                Your hotspot details will be sent directly to the stick over a secure local connection.
+                Fast Pair ready. The app will automatically connect to the stick.
               </p>
 
-              {!demo && (
-                <GlassButton size="lg" className="w-full mt-2" onClick={() => void AissNative.openHotspotSettings().catch(() => undefined)}>
-                  <Settings2 size={18} /> Open Hotspot Settings
-                </GlassButton>
-              )}
-
-              <GlassButton variant="teal" size="lg" className="w-full mt-4" disabled={code.trim().length < 8 || ssid.trim().length === 0 || pw.length < 8} onClick={() => provisionStick({ setupCode: code, hotspotSsid: ssid, hotspotPassword: pw })}>
-                Connect Automatically
+              <GlassButton variant="teal" size="lg" className="w-full mt-4" onClick={() => provisionStick({ setupCode: '', hotspotSsid: '', hotspotPassword: '' })}>
+                Connect
               </GlassButton>
             </motion.div>
           )}
@@ -147,7 +132,7 @@ export function StickSetup({ onDone, onCancel }: { onDone: () => void; onCancel:
           {isCompleted && (
             <motion.div key="completed" initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} className="space-y-4">
               <Glass className="rounded-[22px] p-5 text-[15px] text-ink-2 text-center">
-                SmartStick {p.deviceId} is fully paired and configured! It will automatically reconnect whenever your hotspot is active.
+                SmartStick {p.deviceId} is fully paired and configured! It is connected directly over local Wi-Fi.
               </Glass>
               <GlassButton variant="teal" size="lg" className="w-full" onClick={onDone}>
                 Continue

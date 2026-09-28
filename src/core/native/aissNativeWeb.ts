@@ -45,6 +45,9 @@ export class AissNativeWeb extends WebPlugin implements AissNativePlugin {
   async setupRequest(): Promise<{ status: number; body: string }> {
     return this.no();
   }
+  async requestBinary(): Promise<{ status: number; body: string }> {
+    return this.no();
+  }
   async releaseSetupNetwork() {}
   async startDiscovery(): Promise<void> {
     return this.no();

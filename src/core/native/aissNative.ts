@@ -21,6 +21,7 @@ export interface AissNativePlugin {
   connectToSetupNetwork(opts: { ssid: string; passphrase: string; timeoutMs?: number }): Promise<{ connected: boolean }>;
   /** HTTP over the setup network specifically (process stays on mobile data for everything else). */
   setupRequest(opts: { method: 'GET' | 'POST'; path: string; body?: string; timeoutMs?: number }): Promise<{ status: number; body: string }>;
+  requestBinary(opts: { path: string; timeoutMs?: number }): Promise<{ status: number; body: string }>;
   releaseSetupNetwork(): Promise<void>;
   /** Listen for the stick's UDP discovery broadcast on the hotspot. */
   startDiscovery(opts: { port: number }): Promise<void>;

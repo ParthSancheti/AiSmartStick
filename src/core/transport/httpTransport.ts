@@ -131,16 +131,24 @@ export class HttpTransport implements StickTransport {
     const body = opts.body === undefined ? '' : JSON.stringify(opts.body);
     const headers: Record<string, string> = await this.sign(method, path, body);
     if (body) headers['content-type'] = 'application/json';
-    const timeout = AbortSignal.timeout(opts.timeoutMs ?? 1500);
-    const res = await fetch(`http://${this.host}${path}`, {
-      method,
-      headers,
-      body: body || undefined,
-      signal: opts.signal ? AbortSignal.any([opts.signal, timeout]) : timeout,
-    });
-    if (res.status === 401 || res.status === 403) throw new AuthError('auth');
-    if (!res.ok && res.status !== 409 && res.status !== 503) throw new Error(`HTTP ${res.status}`);
-    return res;
+    
+    // Instead of web fetch, we MUST use the native Android plugin to route traffic specifically 
+    // over the Wi-Fi network while leaving Mobile Data active for Gemini AI! (Dashcam Protocol)
+    const { AissNative } = await import('../native/aissNative');
+    try {
+      const res = await AissNative.setupRequest({ method, path, body: body || undefined, timeoutMs: opts.timeoutMs ?? 1500 });
+      if (res.status === 401 || res.status === 403) throw new AuthError('auth');
+      if (res.status >= 400 && res.status !== 409 && res.status !== 503) throw new Error(`HTTP ${res.status}`);
+      return {
+        status: res.status,
+        text: async () => res.body,
+        json: async () => JSON.parse(res.body),
+        ok: res.status < 400,
+      };
+    } catch (err: any) {
+      if (err instanceof AuthError) throw err;
+      throw new Error(`Native request failed: ${err.message}`);
+    }
   }
 
   private async authenticate(signal: AbortSignal) {
@@ -191,17 +199,23 @@ export class HttpTransport implements StickTransport {
 
   async captureFrame(opts: { timeoutMs?: number } = {}): Promise<CapturedFrame> {
     if (this.state !== 'connected' && this.state !== 'degraded') throw new Error('stick-offline');
-    const res = await this.request('GET', DEVICE_API.capture, { timeoutMs: opts.timeoutMs ?? 6000 });
+    
+    const { AissNative } = await import('../native/aissNative');
+    const res = await AissNative.requestBinary({ path: DEVICE_API.capture, timeoutMs: opts.timeoutMs ?? 6000 });
+    
     if (res.status === 409) throw new Error('camera: busy');
     if (res.status === 503) throw new Error('camera: unavailable');
-    const blob = await res.blob();
+    if (res.status >= 400 || !res.body) throw new Error(`HTTP ${res.status}`);
+    
+    // Convert Base64 back to a Blob
+    const binaryString = atob(res.body);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
+    const blob = new Blob([bytes], { type: 'image/jpeg' });
+    
     const bad = await validateJpeg(blob);
     if (bad) throw new Error(`camera: ${bad}`);
-    const n = (h: string) => {
-      const v = Number(res.headers.get(h));
-      return Number.isFinite(v) && v > 0 ? v : null;
-    };
-    return { blob, width: n(CAPTURE_HEADERS.width), height: n(CAPTURE_HEADERS.height), capturedAt: Date.now() };
+    return { blob, width: null, height: null, capturedAt: Date.now() };
   }
 
   async send(cmd: DeviceCommand, opts: { commandId?: string; ttlMs?: number } = {}): Promise<CommandAck> {

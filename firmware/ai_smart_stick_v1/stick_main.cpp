@@ -99,8 +99,8 @@ void setup() {
   else camera::begin();
   S.camOk = camera::ok();
 
-  if (identity::provisioned()) net::startStation();
-  else Serial.printf("[%s] not provisioned: hold the button 5 s to start setup (code %s)\n", identity::deviceId(), identity::setupCode());
+  net::startSetupAp();
+  Serial.printf("[%s] Dashcam AP started.\n", identity::deviceId());
   api::start();
   Serial.printf("[boot] %s fw %s reset=%s boots=%lu safe=%d\n", identity::deviceId(), FW_VERSION, health::resetReason(), (unsigned long)health::bootCount(), health::safeMode());
 
@@ -191,8 +191,9 @@ void loop() {
   ecu::setError(ecu::E_I2C, !S.i2cOk);
   if (now - tHealth >= HEALTH_PERIOD_MS) { tHealth = now; health::tick(); }
   net::tick();
-  if (api::takeProvisioned()) leaveApAt = now + 1500;
-  if (leaveApAt && (int32_t)(now - leaveApAt) >= 0) { leaveApAt = 0; S.mode = ecu::Mode::Normal; net::startStation(); motor::play("confirm", motor::FEEDBACK); }
+  // Dashcam mode: never switch to station.
+  // if (api::takeProvisioned()) leaveApAt = now + 1500;
+  // if (leaveApAt && (int32_t)(now - leaveApAt) >= 0) { leaveApAt = 0; S.mode = ecu::Mode::Normal; net::startStation(); motor::play("confirm", motor::FEEDBACK); }
   if (api::takeFactoryResetRequest()) { identity::factoryReset(); rebootAt = now + 300; }
   if (api::takeRebootRequest()) rebootAt = now + 300;
   if (rebootAt && (int32_t)(now - rebootAt) >= 0) ESP.restart();

@@ -73,25 +73,8 @@ export async function searchForStick() {
     if (!cancelled) set({ step: 'stick_found', ssid: `${SETUP_AP_PREFIX}4F2A` });
     return;
   }
-  
-  const until = Date.now() + 90_000;
-  while (!cancelled && Date.now() < until) {
-    try {
-      const { networks } = await AissNative.scanForSetupNetworks({ prefix: SETUP_AP_PREFIX });
-      diag(`scan: ${networks.length} setup network(s)`);
-      if (networks.length) {
-        const best = [...networks].sort((a, b) => b.rssi - a.rssi)[0];
-        set({ step: 'stick_found', ssid: best.ssid });
-        return;
-      }
-    } catch (e) {
-      diag(`scan failed: ${(e as Error).message}`);
-      set({ step: 'error', error: 'Wi-Fi scanning is unavailable. Allow "Nearby devices" / location permission and turn Wi-Fi on.' });
-      return;
-    }
-    await wait(3000);
-  }
-  if (!cancelled) set({ step: 'error', error: 'No stick in setup mode found. Hold the stick button for 5 seconds until it buzzes twice, then try again.' });
+  // In Dashcam Protocol, we don't scan for dynamic SSIDs. We just assume SmartStick_AI is nearby.
+  if (!cancelled) set({ step: 'stick_found', ssid: 'SmartStick_AI' });
 }
 
 export async function provisionStick(input: { setupCode: string; hotspotSsid: string; hotspotPassword: string }) {
@@ -118,22 +101,16 @@ export async function provisionStick(input: { setupCode: string; hotspotSsid: st
 
     set({ step: 'configuring_network' });
     const keyB64 = toB64(randomBytes(32));
-    const packet: ProvisioningPacket = { v: 1, ssid: input.hotspotSsid.trim(), password: input.hotspotPassword, deviceKey: keyB64, ownerHash: await sha256Hex(uid), nonce: toHex(randomBytes(12)) };
+    const packet: ProvisioningPacket = { v: 1, ssid: "dashcam", password: "none", deviceKey: keyB64, ownerHash: await sha256Hex(uid), nonce: toHex(randomBytes(12)) };
     const result = await setupJson<ProvisioningResult>('POST', DEVICE_API.provision, packet);
     check();
     if (!result.ok) throw new Error(`The stick refused the configuration (${result.error ?? 'unknown'}).`);
     
-    // Crucial: Release the temporary Wi-Fi network immediately so phone restores internet
-    await AissNative.releaseSetupNetwork();
-
-    set({ step: 'waiting_for_stick_network' });
-    diag('waiting for the stick on the hotspot (make sure the hotspot is ON, 2.4 GHz)');
-    const ip = await waitForAnnouncement({ deviceId: info.deviceId, keyB64 }, 120_000);
-    check();
-    diag(`announcement from ${ip}`);
+    // DASHCAM PROTOCOL: DO NOT RELEASE SETUP NETWORK!
+    // The app stays connected to the Stick's AP forever!
+    const ip = "192.168.4.1";
 
     set({ step: 'verifying_stick' });
-    // Add brief wait for TCP stack
     await wait(1000);
     
     set({ step: 'authenticating' });

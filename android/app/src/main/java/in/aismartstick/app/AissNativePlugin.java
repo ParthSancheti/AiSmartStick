@@ -16,6 +16,7 @@ import android.net.wifi.WifiManager;
 import android.net.wifi.WifiNetworkSpecifier;
 import android.os.Build;
 import android.provider.Settings;
+import android.util.Base64;
 import android.telephony.SmsManager;
 
 import androidx.security.crypto.EncryptedSharedPreferences;
@@ -218,6 +219,53 @@ public class AissNativePlugin extends Plugin {
                 call.resolve(r);
             } catch (Exception e) {
                 call.reject("Setup request failed: " + e.getMessage());
+            } finally {
+                if (c != null) c.disconnect();
+            }
+        });
+    }
+
+    @PluginMethod
+    public void requestBinary(PluginCall call) {
+        final Network net = setupNetwork;
+        if (net == null) {
+            call.reject("Not connected to the stick setup network");
+            return;
+        }
+        final String path = call.getString("path", "/");
+        final int timeout = call.getInt("timeoutMs", 8000);
+        io.execute(() -> {
+            HttpURLConnection c = null;
+            try {
+                c = (HttpURLConnection) net.openConnection(new URL(SETUP_HOST + path));
+                c.setRequestMethod("GET");
+                c.setConnectTimeout(timeout);
+                c.setReadTimeout(timeout);
+                
+                int status = c.getResponseCode();
+                if (status >= 400) {
+                    JSObject r = new JSObject();
+                    r.put("status", status);
+                    r.put("body", "");
+                    call.resolve(r);
+                    return;
+                }
+                
+                InputStream is = c.getInputStream();
+                ByteArrayOutputStream out = new ByteArrayOutputStream();
+                if (is != null) {
+                    byte[] buf = new byte[16384];
+                    int n;
+                    while ((n = is.read(buf)) > 0) out.write(buf, 0, n);
+                }
+                String base64Image = Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP);
+                
+                JSObject r = new JSObject();
+                r.put("status", status);
+                r.put("body", base64Image);
+                call.resolve(r);
+            } catch (Exception e) {
+                call.reject("requestBinary failed: " + e.getMessage());
             } finally {
                 if (c != null) c.disconnect();
             }

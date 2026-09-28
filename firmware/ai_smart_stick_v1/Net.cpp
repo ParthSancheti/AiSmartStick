@@ -38,12 +38,9 @@ void startStation() {
 void startSetupAp() {
   WiFi.disconnect(true);
   WiFi.mode(WIFI_AP);
-  char ssid[32];
-  const char *id = identity::deviceId();
-  snprintf(ssid, sizeof ssid, "AISmartStick-%s", id + strlen(id) - 4);
-  WiFi.softAP(ssid, identity::setupCode());   // WPA2; password = setup code on the label
+  WiFi.softAP("SmartStick_AI", "Stick@1234");
   st = State::SetupAp;
-  Serial.printf("[setup] AP %s at %s (PASSWORD: %s)\n", ssid, WiFi.softAPIP().toString().c_str(), identity::setupCode());
+  Serial.printf("[dashcam] AP SmartStick_AI at %s (PASSWORD: Stick@1234)\n", WiFi.softAPIP().toString().c_str());
 }
 
 void tick() {
