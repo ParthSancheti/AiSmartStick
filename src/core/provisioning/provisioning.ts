@@ -73,7 +73,28 @@ export async function searchForStick() {
     if (!cancelled) set({ step: 'stick_found', ssid: `${SETUP_AP_PREFIX}4F2A` });
     return;
   }
-  // In Dashcam Protocol, we don't scan for dynamic SSIDs. We just assume SmartStick_AI is nearby.
+
+  // Request permissions upfront
+  try {
+    diag('requesting permissions...');
+    await AissNative.requestPermissions({ permissions: ['location', 'nearbyWifi'] });
+  } catch (e) {
+    diag(`permissions request failed: ${(e as Error).message}`);
+  }
+
+  // Dashcam Protocol: See if we are ALREADY connected or can connect instantly
+  try {
+    diag('checking if already connected to SmartStick_AI...');
+    const { connected } = await AissNative.connectToSetupNetwork({ ssid: 'SmartStick_AI', passphrase: 'Stick@1234', timeoutMs: 3000 });
+    if (connected && !cancelled) {
+      diag('already connected! Skipping to dashboard.');
+      set({ step: 'stick_found', ssid: 'SmartStick_AI' });
+      return provisionStick({ setupCode: '', hotspotSsid: '', hotspotPassword: '' });
+    }
+  } catch (e) {
+    diag(`auto-connect check failed: ${(e as Error).message}`);
+  }
+  
   if (!cancelled) set({ step: 'stick_found', ssid: 'SmartStick_AI' });
 }
 
@@ -87,10 +108,20 @@ export async function provisionStick(input: { setupCode: string; hotspotSsid: st
   
   try {
     set({ step: 'connecting_to_stick', error: null });
-    diag(`joining ${ssid}`);
-    const { connected } = await AissNative.connectToSetupNetwork({ ssid, passphrase: input.setupCode.trim(), timeoutMs: 30000 });
+    diag(`joining SmartStick_AI`);
+    
+    // Listen for the native event so the UI updates instantly
+    const handle = await AissNative.addListener('WIFI_STATE', (ev) => {
+       if (ev.event === 'WIFI_CONNECTED') {
+          set({ step: 'stick_connected' });
+       }
+    });
+
+    const { connected } = await AissNative.connectToSetupNetwork({ ssid: 'SmartStick_AI', passphrase: 'Stick@1234', timeoutMs: 15000 });
     check();
-    if (!connected) throw new Error('Could not join the stick’s setup network. Check the setup code on the stick label.');
+    handle.remove();
+    
+    if (!connected) throw new Error('Connection timed out. Ensure the SmartStick is turned on and try again.');
     set({ step: 'stick_connected' });
 
     set({ step: 'reading_device_info' });

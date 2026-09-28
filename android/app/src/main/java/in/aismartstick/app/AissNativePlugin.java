@@ -128,20 +128,38 @@ public class AissNativePlugin extends Plugin {
 
     @PluginMethod
     public void connectToSetupNetwork(PluginCall call) {
-        String ssid = call.getString("ssid");
-        String pass = call.getString("passphrase");
         int timeout = call.getInt("timeoutMs", 30000);
-        if (ssid == null || pass == null || pass.length() < 8) {
-            call.reject("ssid and an 8+ character passphrase are required");
-            return;
-        }
         if (Build.VERSION.SDK_INT < 29) {
-            call.reject("Stick setup needs Android 10 or newer");
+            call.reject("SmartStick needs Android 10 or newer");
             return;
         }
+
+        if (getPermissionState("location") != PermissionState.GRANTED) {
+            call.reject("Location permission is required to connect to the SmartStick.");
+            return;
+        }
+        if (Build.VERSION.SDK_INT >= 33 && getPermissionState("nearbyWifi") != PermissionState.GRANTED) {
+            call.reject("Nearby devices permission is required to connect to the SmartStick.");
+            return;
+        }
+
+        WifiManager wm = (WifiManager) getContext().getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+        if (wm != null && !wm.isWifiEnabled()) {
+            Intent panelIntent = new Intent(Settings.Panel.ACTION_WIFI);
+            getContext().startActivity(panelIntent);
+            call.reject("Wi-Fi is off. Please turn it on and try again.");
+            return;
+        }
+
         releaseSetup();
         ConnectivityManager cm = (ConnectivityManager) getContext().getSystemService(Context.CONNECTIVITY_SERVICE);
-        WifiNetworkSpecifier spec = new WifiNetworkSpecifier.Builder().setSsid(ssid).setWpa2Passphrase(pass).build();
+        
+        // Dashcam Protocol: Hardcoded AP
+        WifiNetworkSpecifier spec = new WifiNetworkSpecifier.Builder()
+            .setSsid("SmartStick_AI")
+            .setWpa2Passphrase("Stick@1234")
+            .build();
+            
         NetworkRequest req = new NetworkRequest.Builder()
             .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
             .removeCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
@@ -152,6 +170,12 @@ public class AissNativePlugin extends Plugin {
             @Override
             public void onAvailable(Network network) {
                 setupNetwork = network;
+                
+                JSObject event = new JSObject();
+                event.put("event", "WIFI_CONNECTED");
+                event.put("ip", "192.168.4.1");
+                notifyListeners("WIFI_STATE", event);
+                
                 if (!done[0]) {
                     done[0] = true;
                     JSObject r = new JSObject();

@@ -27,6 +27,7 @@ export interface AissNativePlugin {
   startDiscovery(opts: { port: number }): Promise<void>;
   stopDiscovery(): Promise<void>;
   addListener(event: 'announcement', cb: (a: { json: string; fromIp: string }) => void): Promise<PluginListenerHandle>;
+  addListener(event: 'WIFI_STATE', cb: (a: { event: string; ip: string }) => void): Promise<PluginListenerHandle>;
   openHotspotSettings(): Promise<void>;
   openBluetoothSettings(): Promise<void>;
   /** Android Keystore-backed storage (EncryptedSharedPreferences) for the device key. */
