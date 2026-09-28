@@ -147,7 +147,10 @@ public class AissNativePlugin extends Plugin {
         if (wm != null && !wm.isWifiEnabled()) {
             Intent panelIntent = new Intent(Settings.Panel.ACTION_WIFI);
             getContext().startActivity(panelIntent);
-            call.reject("Wi-Fi is off. Please turn it on and try again.");
+            JSObject r = new JSObject();
+            r.put("connected", false);
+            r.put("reason", "WIFI_DISABLED");
+            call.resolve(r);
             return;
         }
 

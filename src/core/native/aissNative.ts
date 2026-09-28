@@ -18,7 +18,7 @@ export interface AissNativePlugin {
   /** Wi-Fi scan for the stick's setup AP (needs NEARBY_WIFI_DEVICES / location permission). */
   scanForSetupNetworks(opts: { prefix: string }): Promise<{ networks: SetupNetwork[] }>;
   /** Android 10+: WifiNetworkSpecifier request; shows one system "Connect to device?" sheet. */
-  connectToSetupNetwork(opts: { ssid: string; passphrase: string; timeoutMs?: number }): Promise<{ connected: boolean }>;
+  connectToSetupNetwork(opts: { ssid: string; passphrase: string; timeoutMs?: number }): Promise<{ connected: boolean; reason?: string }>;
   /** HTTP over the setup network specifically (process stays on mobile data for everything else). */
   setupRequest(opts: { method: 'GET' | 'POST'; path: string; body?: string; timeoutMs?: number }): Promise<{ status: number; body: string }>;
   requestBinary(opts: { path: string; timeoutMs?: number }): Promise<{ status: number; body: string }>;

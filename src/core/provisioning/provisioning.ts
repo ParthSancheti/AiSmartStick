@@ -1,11 +1,9 @@
 import { create } from 'zustand';
-import { DEVICE_API, PROTOCOL_VERSION, SETUP_AP_PREFIX, type DeviceInfoPacket, type ProvisioningPacket, type ProvisioningResult, type DiscoveryAnnouncement } from '../../../shared/deviceProtocol';
+import { DEVICE_API, PROTOCOL_VERSION, SETUP_AP_PREFIX, type DeviceInfoPacket, type ProvisioningPacket, type ProvisioningResult } from '../../../shared/deviceProtocol';
 import { AissNative } from '../native/aissNative';
 import { randomBytes, sha256Hex, toB64, toHex, hmacHex, safeEqual } from '../device/crypto';
 import { savePairedDevice, type PairedDevice } from '../device/pairedDevice';
 import { attachPairedDevice } from '../device/realDevice';
-import { verifyAnnouncement } from '../device/discovery';
-import { DISCOVERY_UDP_PORT } from '../../../shared/deviceProtocol';
 import { currentUid } from '../auth/authStore';
 import { isDemo } from '../runtime/mode';
 import { getMock } from '../device/bridge';
@@ -106,6 +104,12 @@ export async function provisionStick(input: { setupCode: string; hotspotSsid: st
   const uid = currentUid();
   if (!uid) return set({ step: 'error', error: 'Sign in first.' });
   
+  // Overall 20-second timeout for the entire provision flow
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => {
+    controller.abort(new Error('Connection process took too long. Please try again.'));
+  }, 20000);
+
   try {
     set({ step: 'connecting_to_stick', error: null });
     diag(`joining SmartStick_AI`);
@@ -117,11 +121,17 @@ export async function provisionStick(input: { setupCode: string; hotspotSsid: st
        }
     });
 
-    const { connected } = await AissNative.connectToSetupNetwork({ ssid: 'SmartStick_AI', passphrase: 'Stick@1234', timeoutMs: 15000 });
+    const { connected, reason } = await AissNative.connectToSetupNetwork({ ssid: 'SmartStick_AI', passphrase: 'Stick@1234', timeoutMs: 15000 });
     check();
+    if (controller.signal.aborted) throw controller.signal.reason;
     handle.remove();
     
-    if (!connected) throw new Error('Connection timed out. Ensure the SmartStick is turned on and try again.');
+    if (!connected) {
+      if (reason === 'WIFI_DISABLED') {
+        throw new Error('Please turn on your Wi-Fi and try again.');
+      }
+      throw new Error('Connection failed or timed out. Ensure the SmartStick is turned on and try again.');
+    }
     set({ step: 'stick_connected' });
 
     set({ step: 'reading_device_info' });
@@ -135,6 +145,7 @@ export async function provisionStick(input: { setupCode: string; hotspotSsid: st
     const packet: ProvisioningPacket = { v: 1, ssid: "dashcam", password: "none", deviceKey: keyB64, ownerHash: await sha256Hex(uid), nonce: toHex(randomBytes(12)) };
     const result = await setupJson<ProvisioningResult>('POST', DEVICE_API.provision, packet);
     check();
+    if (controller.signal.aborted) throw controller.signal.reason;
     if (!result.ok) throw new Error(`The stick refused the configuration (${result.error ?? 'unknown'}).`);
     
     // DASHCAM PROTOCOL: DO NOT RELEASE SETUP NETWORK!
@@ -147,6 +158,7 @@ export async function provisionStick(input: { setupCode: string; hotspotSsid: st
     set({ step: 'authenticating' });
     await verifyProof(ip, info.deviceId, keyB64);
     check();
+    if (controller.signal.aborted) throw controller.signal.reason;
 
     const dev: PairedDevice = { deviceId: info.deviceId, model: info.model, firmware: info.firmware, protocolVersion: info.protocolVersion, keyB64, host: ip, ownerUid: uid, pairedAt: Date.now() };
     await savePairedDevice(dev);
@@ -160,8 +172,10 @@ export async function provisionStick(input: { setupCode: string; hotspotSsid: st
     await attachPairedDevice(dev);
     logEvent({ kind: 'device', severity: 'success', title: 'AI SmartStick paired', detail: `${dev.deviceId}, firmware ${dev.firmware}` });
     
+    clearTimeout(timeoutId);
     set({ step: 'completed' });
   } catch (e) {
+    clearTimeout(timeoutId);
     await AissNative.releaseSetupNetwork().catch(() => undefined);
     if (e instanceof Abort) return;
     diag(`error: ${(e as Error).message}`);
@@ -175,32 +189,12 @@ async function setupJson<T>(method: "GET" | "POST", path: string, body?: unknown
   return JSON.parse(r.body) as T;
 }
 
-async function waitForAnnouncement(dev: { deviceId: string; keyB64: string }, timeoutMs: number): Promise<string> {
-  await AissNative.startDiscovery({ port: DISCOVERY_UDP_PORT });
-  return new Promise<string>((resolve, reject) => {
-    let handle: { remove: () => Promise<void> } | null = null;
-    const done = (fn: () => void) => {
-      clearTimeout(timer);
-      clearInterval(poll);
-      void handle?.remove();
-      fn();
-    };
-    const timer = setTimeout(() => done(() => reject(new Error('The stick did not appear on your hotspot. Is the hotspot on, 2.4 GHz, with the name and password you typed?'))), timeoutMs);
-    const poll = setInterval(() => cancelled && done(() => reject(new Abort())), 500);
-    void AissNative.addListener('announcement', async ({ json, fromIp }) => {
-      try {
-        const a = JSON.parse(json) as DiscoveryAnnouncement;
-        if (await verifyAnnouncement(a, dev)) done(() => resolve(a.ip || fromIp));
-      } catch {
-      }
-    }).then((h) => (handle = h));
-  });
-}
+
 
 async function verifyProof(ip: string, deviceId: string, keyB64: string) {
   const challenge = toHex(randomBytes(16));
-  const res = await fetch(`http://${ip}${DEVICE_API.device}?challenge=${challenge}`, { signal: AbortSignal.timeout(4000) });
-  const info = (await res.json()) as DeviceInfoPacket;
+  // DASHCAM PROTOCOL FIX: MUST use Native setupRequest to route over Wi-Fi interface!
+  const info = await setupJson<DeviceInfoPacket>('GET', `${DEVICE_API.device}?challenge=${challenge}`);
   const expect = await hmacHex(keyB64, challenge + deviceId);
   if (info.deviceId !== deviceId || !info.proof || !safeEqual(info.proof, expect)) throw new Error('The stick could not prove it received the key. Reset it (hold the button while switching it on), then set up again.');
 }

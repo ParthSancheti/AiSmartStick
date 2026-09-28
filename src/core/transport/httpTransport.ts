@@ -1,4 +1,4 @@
-import { AUTH_HEADERS, CAPTURE_HEADERS, DEVICE_API, PROTOCOL_VERSION, type CommandAck, type CommandEnvelope, type DeviceCommand, type DeviceInfoPacket, type TelemetryPacket } from '../../../shared/deviceProtocol';
+import { AUTH_HEADERS, DEVICE_API, PROTOCOL_VERSION, type CommandAck, type CommandEnvelope, type DeviceCommand, type DeviceInfoPacket, type TelemetryPacket } from '../../../shared/deviceProtocol';
 import { canonicalRequest, hmacHex, randomBytes, safeEqual, sha256Hex, toHex } from '../device/crypto';
 import type { PairedDevice } from '../device/pairedDevice';
 import { log } from '../log';

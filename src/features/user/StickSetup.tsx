@@ -1,13 +1,11 @@
 import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Check, ChevronLeft, Loader2, RefreshCw, Wifi, Settings2 } from 'lucide-react';
+import { Check, ChevronLeft, Loader2, RefreshCw, Wifi } from 'lucide-react';
 import { StickVisual } from '../../components/StickVisual';
 import { Glass, GlassButton } from '../../components/glass';
 import { Atmosphere } from '../../components/Atmosphere';
 import { AppScreen, SafeAreaContent, FloatingHeader } from '../../components/Layout';
 import { useProvisioning, searchForStick, provisionStick, cancelProvisioning } from '../../core/provisioning/provisioning';
-import { AissNative } from '../../core/native/aissNative';
-import { useRuntime } from '../../core/runtime/mode';
 
 const STEPS = [
   { id: 'searching', label: 'Searching for SmartStick', desc: 'Finding the setup network...' },
@@ -24,7 +22,6 @@ const STEPS = [
 
 export function StickSetup({ onDone, onCancel }: { onDone: () => void; onCancel: () => void }) {
   const p = useProvisioning();
-  const demo = useRuntime((s) => s.mode) === 'demo';
   const [showDiag, setShowDiag] = useState(false);
 
   useEffect(() => {
@@ -145,11 +142,4 @@ export function StickSetup({ onDone, onCancel }: { onDone: () => void; onCancel:
   );
 }
 
-function Field({ label, value, onChange, type = 'text' }: { label: string; value: string; onChange: (v: string) => void; type?: string }) {
-  return (
-    <label className="glass block rounded-[20px] border border-glass-border p-4">
-      <span className="mb-1.5 block text-[13px] font-bold uppercase text-ink-3">{label}</span>
-      <input type={type} value={value} onChange={(e) => onChange(e.target.value)} className="w-full bg-transparent text-[18px] font-semibold text-ink outline-none" />
-    </label>
-  );
-}
+
