@@ -43,7 +43,7 @@ void startSetupAp() {
   snprintf(ssid, sizeof ssid, "AISmartStick-%s", id + strlen(id) - 4);
   WiFi.softAP(ssid, identity::setupCode());   // WPA2; password = setup code on the label
   st = State::SetupAp;
-  Serial.printf("[setup] AP %s at %s\n", ssid, WiFi.softAPIP().toString().c_str());
+  Serial.printf("[setup] AP %s at %s (PASSWORD: %s)\n", ssid, WiFi.softAPIP().toString().c_str(), identity::setupCode());
 }
 
 void tick() {

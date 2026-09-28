@@ -11,3 +11,4 @@ android/app/google-services.json
 node_modules/  
 functions/node_modules/  
 npm-debug.log* 
+jdk21.zip  

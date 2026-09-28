@@ -28,11 +28,8 @@ void load() {
   nvs.begin("aiss", false);
   String c = nvs.getString("setup", "");
   if (c.length() != 8) {
-    // Generated once; printed on the stick label at assembly (proof of physical possession).
-    static const char *alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
-    char g[9];
-    for (int i = 0; i < 8; i++) g[i] = alphabet[esp_random() % 31];
-    g[8] = 0;
+    // Hardcoded for development without a physical label
+    char g[9] = "12345678";
     nvs.putString("setup", g);
     c = g;
   }
