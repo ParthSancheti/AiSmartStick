@@ -27,7 +27,10 @@ export function fuseSensors(tracks: ObjectTrack[], ctx: SensorContext, nowMs: nu
     for (const track of tracks) {
       if (track.state !== 'CONFIRMED') continue;
       const side = getSpatialSide(track.currentBox);
-      if (side === 'CENTER') {
+      // The beam only reaches a few metres: a FAR (or unknown-depth) box cannot be what it measured.
+      const depth = getSpatialDepth(track.currentBox);
+      const plausible = (depth === 'NEAR' && ctx.ultrasonic.value <= 250) || (depth === 'MID' && ctx.ultrasonic.value <= 450);
+      if (side === 'CENTER' && plausible) {
         const area = track.currentBox.w * track.currentBox.h;
         if (area > maxArea) {
           maxArea = area;

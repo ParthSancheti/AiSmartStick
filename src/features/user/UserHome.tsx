@@ -18,6 +18,7 @@ import { useActivity } from '../../core/store/activity';
 import { EventRow } from '../guardian/parts';
 import { StickVisual } from '../../components/StickVisual';
 import { Atmosphere } from '../../components/Atmosphere';
+import { LiveVisionPanel } from '../../components/LiveVisionPanel';
 import { AppScreen, SafeAreaContent, FloatingHeader } from '../../components/Layout';
 import { AiOrb, orbPhaseFor } from '../../components/AiOrb';
 import { useSafety } from '../../core/store/safety';
@@ -496,20 +497,8 @@ function StickDetailsSubpage({ open, onClose }: { open: boolean; onClose: () => 
             </div>
 
             <div className="flex flex-col gap-3">
-              <h3 className="text-[18px] font-bold text-ink px-1">Camera Stream</h3>
-              <div className="glass rounded-[24px] overflow-hidden border border-glass-border aspect-[4/3] relative flex items-center justify-center bg-black/5">
-                {d.link === 'connected' || d.link === 'degraded' ? (
-                  <img 
-                    src="http://192.168.4.1:81/stream" 
-                    className="w-full h-full object-cover" 
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).style.display = 'none';
-                    }}
-                  />
-                ) : (
-                  <span className="text-ink-3 font-semibold">Camera Disconnected</span>
-                )}
-              </div>
+              <h3 className="text-[18px] font-bold text-ink px-1">Camera &amp; detection</h3>
+              <LiveVisionPanel />
               <h3 className="text-[18px] font-bold text-ink px-1 mt-2">Sensors</h3>
               <div className="glass rounded-[24px] overflow-hidden border border-glass-border [&>*+*]:border-t [&>*+*]:border-line">
                 {row('Link', `${linkLabel(d.link).text}${d.linkDetail ? ` · ${d.linkDetail}` : ''}`)}

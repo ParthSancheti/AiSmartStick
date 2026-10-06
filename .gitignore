@@ -12,3 +12,6 @@ node_modules/
 functions/node_modules/  
 npm-debug.log* 
 jdk21.zip  
+
+# Generated from node_modules/@mediapipe/tasks-vision by scripts/sync-vision-assets.mjs
+public/mediapipe/wasm/

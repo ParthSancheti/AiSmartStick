@@ -1,90 +1,76 @@
-import { ObjectDetector } from '@mediapipe/tasks-vision';
+import { FilesetResolver, ObjectDetector } from '@mediapipe/tasks-vision';
 
+/**
+ * EfficientDet-Lite0 (MediaPipe Tasks Vision, CPU) off the main thread.
+ *
+ * WASM comes from /mediapipe/wasm, copied from the installed @mediapipe/tasks-vision by
+ * scripts/sync-vision-assets.mjs so the glue, the binary and this bundled JS API always match.
+ * Release builds run this as a classic worker (MediaPipe loads its glue with importScripts);
+ * the Vite dev server runs module workers, which need the ES-module glue instead.
+ */
 let detector: ObjectDetector | null = null;
-let isReady = false;
+
+function isModuleWorker() {
+  try {
+    // A classic worker accepts an empty importScripts(); a module worker throws TypeError.
+    (self as unknown as { importScripts: (...u: string[]) => void }).importScripts();
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+const post = (m: unknown) => (self as unknown as Worker).postMessage(m);
 
 self.onmessage = async (e: MessageEvent) => {
-  const { type, payload, msgId } = e.data;
-
+  const { type, payload, msgId } = e.data as { type: string; payload: any; msgId: number };
   try {
     if (type === 'INIT') {
-      const { modelPath, scoreThreshold, maxResults } = payload;
-      
-      // Use local wasm files to avoid CDN dependency.
-      // Vite dev server often breaks dynamic imports of Emscripten WASM wrappers by appending ?import.
-      // To bypass Vite's interception, we manually fetch the JS wrapper, convert it to a valid ES module,
-      // and pass it as a Blob URL to MediaPipe!
-      const loaderRes = await fetch('/mediapipe/wasm/vision_wasm_internal.js');
-      const loaderText = await loaderRes.text();
-      // Ensure it exports ModuleFactory so dynamic import() succeeds natively
-      const loaderEsText = loaderText + '\nexport default ModuleFactory;';
-      const loaderBlob = new Blob([loaderEsText], { type: 'application/javascript' });
-      const loaderUrl = URL.createObjectURL(loaderBlob);
-
-      const vision = {
-        wasmLoaderPath: loaderUrl,
-        wasmBinaryPath: '/mediapipe/wasm/vision_wasm_internal.wasm'
-      };
-      
-      detector = await ObjectDetector.createFromOptions(vision, {
-        baseOptions: {
-          modelAssetPath: modelPath,
-          delegate: 'CPU' // GPU delegate is often flaky in WebWorkers/Android WebView
-        },
+      const { modelPath, wasmBase, scoreThreshold, maxResults } = payload as { modelPath: string; wasmBase: string; scoreThreshold: number; maxResults: number };
+      const t0 = performance.now();
+      const fileset = await FilesetResolver.forVisionTasks(wasmBase, isModuleWorker());
+      detector?.close();
+      detector = await ObjectDetector.createFromOptions(fileset, {
+        baseOptions: { modelAssetPath: modelPath, delegate: 'CPU' }, // GPU delegate is unreliable in Android WebView workers
         runningMode: 'IMAGE',
         scoreThreshold,
         maxResults,
       });
-      
-      isReady = true;
-      self.postMessage({ type: 'INIT_DONE', msgId });
+      post({ type: 'INIT_DONE', msgId, payload: { initMs: performance.now() - t0, loader: fileset.wasmLoaderPath } });
+      return;
     }
-    else if (type === 'DETECT') {
-      if (!isReady || !detector) {
+    if (type === 'DETECT') {
+      const bmp = payload.bmp as ImageBitmap;
+      if (!detector) {
+        bmp.close();
         throw new Error('Detector not initialized');
       }
-      
-      const bmp: ImageBitmap = payload.bmp;
       const t0 = performance.now();
       const results = detector.detect(bmp);
-      const t1 = performance.now();
-      
-      // We must map mediapipe results to our standard ObjectObservation array format
-      // Note: Mediapipe bounding boxes are relative to image dimensions OR absolute pixels depending on runningMode 'IMAGE'.
-      // Usually they are absolute pixels. Let's normalize them to 0..1
-      
-      const width = bmp.width;
-      const height = bmp.height;
-      
-      const observations = (results.detections || []).map(d => {
-        const cat = d.categories[0];
-        const box = d.boundingBox!;
-        // normalize
-        const nx = box.originX / width;
-        const ny = box.originY / height;
-        const nw = box.width / width;
-        const nh = box.height / height;
-        
-        return {
-          label: cat.categoryName,
-          confidence: cat.score,
-          box: { x: nx, y: ny, w: nw, h: nh },
-          centerX: nx + nw / 2,
-          centerY: ny + nh / 2,
-          bottomCenterX: nx + nw / 2,
-          bottomCenterY: ny + nh
-        };
-      });
-      
-      bmp.close(); // free memory
-      
-      self.postMessage({ 
-        type: 'DETECT_DONE', 
-        msgId, 
-        payload: { observations, latencyMs: t1 - t0 } 
-      });
+      const latencyMs = performance.now() - t0;
+      const { width, height } = bmp;
+      bmp.close();
+      // MediaPipe IMAGE mode returns pixel boxes; the rest of the app works in 0..1.
+      const observations = (results.detections ?? [])
+        .filter((d) => d.boundingBox && d.categories[0])
+        .map((d) => {
+          const cat = d.categories[0];
+          const b = d.boundingBox!;
+          const x = Math.max(0, b.originX / width);
+          const y = Math.max(0, b.originY / height);
+          const w = Math.min(1 - x, b.width / width);
+          const h = Math.min(1 - y, b.height / height);
+          return { label: cat.categoryName, confidence: cat.score, box: { x, y, w, h }, centerX: x + w / 2, centerY: y + h / 2, bottomCenterX: x + w / 2, bottomCenterY: y + h };
+        });
+      post({ type: 'DETECT_DONE', msgId, payload: { observations, latencyMs, width, height } });
+      return;
     }
-  } catch (err: any) {
-    self.postMessage({ type: 'ERROR', msgId, error: err.message });
+    if (type === 'CLOSE') {
+      detector?.close();
+      detector = null;
+      post({ type: 'CLOSED', msgId });
+    }
+  } catch (err) {
+    post({ type: 'ERROR', msgId, error: (err as Error)?.message ?? String(err) });
   }
 };

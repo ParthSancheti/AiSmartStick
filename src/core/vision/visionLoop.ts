@@ -3,101 +3,169 @@ import { LocalDetector } from './detector';
 import { ObjectTracker } from './objectTracker';
 import { fuseSensors } from './fusionEngine';
 import { getCurrentSensorContext } from './sensorConditioning';
-import { useVisionDebug } from '../store/visionDebug';
-import type { DetectionSnapshot, ObjectObservation } from './types';
+import { useVisionDebug, type VisionRunState } from '../store/visionDebug';
+import { useDevice, isLinked } from '../store/device';
+import { trace } from '../device/deviceTrace';
+import { log } from '../log';
+import type { DetectionSnapshot } from './types';
 
+/** Upper bound on the stick camera pull rate: ~4 fps leaves room for telemetry on the ESP32's one HTTP task. */
+const MIN_FRAME_INTERVAL_MS = 250;
+/** Model load retries (missing asset, worker crash) back off instead of hammering. */
+const INIT_RETRY_MS = [5_000, 15_000, 60_000];
+
+/**
+ * The one vision loop: stick camera JPEG → EfficientDet-Lite0 (worker) → ObjectTracker →
+ * sensor fusion → DetectionSnapshot. Runs only while the stick is linked; no fake frames, no fake
+ * detections. Its state (waiting / loading / running / error + reason) is published for the UI.
+ */
 export class VisionEngine {
   private pipeline = new FramePipeline();
   private detector = new LocalDetector();
   private tracker = new ObjectTracker();
-  
-  private isRunning = false;
+
+  private enabled = false;
+  private looping = false;
   private loopId: ReturnType<typeof setTimeout> | null = null;
-  
+  private initAttempt = 0;
+  private initTimer: ReturnType<typeof setTimeout> | null = null;
+  private unsubLink: (() => void) | null = null;
+  private consecutiveErrors = 0;
+
   public latestSnapshot: DetectionSnapshot | null = null;
   public onSnapshot: ((s: DetectionSnapshot) => void) | null = null;
-  
-  public async start() {
-    if (this.isRunning) return;
+
+  /** Idempotent. The loop itself starts and pauses with the stick link. */
+  public start() {
+    if (this.enabled) return;
+    this.enabled = true;
+    this.unsubLink = useDevice.subscribe((s, prev) => {
+      if (isLinked(s.link) !== isLinked(prev.link)) this.reconcile();
+    });
+    this.reconcile();
+  }
+
+  public stop() {
+    this.enabled = false;
+    this.unsubLink?.();
+    this.unsubLink = null;
+    this.halt('stopped');
+    if (this.initTimer) clearTimeout(this.initTimer);
+    this.initTimer = null;
+    this.detector.terminate();
+    this.publish({ detectorStatus: this.detector.status });
+  }
+
+  private publish(p: Partial<ReturnType<typeof useVisionDebug.getState>>) {
+    useVisionDebug.setState(p);
+  }
+
+  private setRun(runState: VisionRunState) {
+    if (useVisionDebug.getState().runState !== runState) this.publish({ runState });
+  }
+
+  private halt(state: VisionRunState) {
+    this.looping = false;
+    if (this.loopId) clearTimeout(this.loopId);
+    this.loopId = null;
+    this.setRun(state);
+  }
+
+  private reconcile() {
+    if (!this.enabled) return;
+    if (!isLinked(useDevice.getState().link)) {
+      this.halt('waiting_for_stick');
+      return;
+    }
+    if (this.detector.ready) {
+      if (!this.looping) {
+        this.looping = true;
+        this.consecutiveErrors = 0;
+        this.tracker = new ObjectTracker();
+        this.pipeline.reset();
+        this.setRun('running');
+        void this.loop();
+      }
+      return;
+    }
+    void this.ensureDetector();
+  }
+
+  private async ensureDetector() {
+    if (this.detector.status === 'loading' || this.initTimer) return;
+    this.setRun('loading_model');
+    this.publish({ detectorStatus: 'loading', detectorError: null });
     try {
       await this.detector.init();
+      this.initAttempt = 0;
+      log.info('vision: detector ready', { initMs: this.detector.initMs });
+      this.publish({ detectorStatus: 'ready', detectorError: null, detectorInitTime: this.detector.initMs ?? 0 });
+      this.reconcile();
     } catch (e) {
-      console.error('Detector init failed:', e);
-      // We still run the loop, but it will report unavailable
+      const msg = (e as Error).message;
+      log.error('vision: EfficientDet-Lite0 failed to load', { error: msg });
+      this.publish({ detectorStatus: 'error', detectorError: msg });
+      this.setRun('error');
+      if (!this.enabled) return;
+      const wait = INIT_RETRY_MS[Math.min(this.initAttempt++, INIT_RETRY_MS.length - 1)];
+      this.initTimer = setTimeout(() => {
+        this.initTimer = null;
+        this.reconcile();
+      }, wait);
     }
-    this.isRunning = true;
-    this.loop();
   }
-  
-  public stop() {
-    this.isRunning = false;
-    if (this.loopId) clearTimeout(this.loopId);
-    this.pipeline.reset();
-  }
-  
+
   private async loop() {
-    if (!this.isRunning) return;
-    
+    if (!this.looping) return;
+    const started = performance.now();
+    let wait = MIN_FRAME_INTERVAL_MS;
     try {
-      const frameStartMs = performance.now();
       const frame = await this.pipeline.fetchNextFrame();
+      if (!this.looping) return;
+      const observations = await this.detector.detect(frame.blob, frame.capturedAt);
+      trace('frame_decoded', { bytes: frame.blob.size });
+      trace('detector_ran', { objects: observations.length, ms: Math.round(this.detector.actualInferenceLatencyMs) });
       const nowMs = Date.now();
-      
-      let observations: ObjectObservation[] = [];
-      let detectorFailed = false;
-      
-      try {
-        observations = await this.detector.detect(frame.blob, frame.capturedAt);
-      } catch (e) {
-        detectorFailed = true;
-      }
-      
       const tracks = this.tracker.update(observations, frame.capturedAt);
       const ctx = getCurrentSensorContext();
       const { fusedObjects, pathState } = fuseSensors(tracks, ctx, nowMs);
-      
-      const inferenceEnd = performance.now();
-      const e2eLatency = inferenceEnd - frameStartMs;
-      
-      // Use the actual measured latency from the worker
-      this.pipeline.finishInference(this.detector.actualInferenceLatencyMs, e2eLatency);
-      
-      if (detectorFailed) {
-        // If detector is unavailable, force path state to UNKNOWN
-        pathState.left = 'UNKNOWN';
-        pathState.center = 'UNKNOWN';
-        pathState.right = 'UNKNOWN';
-      }
-      
-      this.latestSnapshot = {
+      const e2e = performance.now() - started;
+      this.pipeline.finishInference(this.detector.actualInferenceLatencyMs, e2e);
+
+      const snapshot: DetectionSnapshot & { metrics: FramePipeline['metrics'] } = {
         timestamp: nowMs,
         frameTimestamp: frame.capturedAt,
-        processingLatencyMs: e2eLatency,
+        processingLatencyMs: e2e,
         sensorContext: ctx,
         objects: observations,
         tracks,
         fusedObjects,
         pathState,
-        overallQuality: detectorFailed ? 'poor' : (ctx.quality === 'good' && pathState.center !== 'UNKNOWN' ? 'good' : 'degraded')
+        overallQuality: ctx.quality === 'good' && pathState.center !== 'UNKNOWN' ? 'good' : 'degraded',
+        metrics: { ...this.pipeline.metrics },
       };
-      
-      if (this.onSnapshot) this.onSnapshot(this.latestSnapshot);
-      // Augment snapshot with pipeline metrics for debug
-      (this.latestSnapshot as any).metrics = this.pipeline.metrics;
-      useVisionDebug.getState().setSnapshot(this.latestSnapshot);
-
-      // Generate debug frame URL (revoke old one to prevent memory leak)
-      const state = useVisionDebug.getState();
-      if (state.debugFrameUrl) URL.revokeObjectURL(state.debugFrameUrl);
-      state.setDebugFrameUrl(URL.createObjectURL(frame.blob));
-      
-      // Yield to event loop, request next frame immediately
-      this.loopId = setTimeout(() => this.loop(), 0);
-      
+      this.latestSnapshot = snapshot;
+      this.consecutiveErrors = 0;
+      this.onSnapshot?.(snapshot);
+      const dbg = useVisionDebug.getState();
+      if (dbg.debugFrameUrl) URL.revokeObjectURL(dbg.debugFrameUrl);
+      this.publish({ latestSnapshot: snapshot, debugFrameUrl: URL.createObjectURL(frame.blob), lastFrameError: null });
     } catch (e) {
-      // e.g. dropped frame or offline. Wait a bit before retrying.
-      this.loopId = setTimeout(() => this.loop(), 100);
+      const msg = (e as Error).message;
+      this.consecutiveErrors++;
+      if (useVisionDebug.getState().lastFrameError !== msg) this.publish({ lastFrameError: msg });
+      if (/Detector (unavailable|stopped)|timed out|crashed/i.test(msg) && !this.detector.ready) {
+        // The worker died: reload the model instead of capturing frames nobody can analyse.
+        this.halt('loading_model');
+        this.reconcile();
+        return;
+      }
+      // camera busy / offline / stale: back off gently (max 2 s), never spin.
+      wait = Math.min(2000, MIN_FRAME_INTERVAL_MS * 2 ** Math.min(this.consecutiveErrors, 3));
     }
+    if (!this.looping) return;
+    const elapsed = performance.now() - started;
+    this.loopId = setTimeout(() => void this.loop(), Math.max(0, wait - elapsed));
   }
 }
 

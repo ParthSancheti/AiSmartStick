@@ -4,6 +4,10 @@ import { useVisionDebug } from '../../core/store/visionDebug';
 export function DetectionDebugView({ onClose }: { onClose: () => void }) {
   const snap = useVisionDebug((s) => s.latestSnapshot);
   const debugFrameUrl = useVisionDebug((s) => s.debugFrameUrl);
+  const runState = useVisionDebug((s) => s.runState);
+  const detectorStatus = useVisionDebug((s) => s.detectorStatus);
+  const detectorError = useVisionDebug((s) => s.detectorError);
+  const frameError = useVisionDebug((s) => s.lastFrameError);
   const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
@@ -18,7 +22,10 @@ export function DetectionDebugView({ onClose }: { onClose: () => void }) {
           <div className="text-sm font-bold text-white bg-red-600 px-2">DETECTION ENGINE DEBUG</div>
           <button onClick={onClose} className="px-3 py-1 bg-gray-800 text-white border border-gray-600 uppercase">Close</button>
         </div>
-        <div>WAITING FOR SNAPSHOT...</div>
+        <div>STATE: {runState.toUpperCase()} · DETECTOR: {detectorStatus.toUpperCase()}</div>
+        {detectorError && <div className="mt-2 text-red-400">DETECTOR ERROR: {detectorError}</div>}
+        {frameError && <div className="mt-2 text-amber-300">LAST FRAME ERROR: {frameError}</div>}
+        <div className="mt-2">WAITING FOR FIRST SNAPSHOT...</div>
       </div>
     );
   }
@@ -53,7 +60,7 @@ export function DetectionDebugView({ onClose }: { onClose: () => void }) {
       <div className="mb-3">
         <div className="text-white border-b border-green-800 mb-1">DETECTOR</div>
         <div className="grid grid-cols-2 gap-x-2">
-          <div>WORKER</div><div>{snap.overallQuality === 'poor' ? 'ERROR' : 'READY'}</div>
+          <div>WORKER</div><div>{detectorStatus.toUpperCase()}{detectorError ? ` · ${detectorError}` : ''}</div>
           <div>MODEL</div><div>EfficientDet-Lite0</div>
           <div>INF LATENCY</div><div>{Math.round(metrics?.inferenceLatency ?? 0)}ms</div>
           <div>INF FPS</div><div>{infFps}</div>

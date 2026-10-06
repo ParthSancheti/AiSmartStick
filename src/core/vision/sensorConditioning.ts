@@ -43,11 +43,11 @@ export interface SensorContext {
 }
 
 // Thresholds for motion classification based on firmware audit
-const THRESHOLDS = {
-  // IMU readings > 500ms old are considered stale (firmware samples at 50Hz / 20ms)
-  IMU_STALE_MS: 500,
-  // Ultrasonic readings > 500ms old are considered stale (firmware samples at 16Hz / 60ms)
-  US_STALE_MS: 500,
+export const THRESHOLDS = {
+  // The phone sees sensors through the telemetry poll (DEFAULT_POLL_MS = 500 ms, httpTransport.ts),
+  // not at the firmware rate (IMU 50 Hz, ultrasonic ~16 Hz). Stale = one missed poll plus margin.
+  IMU_STALE_MS: 1500,
+  US_STALE_MS: 1500,
   
   // Acceleration magnitude (g)
   MAG_STABLE_DEV: 0.25,  // |mag - 1.0| < 0.25g is stable (matches firmware stillBandG)
@@ -72,16 +72,26 @@ class SensorConditioningEngine {
   private imuValid = false;
 
   public ingest(p: TelemetryPacket, receivedAt: number) {
-    if (p.ultrasonic && p.ultrasonic.distanceCm !== null) {
-      const d = p.ultrasonic.distanceCm;
-      // Firmware valid range: 2.0 to 450.0 cm
-      if (Number.isFinite(d) && d >= 2.0 && d <= 450.0) {
-        this.usDistance = d;
+    if (p.ultrasonic) {
+      const u = p.ultrasonic;
+      // Measurement time on the phone's clock: the stick reports how old its last sample was.
+      const at = receivedAt - Math.max(0, Math.min(5000, u.sampleAgeMs ?? 0));
+      if (u.status === 'ok' && u.distanceCm !== null) {
+        const d = u.distanceCm;
+        // Firmware valid range: 2.0 to 450.0 cm
+        this.usValid = Number.isFinite(d) && d >= 2.0 && d <= 450.0;
+        this.usDistance = this.usValid ? d : null;
+        this.usAt = at;
+      } else if (u.status === 'no_echo' || u.status === 'out_of_range') {
+        // A real measurement: nothing inside the sensor's range. Valid, with no distance.
+        this.usDistance = null;
         this.usValid = true;
+        this.usAt = at;
       } else {
         this.usValid = false;
+        this.usDistance = null;
+        this.usAt = at;
       }
-      this.usAt = receivedAt;
     }
 
     if (p.imu && p.imu.ok) {

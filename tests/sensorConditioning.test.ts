@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { sensorConditioning, getCurrentSensorContext } from '../src/core/vision/sensorConditioning';
+import { sensorConditioning, getCurrentSensorContext, THRESHOLDS } from '../src/core/vision/sensorConditioning';
 import type { TelemetryPacket } from '../shared/deviceProtocol';
 
 describe('Sensor Conditioning Engine', () => {
@@ -62,19 +62,29 @@ describe('Sensor Conditioning Engine', () => {
     expect(ctx.ultrasonic.state).toBe('valid');
     expect(ctx.accel.state).toBe('valid');
 
-    // Fast forward just before stale threshold (500ms)
-    vi.setSystemTime(10499);
+    // Fast forward just before the stale threshold
+    vi.setSystemTime(10000 + THRESHOLDS.US_STALE_MS - 1);
     ctx = getCurrentSensorContext();
     expect(ctx.ultrasonic.state).toBe('valid');
     expect(ctx.accel.state).toBe('valid');
 
     // Fast forward past threshold
-    vi.setSystemTime(10501);
+    vi.setSystemTime(10000 + THRESHOLDS.US_STALE_MS + 1);
     ctx = getCurrentSensorContext();
     expect(ctx.ultrasonic.state).toBe('stale');
     expect(ctx.accel.state).toBe('stale');
     // Value is preserved for stale state, but flagged
     expect(ctx.ultrasonic.value).toBe(150);
+  });
+
+  it('treats no_echo as a real "nothing in range" reading, not as missing data', () => {
+    const p = basePacket();
+    p.ultrasonic = { distanceCm: null, echoUs: null, status: 'no_echo', sampleAgeMs: 40 };
+    sensorConditioning.ingest(p, 10000);
+    const ctx = getCurrentSensorContext();
+    expect(ctx.ultrasonic.state).toBe('valid');
+    expect(ctx.ultrasonic.value).toBe(null);
+    expect(ctx.ultrasonic.ageMs).toBe(40);
   });
 
   it('calculates IMU magnitudes and defaults to STABLE motion', () => {

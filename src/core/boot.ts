@@ -44,8 +44,6 @@ export function boot() {
   };
   window.addEventListener('pointerdown', unlock);
   startSafetyRuntime();
-  visionEngine.start();
-  guidanceEngine.start();
   void loadPhoneInfo();
 
   if (useRuntime.getState().mode === 'demo') return bootDemo();
@@ -119,8 +117,6 @@ function bootReal() {
         relUnsub = useRelationship.subscribe((r, prev) => {
           if (r.rel && r.rel.relationshipId !== prev.rel?.relationshipId) startRealFeed(r.rel);
           if (!r.rel && prev.rel) stopFeed();
-      visionEngine.stop();
-      guidanceEngine.stop();
         });
         const cur = useRelationship.getState().rel;
         if (cur) startRealFeed(cur);
@@ -131,6 +127,8 @@ function bootReal() {
       // Signed out: nothing from the previous account may stay on screen.
       if (useAuth.getState().status === 'signedOut' && wasSignedIn) void clearLocalAccountData();
       stopUserSync();
+      visionEngine.stop();
+      guidanceEngine.stop();
       stopCameraResponder();
       void stopBackground();
       stopCommandRelay();
