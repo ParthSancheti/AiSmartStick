@@ -122,6 +122,8 @@ async function pump() {
 
 export function say(text: string, o: { lang: ReplyLang; priority?: Priority; dedupeKey?: string } ): Promise<SayResult> {
   const priority = o.priority ?? 'normal';
+  // Safety and other P0/P1 items always preempt the Live model's voice.
+  if (RANK[priority] >= RANK.high && livePcmPlaying()) interruptPcm();
   return new Promise<SayResult>((resolve) => {
     const item: Item = { id: ++seq, queuedAt: Date.now(), text, lang: o.lang, priority, dedupeKey: o.dedupeKey, resolve, resumable: priority === 'user' || priority === 'vision' || priority === 'normal' };
     if (current && RANK[priority] > RANK[current.priority] && RANK[priority] >= RANK.user) {
@@ -149,6 +151,7 @@ export function say(text: string, o: { lang: ReplyLang; priority?: Priority; ded
 
 /** Stop everything (e.g. user starts talking, or "stop"). */
 export async function stopAll() {
+  interruptPcm();
   const q = queue;
   queue = [];
   q.forEach((i) => i.resolve('interrupted'));
@@ -166,85 +169,90 @@ export async function stopAll() {
 export const audioVolume = volume;
 
 
-// --- NATIVE PCM SUPPORT FOR GEMINI LIVE ---
+// ── Gemini Live voice (24 kHz PCM) ──────────────────────────────────────────
+// The Live model's voice is a stream, not a TTS item, but it is owned here too: one output, one
+// volume, and the same priority rules. P0/P1 announcements (obstacle danger, SOS, disconnects)
+// cut the Live voice immediately; the user pressing the button / "stop" cuts it as well.
 let audioCtx: AudioContext | null = null;
+let liveGain: GainNode | null = null;
 let pcmStartTime = 0;
-let pcmPlaying = false;
-
+const liveSources = new Set<AudioBufferSourceNode>();
+let liveSessionOpen = false;
+const pcmInterruptListeners = new Set<() => void>();
 
 function getAudioCtx() {
   if (!audioCtx) {
-    audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    audioCtx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+    liveGain = audioCtx.createGain();
+    liveGain.connect(audioCtx.destination);
   }
-  if (audioCtx.state === 'suspended') {
-    audioCtx.resume();
-  }
+  if (audioCtx.state === 'suspended') void audioCtx.resume();
   return audioCtx;
+}
+
+/** Live session lifecycle (liveSession.ts). While open, the model's voice is the assistant output. */
+export function setLiveSessionOpen(open: boolean) {
+  liveSessionOpen = open;
+  if (!open) interruptPcm();
+}
+
+/** True while a Live session is open (its voice may start at any moment). */
+export function liveAudioActive() {
+  return liveSessionOpen;
 }
 
 export function playPcmChunk(base64: string, sampleRate = 24000) {
   if (!getSettings().voiceOut) return;
+  // A P0/P1 announcement is speaking: the model must not talk over a safety alert.
+  if (current && RANK[current.priority] >= RANK.high) return;
   const ctx = getAudioCtx();
-  
-  // Convert base64 to Float32Array
-  const binaryString = atob(base64);
-  const len = binaryString.length;
-  // PCM 16-bit
-  const floats = new Float32Array(len / 2);
-  for (let i = 0; i < len / 2; i++) {
-    const lsb = binaryString.charCodeAt(i * 2);
-    const msb = binaryString.charCodeAt(i * 2 + 1);
-    let int16 = (msb << 8) | lsb;
-    if (int16 >= 0x8000) int16 -= 0x10000;
-    floats[i] = int16 / 0x8000;
+  const bin = atob(base64);
+  const n = bin.length >> 1;
+  const floats = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    let v = bin.charCodeAt(i * 2) | (bin.charCodeAt(i * 2 + 1) << 8);
+    if (v >= 0x8000) v -= 0x10000;
+    floats[i] = v / 0x8000;
   }
-  
-  const buffer = ctx.createBuffer(1, floats.length, sampleRate);
+  const buffer = ctx.createBuffer(1, n, sampleRate);
   buffer.getChannelData(0).set(floats);
-  
   const source = ctx.createBufferSource();
   source.buffer = buffer;
-  source.connect(ctx.destination);
-  
-  const now = ctx.currentTime;
-  if (now < pcmStartTime) {
-    source.start(pcmStartTime);
-    pcmStartTime += buffer.duration;
-  } else {
-    source.start(now);
-    pcmStartTime = now + buffer.duration;
-  }
-  pcmPlaying = true;
-  
-  source.onended = () => {
-    if (ctx.currentTime >= pcmStartTime) {
-      pcmPlaying = false;
-    }
-  };
+  liveGain!.gain.value = volume();
+  source.connect(liveGain!);
+  const startAt = Math.max(ctx.currentTime + 0.02, pcmStartTime);
+  source.start(startAt);
+  pcmStartTime = startAt + buffer.duration;
+  liveSources.add(source);
+  source.onended = () => liveSources.delete(source);
 }
 
+/** Stops the Live voice now (barge-in, server "interrupted", safety alert, session end). */
 export function interruptPcm() {
-  
-  pcmStartTime = 0;
-  if (audioCtx) {
-    audioCtx.suspend();
-    setTimeout(() => {
-      if (audioCtx) audioCtx.resume();
-    }, 100);
+  for (const src of liveSources) {
+    try {
+      src.stop();
+    } catch {
+      /* already stopped */
+    }
   }
+  liveSources.clear();
+  pcmStartTime = 0;
+  pcmInterruptListeners.forEach((l) => l());
 }
 
 export function resetPcmStream() {
-  pcmStartTime = 0;
-  
-  pcmPlaying = false;
+  interruptPcm();
 }
 
+/** True while model audio is audible or scheduled. */
 export function livePcmPlaying() {
-  return pcmPlaying;
+  return liveSources.size > 0;
 }
 
 export function onPcmInterrupted(cb: () => void) {
-  // simple mock for now
-  return () => {};
+  pcmInterruptListeners.add(cb);
+  return () => {
+    pcmInterruptListeners.delete(cb);
+  };
 }

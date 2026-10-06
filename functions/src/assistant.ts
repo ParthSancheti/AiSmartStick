@@ -260,21 +260,29 @@ Rules: write "spoken" in ${lang}. State uncertainty honestly and set "uncertain"
 });
 
 export const getLiveToken = onCall({ ...CALLABLE, secrets: [GEMINI_API_KEY] }, async (request) => {
-  requireAuth(request);
+  const uid = requireAuth(request);
+  await quota(uid, 'live', 6, 300);
+  const liveModel = GEMINI_LIVE_MODEL.value();
   const ai = client('v1alpha');
-  let tokenName = '';
+  const now = Date.now();
+  let token = '';
   try {
-    const res = await ai.authTokens.create({ expiresIn: '3600s' } as any);
-    // SDK returns a resource with `name` being the base64 token string
-    tokenName = res.name || (res as any).token || '';
+    // One-use ephemeral token: the long-lived API key never leaves the server. The model is locked
+    // here, so a leaked token cannot be used with any other model.
+    const res = await ai.authTokens.create({
+      config: {
+        uses: 1,
+        expireTime: new Date(now + 30 * 60_000).toISOString(),
+        newSessionExpireTime: new Date(now + 2 * 60_000).toISOString(),
+        liveConnectConstraints: { model: liveModel },
+        httpOptions: { apiVersion: 'v1alpha' },
+      },
+    });
+    token = res.name ?? '';
   } catch (e) {
     console.error('Failed to create ephemeral token:', e);
     throw new HttpsError('internal', 'Could not generate Live session token.');
   }
-
-  return {
-    token: tokenName,
-    liveModel: process.env.GEMINI_LIVE_MODEL || 'gemini-3.8-live',
-    flashModel: process.env.GEMINI_FLASH_MODEL || 'gemini-3.8-flash',
-  };
+  if (!token) throw new HttpsError('internal', 'Could not generate Live session token.');
+  return { token, liveModel, flashModel: GEMINI_FLASH_MODEL.value() };
 });

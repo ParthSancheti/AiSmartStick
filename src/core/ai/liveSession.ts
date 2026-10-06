@@ -1,154 +1,283 @@
-import { loopEarcon } from '../feedback/earcons';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, Modality, type LiveServerMessage, type Session } from '@google/genai';
+import { loopEarcon, earcon } from '../feedback/earcons';
 import { call } from '../backend/api';
 import { TOOLS } from '../../../shared/tools';
 import { toGeminiParameters } from '../../../shared/validate';
 import { useAssistant, pushThread } from '../store/assistant';
+import { useSession } from '../store/session';
+import { useDevice, isLinked } from '../store/device';
+import { useLocation } from '../location/locationService';
+import { useNavView } from '../navigation/navView';
 import { MicStream } from '../voice/micStream';
 import { executeAction } from './executor';
+import { confirmPendingOffer, clearOffer, isAffirmative, isNegative, pendingOffer } from './navIntent';
 import * as audioManager from '../audio/audioManager';
+import { log } from '../log';
 
-let stopConnectingTone = () => {};
+/**
+ * Gemini Live voice session (the stick's AI button in real mode).
+ *
+ *   button → getLiveToken (Firebase callable: signed-in user + App Check, one-use ephemeral token,
+ *   model locked server-side) → ai.live.connect(v1alpha) → mic 16 kHz PCM → model voice 24 kHz PCM →
+ *   audioManager (the one audio owner) → speaker / earbuds.
+ *
+ * Tools run through the same validated executor as the text assistant. Side-effect tools marked
+ * `confirm` need the user's spoken "yes" first; navigation offers are confirmed deterministically
+ * by the app (core/ai/navIntent.ts), not by trusting the model.
+ */
+const CONNECT_TIMEOUT_MS = 15_000;
+/** Close the mic after this long with neither user speech nor model output. */
+const IDLE_CLOSE_MS = 45_000;
+
+const tools = [{ functionDeclarations: TOOLS.map((t) => ({ name: t.name, description: t.description, parameters: toGeminiParameters(t.params) as never })) }];
+
+function systemPrompt() {
+  const s = useSession.getState();
+  const d = useDevice.getState();
+  const nav = useNavView.getState();
+  return `You are the AI SmartStick voice assistant for a blind or low-vision person, speaking through their phone while they walk. Be brief, warm and concrete: one or two short sentences. Reply in the language the user speaks (English or Hindi).
+
+NAVIGATION
+- When the user wants to go somewhere: call find_nearest_place (category) or search_place (name). The result has an "offered" place.
+- Say the offered place's name and distance in metres, then ask "Should I take you there?". Never invent places or distances.
+- When the user says yes, call start_navigation with the offered placeId. Never search again for the same request. If the result says alreadyNavigating, just confirm that directions have started and give the first instruction.
+
+SAFETY
+- Never say it is safe to cross a road, walk ahead, or that a path is clear. Describe what was observed and how certain it is; remind the user to use their cane and hearing.
+- trigger_sos only when the user clearly asks for help or says it is an emergency. cancel_sos only when they say they are okay.
+- Tools marked as needing confirmation return needsConfirmation: ask the user, and call again only after they say yes.
+- A text message counts as sent only if the tool result says "sent".
+- If a tool fails, say briefly what failed and what still works (the stick keeps vibrating for obstacles offline).
+
+CONTEXT: user ${s.person.name || 'unknown'}; stick ${isLinked(d.link) ? 'connected' : 'not connected'}; GPS ${useLocation.getState().fix ? 'available' : 'not available'}; navigating ${nav.active ? `to ${nav.destination?.name}` : 'no'}; local time ${new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}.`;
+}
+
+type StopReason = 'user' | 'idle' | 'error' | 'remote';
+
 export class LiveSession {
-  private ai: GoogleGenAI | null = null;
-  private session: any = null;
+  private session: Session | null = null;
   private mic: MicStream | null = null;
   private active = false;
-  private transcriptBuffer = '';
+  private generation = 0;
+  private outText = '';
+  private inText = '';
+  private idleTimer: ReturnType<typeof setTimeout> | undefined;
+  private stopTone: () => void = () => {};
+  /** Confirm-gated tool waiting for the user's "yes". */
+  private pendingConfirm: { name: string; args: unknown } | null = null;
+  private confirmedByUser = false;
 
-  async start() {
+  get isActive() {
+    return this.active;
+  }
+
+  async start(): Promise<boolean> {
     if (this.active) return true;
     this.active = true;
-    useAssistant.setState({ phase: 'thinking', unavailable: null });
-
+    const gen = ++this.generation;
+    const stale = () => gen !== this.generation;
+    useAssistant.setState({ phase: 'thinking', unavailable: null, heard: '', reply: '' });
+    this.stopTone();
+    this.stopTone = loopEarcon('connecting');
     try {
-      const config = await call('getLiveToken', {}, 15000) as { token: string, liveModel: string };
-      this.ai = new GoogleGenAI({ apiKey: config.token, httpOptions: { apiVersion: 'v1alpha' } });
+      const cfg = await call<Record<string, never>, { token: string; liveModel: string }>('getLiveToken', {}, 15000);
+      if (stale()) return false;
+      if (!cfg?.token || !cfg.liveModel) throw new Error('The server returned no Live token.');
+      const ai = new GoogleGenAI({ apiKey: cfg.token, httpOptions: { apiVersion: 'v1alpha' } });
 
-      const tools = [{ 
-        functionDeclarations: TOOLS.map(t => ({
-          name: t.name,
-          description: t.description,
-          parameters: toGeminiParameters(t.params) as any
-        }))
-      }];
-
-      
-      try { stopConnectingTone = loopEarcon('connecting'); } catch(e){}
-      this.session = await this.ai.live.connect({
-        model: "gemini-3.8-live", // Requested by user
+      let opened: () => void = () => {};
+      let failed: (e: Error) => void = () => {};
+      const openPromise = new Promise<void>((res, rej) => {
+        opened = res;
+        failed = rej;
+      });
+      const connect = ai.live.connect({
+        model: cfg.liveModel,
         config: {
-          generationConfig: {
-            responseModalities: ["AUDIO"] as any
-          },
-          systemInstruction: { parts: [{ text: `You are the AI SmartStick voice assistant. Answer briefly.
-You are in a Live Session. 
-When the user asks for directions or to go somewhere:
-1. Call search_place or find_nearest_place to find the destination.
-2. Tell the user the found destination and distance, and ask "Should I take you there?" or "Should I start navigation?".
-3. Wait for the user to say yes.
-4. If they confirm, call start_navigation. DO NOT search again if you already found it.` }] },
-          tools: tools as any
+          responseModalities: [Modality.AUDIO],
+          systemInstruction: { parts: [{ text: systemPrompt() }] },
+          tools,
+          inputAudioTranscription: {},
+          outputAudioTranscription: {},
         },
         callbacks: {
-          onopen: () => { stopConnectingTone(); },
-          onmessage: async (msg) => {
-            if (msg.serverContent?.interrupted) {
-              audioManager.interruptPcm();
-            }
-
-            const outTranscript = msg.serverContent?.outputTranscription;
-            if (outTranscript && outTranscript.text) {
-              this.transcriptBuffer += outTranscript.text;
-            }
-            if ((outTranscript?.finished || msg.serverContent?.turnComplete) && this.transcriptBuffer.trim()) {
-              const text = this.transcriptBuffer.trim();
-              pushThread('assistant', text);
-              this.transcriptBuffer = '';
-            }
-
-            const parts = msg.serverContent?.modelTurn?.parts;
-            if (parts) {
-              for (const part of parts) {
-                if (part.inlineData?.data) {
-                  if (useAssistant.getState().phase !== 'speaking') {
-                    useAssistant.setState({ phase: 'speaking' });
-                  }
-                  audioManager.playPcmChunk(part.inlineData.data, 24000);
-                }
-              }
-            }
-            const calls = msg.toolCall?.functionCalls;
-            if (calls) {
-              const results = [];
-              for (const c of calls) {
-                const spec = TOOLS.find(t => t.name === c.name);
-                if (spec) {
-                  const callId = c.id || 'unknown';
-                  const callName = c.name || 'unknown';
-                  const out = await executeAction({ id: callId, name: callName as any, type: spec.type, arguments: c.args as any });
-                  results.push({
-                    id: callId,
-                    name: callName,
-                    response: out.ok ? { result: out.data } : { error: out.error }
-                  });
-                }
-              }
-              if (results.length > 0) {
-                if (typeof this.session.sendToolResponse === 'function') {
-                  this.session.sendToolResponse({ functionResponses: results });
-                } else {
-                  this.session.send({ toolResponse: { functionResponses: results } });
-                }
-              }
-            }
+          onopen: () => opened(),
+          onmessage: (msg: LiveServerMessage) => {
+            if (!stale()) void this.onMessage(msg);
           },
-          onerror: (err) => {
-            console.error('LiveSession error:', err);
-            this.stop();
+          onerror: (e: ErrorEvent) => {
+            log.error('live: socket error', { error: e?.message });
+            failed(new Error(e?.message || 'Live connection error'));
+            if (!stale() && this.session) this.stop('error', 'The assistant connection failed.');
           },
-          onclose: () => {
-            this.stop();
-          }
-        }
+          onclose: (e: CloseEvent) => {
+            failed(new Error(e?.reason || `Live connection closed (${e?.code ?? 'no code'})`));
+            if (stale() || !this.active) return;
+            // The server closes with a reason when the model, token or config is rejected.
+            log.warn('live: closed by server', { code: e?.code, reason: e?.reason });
+            this.stop('remote', e?.code && e.code !== 1000 ? `The assistant disconnected${e.reason ? `: ${e.reason}` : ''}.` : undefined);
+          },
+        },
       });
+      const timeout = new Promise<never>((_, rej) => setTimeout(() => rej(new Error('The assistant took too long to connect.')), CONNECT_TIMEOUT_MS));
+      const session = await Promise.race([connect, timeout]);
+      if (stale()) {
+        session.close();
+        return false;
+      }
+      this.session = session;
+      await Promise.race([openPromise, timeout]);
+      this.stopTone();
 
+      audioManager.setLiveSessionOpen(true);
       this.mic = new MicStream();
-      this.mic.onData = (base64) => {
-        if (this.active && this.session) {
-          if (typeof this.session.sendRealtimeInput === 'function') {
-            this.session.sendRealtimeInput([{ mimeType: 'audio/pcm;rate=16000', data: base64 }]);
-          } else {
-            this.session.send({ realtimeInput: { mediaChunks: [{ mimeType: 'audio/pcm;rate=16000', data: base64 }] } });
-          }
-        }
+      this.mic.onData = (data) => {
+        if (this.active && this.session) this.session.sendRealtimeInput({ audio: { data, mimeType: 'audio/pcm;rate=16000' } });
       };
       await this.mic.start();
+      if (stale()) return false;
+      log.info('live: session open', { model: cfg.liveModel, micRate: this.mic.sampleRate });
       useAssistant.setState({ phase: 'listening' });
+      this.bumpIdle();
       return true;
     } catch (e) {
-      console.error(e);
-      stopConnectingTone();
-        useAssistant.setState({ phase: 'error', unavailable: 'Could not connect to Live API' });
-      this.stop();
+      if (stale()) return false;
+      const msg = (e as Error).message || 'Could not connect to the assistant.';
+      log.error('live: start failed', { error: msg });
+      this.stop('error', /permission|NotAllowed/i.test(msg) ? 'Microphone permission is needed for the assistant.' : `I couldn't reach the assistant. ${/app.?check|unauthenticated|sign in/i.test(msg) ? 'Please sign in again.' : 'Please try again.'}`);
       return false;
     }
   }
 
-  stop() {
-    this.active = false;
-    this.transcriptBuffer = '';
-    if (this.mic) {
-      this.mic.stop();
-      this.mic = null;
+  private bumpIdle() {
+    clearTimeout(this.idleTimer);
+    this.idleTimer = setTimeout(() => {
+      if (this.active && !audioManager.livePcmPlaying()) this.stop('idle');
+      else if (this.active) this.bumpIdle();
+    }, IDLE_CLOSE_MS);
+  }
+
+  private async onMessage(msg: LiveServerMessage) {
+    const sc = msg.serverContent;
+    if (sc?.interrupted) audioManager.interruptPcm();
+
+    // What the user said (transcribed by the Live API).
+    if (sc?.inputTranscription?.text) {
+      this.bumpIdle();
+      this.inText += sc.inputTranscription.text;
+      useAssistant.setState({ heard: this.inText.trim() });
+      await this.onUserWords(this.inText);
     }
-    if (this.session) {
-      if (typeof this.session.close === 'function') {
-        this.session.close();
+    if (sc?.outputTranscription?.text) this.outText += sc.outputTranscription.text;
+
+    for (const part of sc?.modelTurn?.parts ?? []) {
+      if (part.inlineData?.data) {
+        this.bumpIdle();
+        if (useAssistant.getState().phase !== 'speaking') useAssistant.setState({ phase: 'speaking' });
+        audioManager.playPcmChunk(part.inlineData.data, 24000);
       }
-      this.session = null;
     }
-    useAssistant.setState({ phase: 'idle' });
+
+    if (sc?.turnComplete || sc?.generationComplete) {
+      if (this.inText.trim()) pushThread('user', this.inText.trim());
+      if (this.outText.trim()) {
+        pushThread('assistant', this.outText.trim());
+        useAssistant.setState({ reply: this.outText.trim(), lastSpoken: { text: this.outText.trim(), lang: useAssistant.getState().lang } });
+      }
+      this.inText = '';
+      this.outText = '';
+      // Still in the conversation: the mic stays open for a follow-up ("yes").
+      if (this.active) useAssistant.setState({ phase: 'listening' });
+    }
+
+    if (msg.toolCallCancellation?.ids?.length) log.info('live: tool calls cancelled', { ids: msg.toolCallCancellation.ids });
+    const calls = msg.toolCall?.functionCalls;
+    if (calls?.length) await this.runTools(calls);
+  }
+
+  /** Deterministic confirmations from the user's own words. */
+  private async onUserWords(text: string) {
+    if (isNegative(text)) {
+      if (pendingOffer()) clearOffer();
+      this.pendingConfirm = null;
+      return;
+    }
+    if (!isAffirmative(text)) return;
+    if (this.pendingConfirm) this.confirmedByUser = true;
+    if (pendingOffer()) {
+      try {
+        const r = await confirmPendingOffer();
+        if (r?.started) {
+          earcon('success');
+          log.info('live: navigation confirmed by voice', { placeId: r.place.placeId });
+        }
+      } catch (e) {
+        log.error('live: confirmed navigation failed to start', { error: (e as Error).message });
+      }
+    }
+  }
+
+  private async runTools(calls: NonNullable<LiveServerMessage['toolCall']>['functionCalls'] & object) {
+    const responses: { id?: string; name?: string; response: Record<string, unknown> }[] = [];
+    useAssistant.setState({ phase: 'thinking' });
+    for (const c of calls) {
+      const name = c.name ?? '';
+      const spec = TOOLS.find((t) => t.name === name);
+      if (!spec) {
+        responses.push({ id: c.id, name, response: { error: `Unknown tool ${name}` } });
+        continue;
+      }
+      if (spec.confirm) {
+        const same = this.pendingConfirm?.name === name;
+        if (!same || !this.confirmedByUser) {
+          this.pendingConfirm = { name, args: c.args };
+          this.confirmedByUser = false;
+          responses.push({ id: c.id, name, response: { needsConfirmation: true, instruction: 'Ask the user to confirm in one short sentence. Call this tool again only after they say yes.' } });
+          continue;
+        }
+        this.pendingConfirm = null;
+        this.confirmedByUser = false;
+      }
+      try {
+        const out = await executeAction({ id: c.id ?? `live_${Date.now()}`, name: name as never, type: spec.type, arguments: (c.args ?? {}) as never });
+        responses.push({ id: c.id, name, response: out.ok ? { result: out.data } : { error: out.error } });
+      } catch (e) {
+        responses.push({ id: c.id, name, response: { error: (e as Error).message } });
+      }
+    }
+    if (this.active && this.session) this.session.sendToolResponse({ functionResponses: responses });
+    if (this.active && useAssistant.getState().phase === 'thinking') useAssistant.setState({ phase: 'listening' });
+  }
+
+  stop(reason: StopReason = 'user', spoken?: string) {
+    const wasActive = this.active;
+    this.generation++;
+    this.active = false;
+    clearTimeout(this.idleTimer);
+    this.stopTone();
+    this.stopTone = () => {};
+    this.mic?.stop();
+    this.mic = null;
+    const s = this.session;
+    this.session = null;
+    try {
+      s?.close();
+    } catch {
+      /* already closed */
+    }
+    audioManager.setLiveSessionOpen(false);
+    this.inText = '';
+    this.outText = '';
+    this.pendingConfirm = null;
+    this.confirmedByUser = false;
+    if (reason === 'error' || (reason === 'remote' && spoken)) {
+      useAssistant.setState({ phase: 'error', unavailable: spoken ?? 'The assistant is unavailable.' });
+      if (spoken) void audioManager.say(spoken, { lang: useAssistant.getState().lang, priority: 'user' });
+      setTimeout(() => useAssistant.getState().phase === 'error' && useAssistant.setState({ phase: 'idle' }), 4000);
+    } else {
+      if (wasActive && reason === 'idle') earcon('cancel');
+      useAssistant.setState({ phase: 'idle' });
+    }
   }
 }
 

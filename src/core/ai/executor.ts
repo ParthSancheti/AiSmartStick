@@ -21,6 +21,8 @@ import { loadMessages } from './history';
 import { useAssistant } from '../store/assistant';
 import { resolveLang } from './voiceOut';
 import { fuseScene, measuredSuffix, sensorContext } from '../vision/fusion';
+import { offerDestination, startNavigationTo, navigatingTo, pendingOffer } from './navIntent';
+import { liveAudioActive } from '../audio/audioManager';
 
 /**
  * REAL MODE tool executor. Gemini proposes actions; this decides and does them.
@@ -155,25 +157,36 @@ async function executeActionInner(a: Action): Promise<ToolResult> {
         const r = await searchPlaces({ query: (args.query as string) || undefined, category: (args.category as string) || undefined, lat: f.lat, lng: f.lng, radiusM: 3000 });
         lastPlaces = r.places;
         if (!r.places.length) return ok(a, { places: [], note: 'No matching places found nearby.' });
-        if (spec.type === 'navigation.findNearestPlace') {
-          // App rule: nearest place that is not known to be closed.
-          const pick = r.places.find((p) => p.openNow !== false) ?? r.places[0];
-          chosen = pick;
-          return ok(a, { chosen: placeOut(pick), alternatives: r.places.slice(0, 3).map(placeOut) });
-        }
-        return ok(a, { places: r.places.slice(0, 5).map(placeOut) });
+        // App rule: the best match that is not known to be closed. It becomes the OFFER: if the user
+        // says yes, the app starts walking directions to exactly this place (core/ai/navIntent.ts).
+        const pick = spec.type === 'navigation.findNearestPlace' ? (r.places.find((p) => p.openNow !== false) ?? r.places[0]) : r.places[0];
+        chosen = pick;
+        offerDestination(pick);
+        return ok(a, {
+          offered: placeOut(pick),
+          alternatives: r.places.filter((p) => p !== pick).slice(0, 3).map(placeOut),
+          instruction: 'Tell the user the offered place name and distance, then ask if they want to go there. If they say yes, call start_navigation with this placeId. Do not search again.',
+        });
       }
       case 'navigation.setDestination': {
         const p = lastPlaces.find((x) => x.placeId === args.placeId);
         if (!p) return fail(a, 'That place id did not come from a recent search. Search again first.');
         chosen = p;
+        offerDestination(p);
         return ok(a, { destination: placeOut(p) });
       }
       case 'navigation.startNavigation': {
-        const p = (args.placeId ? lastPlaces.find((x) => x.placeId === args.placeId) : null) ?? chosen;
+        const p = (args.placeId ? lastPlaces.find((x) => x.placeId === args.placeId) : null) ?? pendingOffer() ?? chosen;
         if (!p) return fail(a, 'No destination chosen. Search for a place first.');
-        const route = await startRealNavigation(p);
-        return ok(a, { destination: p.name, distanceM: Math.round(route.distanceM), durationMin: Math.max(1, Math.round(route.durationS / 60)), firstInstruction: route.steps[0]?.instruction ?? null });
+        if (navigatingTo(p.placeId)) {
+          // The user's "yes" already started it (deterministic confirmation path). Never start twice.
+          const n = useNavView.getState();
+          return ok(a, { destination: p.name, alreadyNavigating: true, remainingM: n.remainingM == null ? null : Math.round(n.remainingM), next: n.next?.text ?? null });
+        }
+        const r = await startNavigationTo(p);
+        const route = r.started ? r.route : null;
+        const n = useNavView.getState();
+        return ok(a, { destination: p.name, distanceM: route ? Math.round(route.distanceM) : n.totalM, durationMin: route ? Math.max(1, Math.round(route.durationS / 60)) : null, firstInstruction: route?.steps[0]?.instruction ?? n.next?.text ?? null });
       }
       case 'navigation.stopNavigation':
         stopRealNavigation('user');
@@ -214,6 +227,8 @@ async function executeActionInner(a: Action): Promise<ToolResult> {
       }
       // ── AUDIO ──
       case 'audio.speak':
+        // In a Live session the model's own voice is the output; a second (TTS) voice would talk over it.
+        if (liveAudioActive()) return ok(a, { queued: false, note: 'Say this yourself in your spoken reply.' });
         void say(String(args.text), { lang: resolveLang(), priority: 'normal' });
         return ok(a, { queued: true });
       case 'audio.stopSpeaking':

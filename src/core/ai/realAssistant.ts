@@ -81,6 +81,7 @@ async function confirm(prompt: string, lang: ReplyLang): Promise<boolean> {
     const off = onStickButton((p) => {
       if (p === 'single') finish(true);
       else if (p === 'double') finish(false);
+      else return false; // the 3 s SOS hold must always reach the SOS handler
       return true;
     });
     set({ phase: 'listening', heard: '' });

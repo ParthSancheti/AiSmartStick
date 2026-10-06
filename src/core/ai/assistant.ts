@@ -39,6 +39,11 @@ function thinking(on: boolean) {
 export function startListening() {
   const a = useAssistant.getState();
   if (useSafety.getState().phase === 'countdown') return;
+  // Real mode: one Gemini Live conversation. Press to open it, press again to end it.
+  if (isReal() && liveSession.isActive) {
+    cancelListening();
+    return;
+  }
   if (a.phase === 'listening') {
     cancelListening();
     return;
@@ -52,12 +57,13 @@ export function startListening() {
 
   const s = getSettings();
   const lang = resolveLang();
-  // Real mode always uses the microphone; demo mode only when enabled.
-  if ((isReal() || s.realMic) && recognitionSupported()) {
-    if (isReal()) {
-      void liveSession.start();
-      return;
-    }
+  // Real mode: Gemini Live streams the microphone itself (no on-device speech recognition needed).
+  if (isReal()) {
+    void liveSession.start();
+    return;
+  }
+  // Demo mode uses the browser recognizer only when enabled.
+  if (s.realMic && recognitionSupported()) {
     const ok = startRecognition({
       lang: lang === 'hi' ? 'hi-IN' : 'en-IN',
       onInterim: (t) => set({ heard: t }),
@@ -78,7 +84,7 @@ export function startListening() {
 export function cancelListening() {
   clearTimeout(listenTimer);
   abortRecognition();
-  liveSession.stop();
+  liveSession.stop('user');
   set({ phase: 'idle', heard: '' });
   earcon('cancel');
 }

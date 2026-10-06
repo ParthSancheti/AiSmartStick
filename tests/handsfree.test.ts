@@ -41,7 +41,8 @@ describe('Hands-Free Navigation Flow', () => {
     
     if (!searchRes.ok) console.log(searchRes.error);
     expect(searchRes.ok).toBe(true);
-    expect((searchRes as any).data.chosen.placeId).toBe('123');
+    // The best open match is OFFERED; start_navigation without a placeId uses exactly that offer.
+    expect((searchRes as any).data.offered.placeId).toBe('123');
 
     const startRes = await executeAction({
       id: '2',

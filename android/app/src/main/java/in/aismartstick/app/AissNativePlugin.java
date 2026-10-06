@@ -553,15 +553,35 @@ public class AissNativePlugin extends Plugin {
 
     // ── Background execution (foreground service) ────────────────
 
+    /**
+     * Starts the foreground service, or — when it already runs — only updates its notification.
+     * `promote: true` (sent when the app comes back to the foreground) re-runs startForeground so
+     * permissions granted since (location, microphone) are added to the service types.
+     */
     @PluginMethod
     public void startBackgroundService(PluginCall call) {
+        String title = call.getString("title", "AI Smart Stick");
+        String body = call.getString("body", "Running");
+        boolean promote = Boolean.TRUE.equals(call.getBoolean("promote", false));
+        if (StickForegroundService.running && !promote) {
+            try {
+                StickForegroundService.updateNotification(getContext(), title, body);
+            } catch (Exception ignored) {
+            }
+            JSObject r = new JSObject();
+            r.put("running", true);
+            r.put("types", StickForegroundService.activeTypes);
+            call.resolve(r);
+            return;
+        }
         Intent i = new Intent(getContext(), StickForegroundService.class)
-            .putExtra(StickForegroundService.EXTRA_TITLE, call.getString("title", "AI Smart Stick"))
-            .putExtra(StickForegroundService.EXTRA_BODY, call.getString("body", "Running"));
+            .putExtra(StickForegroundService.EXTRA_TITLE, title)
+            .putExtra(StickForegroundService.EXTRA_BODY, body);
         try {
             androidx.core.content.ContextCompat.startForegroundService(getContext(), i);
             JSObject r = new JSObject();
             r.put("running", true);
+            r.put("types", StickForegroundService.activeTypes);
             call.resolve(r);
         } catch (Exception e) {
             // e.g. ForegroundServiceStartNotAllowedException when started from the background (Android 12+)

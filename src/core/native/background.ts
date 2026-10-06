@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { Capacitor } from '@capacitor/core';
+import { App as CapApp } from '@capacitor/app';
 import { AissNative } from './aissNative';
 import { useDevice } from '../store/device';
 import { useSafety } from '../store/safety';
@@ -39,23 +40,28 @@ function text(): { title: string; body: string } {
 }
 
 let lastKey = '';
-async function sync() {
+/**
+ * Starts the service from the foreground (so it acquires location + microphone types), afterwards
+ * only updates the notification text: restarting a foreground service from the background is
+ * refused on Android 12+ and would drop the while-in-use types on Android 14+.
+ */
+async function sync(promote = false) {
   if (!Capacitor.isNativePlatform()) return;
   const want = wanted();
   const t = text();
-  const mic = useAssistant.getState().phase !== 'idle';
-  const key = `${want}|${t.title}|${t.body}|${mic}`;
-  if (key === lastKey) return;
+  const key = `${want}|${t.title}|${t.body}`;
+  if (key === lastKey && !promote) return;
   lastKey = key;
   try {
     if (want) {
-      await AissNative.startBackgroundService({ ...t, mic }); // also updates the notification text
+      await AissNative.startBackgroundService({ ...t, promote });
       useBackground.setState({ running: true, error: null });
     } else if (useBackground.getState().running) {
       await AissNative.stopBackgroundService();
       useBackground.setState({ running: false });
     }
   } catch (e) {
+    lastKey = ''; // retry on the next state change / resume
     useBackground.setState({ running: false, error: (e as Error).message });
   }
 }
@@ -69,7 +75,11 @@ export function startBackgroundController() {
   useNavView.subscribe(() => void sync());
   useAssistant.subscribe(() => void sync());
   useSession.subscribe(() => void sync());
-  void sync();
+  // Back on screen: re-acquire service types for permissions granted meanwhile (GPS, microphone).
+  void CapApp.addListener('appStateChange', ({ isActive }) => {
+    if (isActive) void sync(true);
+  });
+  void sync(true);
 }
 
 export async function stopBackground() {

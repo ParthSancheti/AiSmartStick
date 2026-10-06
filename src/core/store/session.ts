@@ -142,7 +142,7 @@ const seeded: SessionData = demo
       settings: defaultSettings,
     }
   : {
-      entryRole: null,
+      entryRole: 'user',
       guardianOnboarded: false,
       userOnboarded: false,
       guardian: { name: '', email: '', heardAs: '', phone: null },
@@ -167,7 +167,9 @@ export const useSession = create<SessionState>()(
       storage: createJSONStorage(() => localStorage),
       merge: (persisted, current) => {
         const p = (persisted ?? {}) as Partial<SessionData>;
-        return { ...current, ...p, settings: { ...defaultSettings, ...current.settings, ...(p.settings ?? {}) } };
+        // Installs that persisted no role (the removed entry flow set it) are the stick user's phone.
+        const entryRole = p.entryRole ?? current.entryRole;
+        return { ...current, ...p, entryRole, settings: { ...defaultSettings, ...current.settings, ...(p.settings ?? {}) } };
       },
       partialize: (s) => ({
         settings: s.settings,
