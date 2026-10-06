@@ -1,3 +1,4 @@
+import { loopEarcon } from '../feedback/earcons';
 import { GoogleGenAI } from '@google/genai';
 import { call } from '../backend/api';
 import { TOOLS } from '../../../shared/tools';
@@ -5,8 +6,9 @@ import { toGeminiParameters } from '../../../shared/validate';
 import { useAssistant, pushThread } from '../store/assistant';
 import { MicStream } from '../voice/micStream';
 import { executeAction } from './executor';
-import { speakReply } from './voiceOut';
+import * as audioManager from '../audio/audioManager';
 
+let stopConnectingTone = () => {};
 export class LiveSession {
   private ai: GoogleGenAI | null = null;
   private session: any = null;
@@ -15,12 +17,12 @@ export class LiveSession {
   private transcriptBuffer = '';
 
   async start() {
-    if (this.active) return;
+    if (this.active) return true;
     this.active = true;
     useAssistant.setState({ phase: 'thinking', unavailable: null });
 
     try {
-      const config = await call('getLiveToken', {}) as { token: string, liveModel: string };
+      const config = await call('getLiveToken', {}, 15000) as { token: string, liveModel: string };
       this.ai = new GoogleGenAI({ apiKey: config.token, httpOptions: { apiVersion: 'v1alpha' } });
 
       const tools = [{ 
@@ -31,17 +33,30 @@ export class LiveSession {
         }))
       }];
 
+      
+      try { stopConnectingTone = loopEarcon('connecting'); } catch(e){}
       this.session = await this.ai.live.connect({
-        model: config.liveModel,
+        model: "gemini-3.8-live", // Requested by user
         config: {
           generationConfig: {
             responseModalities: ["AUDIO"] as any
           },
-          systemInstruction: { parts: [{ text: "You are the AI SmartStick voice assistant. Answer briefly. You are in a Live Session." }] },
+          systemInstruction: { parts: [{ text: `You are the AI SmartStick voice assistant. Answer briefly.
+You are in a Live Session. 
+When the user asks for directions or to go somewhere:
+1. Call search_place or find_nearest_place to find the destination.
+2. Tell the user the found destination and distance, and ask "Should I take you there?" or "Should I start navigation?".
+3. Wait for the user to say yes.
+4. If they confirm, call start_navigation. DO NOT search again if you already found it.` }] },
           tools: tools as any
         },
         callbacks: {
+          onopen: () => { stopConnectingTone(); },
           onmessage: async (msg) => {
+            if (msg.serverContent?.interrupted) {
+              audioManager.interruptPcm();
+            }
+
             const outTranscript = msg.serverContent?.outputTranscription;
             if (outTranscript && outTranscript.text) {
               this.transcriptBuffer += outTranscript.text;
@@ -49,14 +64,19 @@ export class LiveSession {
             if ((outTranscript?.finished || msg.serverContent?.turnComplete) && this.transcriptBuffer.trim()) {
               const text = this.transcriptBuffer.trim();
               pushThread('assistant', text);
-              speakReply(text, useAssistant.getState().lang, 'user');
               this.transcriptBuffer = '';
             }
 
             const parts = msg.serverContent?.modelTurn?.parts;
             if (parts) {
-              // Ignore part.text as we use outputTranscription for speech
-              // Ignore part.inlineData (audio) as we don't play native audio
+              for (const part of parts) {
+                if (part.inlineData?.data) {
+                  if (useAssistant.getState().phase !== 'speaking') {
+                    useAssistant.setState({ phase: 'speaking' });
+                  }
+                  audioManager.playPcmChunk(part.inlineData.data, 24000);
+                }
+              }
             }
             const calls = msg.toolCall?.functionCalls;
             if (calls) {
@@ -105,10 +125,13 @@ export class LiveSession {
       };
       await this.mic.start();
       useAssistant.setState({ phase: 'listening' });
+      return true;
     } catch (e) {
       console.error(e);
-      useAssistant.setState({ phase: 'error', unavailable: 'Could not connect to Live API' });
+      stopConnectingTone();
+        useAssistant.setState({ phase: 'error', unavailable: 'Could not connect to Live API' });
       this.stop();
+      return false;
     }
   }
 
@@ -120,6 +143,9 @@ export class LiveSession {
       this.mic = null;
     }
     if (this.session) {
+      if (typeof this.session.close === 'function') {
+        this.session.close();
+      }
       this.session = null;
     }
     useAssistant.setState({ phase: 'idle' });

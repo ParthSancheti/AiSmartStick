@@ -22,7 +22,7 @@ function StatusLine({ done, text }: { done: boolean; text: string }) {
 /** Stick user's SOS: solid colour, huge type, and the whole screen cancels during the countdown. */
 export function UserSos() {
   const s = useSafety();
-  const heardAs = useSession((x) => x.guardian.heardAs) || 'your guardian';
+  const heardAs = useSession((x) => x.guardian.heardAs) || 'your safety contact';
   const names = heardAs;
   const demo = useRuntime((x) => x.mode) === 'demo';
   const hasLocation = useLocation((x) => !!x.fix) || demo;

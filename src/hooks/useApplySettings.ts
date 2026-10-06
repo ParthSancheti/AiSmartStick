@@ -1,8 +1,12 @@
 import { useEffect } from 'react';
 import { useSession } from '../core/store/session';
+import { StatusBar, Style } from '@capacitor/status-bar';
 import type { GlassTier } from '../core/types';
 
 function detectTier(): GlassTier {
+  if (typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform?.()) {
+    return 'lite';
+  }
   const supports = CSS.supports('backdrop-filter', 'blur(2px)') || CSS.supports('-webkit-backdrop-filter', 'blur(2px)');
   if (!supports) return 'solid';
   if (window.matchMedia('(prefers-reduced-transparency: reduce)').matches) return 'solid';
@@ -28,6 +32,7 @@ export function useApplySettings() {
       const dark = theme === 'dark' || (theme === 'system' && mq.matches);
       root.dataset.theme = dark ? 'dark' : 'light';
       document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#0b1820' : '#eaf1ef');
+      if (typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform?.()) { StatusBar.setStyle({ style: dark ? Style.Dark : Style.Light }).catch(()=>{}); }
     };
     apply();
     mq.addEventListener('change', apply);

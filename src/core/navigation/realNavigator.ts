@@ -7,11 +7,6 @@ import { announce } from '../ai/voiceOut';
 import { haptics } from '../feedback/haptics';
 import { earcon } from '../feedback/earcons';
 
-/**
- * Real walking navigation over a Google Routes polyline.
- * Progress = projection of the (accuracy-filtered) GPS fix onto the route.
- * Off-route for 3 good fixes → reroute (at most every 20 s). Arrival within 15 m.
- */
 const OFF_ROUTE_M = 35;
 const ARRIVE_M = 15;
 const PRE_ANNOUNCE_M = 30;
@@ -34,7 +29,6 @@ let active: Active | null = null;
 let unsubFix: (() => void) | null = null;
 
 function project(p: { lat: number; lng: number }, a: [number, number], b: [number, number]) {
-  // Local equirectangular projection (fine for short segments).
   const k = Math.cos((p.lat * Math.PI) / 180) * 111320;
   const ax = a[1] * k, ay = a[0] * 110540, bx = b[1] * k, by = b[0] * 110540, px = p.lng * k, py = p.lat * 110540;
   const dx = bx - ax, dy = by - ay;
@@ -72,6 +66,7 @@ export async function startRealNavigation(place: PlaceResult) {
   unsubFix = onFix(onLocation);
   useNavView.setState({
     ...emptyNav(),
+    state: 'ROUTE_READY',
     active: true,
     source: 'real',
     destination: { name: place.name, placeId: place.placeId, lat: place.lat, lng: place.lng },
@@ -100,21 +95,21 @@ export async function reroute() {
   const fix = useLocation.getState().fix;
   if (!a || !fix) return;
   a.lastReroute = Date.now();
-  useNavView.setState({ rerouting: true });
+  useNavView.setState({ rerouting: true, state: 'REROUTING' });
   try {
     const route = await walkingRoute({ origin: { lat: fix.lat, lng: fix.lng }, destination: { placeId: a.place.placeId } });
     active = build(a.place, route);
-    useNavView.setState({ path: route.path, totalM: route.distanceM, remainingM: route.distanceM, etaSec: route.durationS, offRoute: false, rerouting: false, error: null });
-    announce({ en: 'New route found.', hi: 'नया रास्ता मिल गया।' }, { high: true, dedupeKey: 'nav-reroute' });
+    useNavView.setState({ path: route.path, totalM: route.distanceM, remainingM: route.distanceM, etaSec: route.durationS, offRoute: false, rerouting: false, error: null, state: 'NAVIGATING' });
+    announce({ en: 'New route found.', hi: 'New route found.' }, { high: true, dedupeKey: 'nav-reroute' });
   } catch {
-    useNavView.setState({ rerouting: false, error: 'Could not get a new route. Directions may be out of date.' });
+    useNavView.setState({ rerouting: false, error: 'Could not get a new route. Directions may be out of date.', state: 'NAVIGATION_ERROR' });
   }
 }
 
 function onLocation(fix: Fix) {
   const a = active;
   if (!a) return;
-  if (fix.accuracyM > 40) return; // too inaccurate to steer with
+  if (fix.accuracyM > 40) return;
   const { along, off } = progressOnPath(a.route.path, a.cum, fix);
   const total = a.cum[a.cum.length - 1] || a.route.distanceM;
   const remaining = Math.max(0, total - along);
@@ -123,20 +118,21 @@ function onLocation(fix: Fix) {
   if (toDest <= Math.max(ARRIVE_M, fix.accuracyM * 0.6) || remaining < 5) {
     haptics.play('arrive');
     earcon('arrive');
-    announce({ en: `You have arrived near ${a.place.name}. Please confirm the entrance with the camera or someone nearby.`, hi: `आप ${a.place.name} के पास पहुँच गए हैं। दरवाज़ा कैमरे से या किसी से पूछकर पक्का कर लीजिए।` }, { high: true });
+    announce({ en: `You have arrived near ${a.place.name}. Please confirm the entrance with the camera or someone nearby.`, hi: `You have arrived near ${a.place.name}.` }, { high: true });
     logEvent({ kind: 'navigation', severity: 'success', title: `Arrived near ${a.place.name}`, detail: `Walked about ${Math.round(total)} m` });
-    useNavView.setState({ arrived: true, remainingM: 0, etaSec: 0, next: { text: 'Arrived', maneuver: 'arrive', inM: 0 }, updatedAt: Date.now() });
+    useNavView.setState({ arrived: true, remainingM: 0, etaSec: 0, next: { text: 'Arrived', maneuver: 'arrive', inM: 0 }, updatedAt: Date.now(), state: 'ARRIVED' });
     const done = a;
     setTimeout(() => active === done && stopRealNavigation('arrived'), 8000);
     return;
   }
 
-  // Off route?
   if (off > OFF_ROUTE_M) {
     a.offCount++;
-    useNavView.setState({ offRoute: a.offCount >= 2 });
+    useNavView.setState({ offRoute: a.offCount >= 2, state: a.offCount >= 2 ? 'OFF_ROUTE' : 'NAVIGATING' });
     if (a.offCount >= 3 && Date.now() - a.lastReroute > 20000) void reroute();
-  } else a.offCount = 0;
+  } else {
+    a.offCount = 0;
+  }
 
   let stepIdx = a.stepEndsAt.findIndex((end) => along < end);
   if (stepIdx === -1) stepIdx = a.route.steps.length - 1;
@@ -145,10 +141,15 @@ function onLocation(fix: Fix) {
   const toNext = Math.max(0, a.stepEndsAt[stepIdx] - along);
   const man = maneuverFrom(nextStep?.maneuver, nextStep?.instruction);
 
+  let currentState: any = 'NAVIGATING';
+
   if (nextStep && nextIdx !== stepIdx) {
+    if (toNext <= PRE_ANNOUNCE_M) currentState = 'APPROACHING_MANEUVER';
+    if (toNext <= NOW_M) currentState = 'MANEUVER_NOW';
+
     if (toNext <= PRE_ANNOUNCE_M && a.preAnnounced !== nextIdx) {
       a.preAnnounced = nextIdx;
-      announce({ en: `In ${Math.round(toNext / 5) * 5 || 5} meters, ${nextStep.instruction}`, hi: `${Math.round(toNext / 5) * 5 || 5} मीटर बाद, ${nextStep.instruction}` }, { nav: true, dedupeKey: 'nav-next' });
+      announce({ en: `In ${Math.round(toNext / 5) * 5 || 5} meters, ${nextStep.instruction}`, hi: `In ${Math.round(toNext / 5) * 5 || 5} meters, ${nextStep.instruction}` }, { nav: true, dedupeKey: 'nav-next' });
     }
     if (toNext <= NOW_M && a.nowAnnounced !== nextIdx) {
       a.nowAnnounced = nextIdx;
@@ -156,11 +157,14 @@ function onLocation(fix: Fix) {
       earcon('turn');
     }
   }
+
   const speed = fix.speedMps && fix.speedMps > 0.3 ? fix.speedMps : 1.2;
   useNavView.setState({
+    state: a.offCount >= 2 ? 'OFF_ROUTE' : currentState,
     remainingM: remaining,
     etaSec: Math.round(remaining / speed),
-    next: nextStep ? { text: nextStep.instruction, maneuver: man, inM: toNext } : null,
+    next: nextStep ? { text: nextStep.instruction, maneuver: man, inM: toNext, stepIdx: nextIdx } : null,
+    progressIdx: a.cum.findIndex(c => c >= along),
     updatedAt: Date.now(),
   });
 }

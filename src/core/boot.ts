@@ -1,4 +1,6 @@
 import { connectStick } from './device/bridge';
+import { visionEngine } from './vision/visionLoop';
+import { guidanceEngine } from './guidance/guidanceEngine';
 import { MockTransport } from './transport/mockTransport';
 import { startWorld } from './sim/world';
 import { unlockAudio } from './feedback/earcons';
@@ -42,6 +44,8 @@ export function boot() {
   };
   window.addEventListener('pointerdown', unlock);
   startSafetyRuntime();
+  visionEngine.start();
+  guidanceEngine.start();
   void loadPhoneInfo();
 
   if (useRuntime.getState().mode === 'demo') return bootDemo();
@@ -52,6 +56,8 @@ function bootDemo() {
   // Demo identity (no Firebase account). Clearly labelled "Demo" in the UI.
   useAuth.setState({ status: 'signedIn', user: { uid: 'demo-user', displayName: 'Demo user', email: null, photoURL: null }, role: null, profile: null });
   void connectStick(new MockTransport({ startLinked: useSession.getState().userOnboarded }));
+  visionEngine.start();
+  guidanceEngine.start();
   startWorld();
   useSession.setState({ person: { ...useSession.getState().person, name: useSession.getState().person.name || 'Aarav' } });
   // Demo navigation feeds the same normalised view the real navigator uses.
@@ -106,11 +112,15 @@ function bootReal() {
         void registerPush(uid, 'user');
         startBackgroundController();
         startCommandRelay(uid);
+        visionEngine.start();
+        guidanceEngine.start();
       } else {
         relUnsub?.();
         relUnsub = useRelationship.subscribe((r, prev) => {
           if (r.rel && r.rel.relationshipId !== prev.rel?.relationshipId) startRealFeed(r.rel);
           if (!r.rel && prev.rel) stopFeed();
+      visionEngine.stop();
+      guidanceEngine.stop();
         });
         const cur = useRelationship.getState().rel;
         if (cur) startRealFeed(cur);

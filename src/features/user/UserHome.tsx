@@ -97,7 +97,7 @@ function ProfileMenu({ open, onClose }: { open: boolean; onClose: () => void }) 
             <button type="button" className="glass interactive flex items-center gap-3 px-4 py-3 rounded-[20px] text-[15px] font-semibold text-ink w-full" onClick={() => { onClose(); useUI.setState({ pocket: true }); announce(P.pocketOn); }}>
               <Smartphone size={18} /> Pocket Mode
             </button>
-            {canSwitchRole && (
+            {false && canSwitchRole && (
               <button type="button" className="glass interactive flex items-center gap-3 px-4 py-3 rounded-[20px] text-[15px] font-semibold text-ink w-full" onClick={() => { onClose(); useSession.setState({ entryRole: 'guardian' }); }}>
                 <ShieldAlert size={18} /> Switch to Guardian
               </button>
@@ -121,15 +121,15 @@ function TopNav() {
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
-    <FloatingHeader>
+    <div className="relative z-50 mb-4 mt-[env(safe-area-inset-top,16px)] pt-4">
       <motion.div
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-        className="glass flex items-center justify-between h-[68px] rounded-[34px] px-2 shadow-2xl mx-1 pointer-events-auto"
+        className="glass flex items-center justify-between h-[68px] rounded-[34px] px-2 shadow-2xl pointer-events-auto"
       >
         <div className="flex items-center gap-3 pl-2">
-          <BrandLogo variant="icon" size={44} />
+          <BrandLogo variant="icon" size={44} className="rounded-full overflow-hidden" />
           <span className="text-[17px] font-bold text-ink tracking-tight">{BRAND.name}</span>
           <ModeBadge />
         </div>
@@ -145,7 +145,7 @@ function TopNav() {
       <div className="pointer-events-auto">
         <ProfileMenu open={menuOpen} onClose={() => setMenuOpen(false)} />
       </div>
-    </FloatingHeader>
+    </div>
   );
 }
 
@@ -482,7 +482,7 @@ function StickDetailsSubpage({ open, onClose }: { open: boolean; onClose: () => 
           className="absolute inset-0 z-50 bg-bg flex flex-col overflow-hidden"
         >
           <Atmosphere variant="user" />
-          <div className="pt-10 px-4 flex items-center gap-4 z-10 shrink-0">
+          <div className="pt-[calc(env(safe-area-inset-top,16px)+16px)] px-4 flex items-center gap-4 z-10 shrink-0">
             <button onClick={onClose} aria-label="Back" className="h-12 w-12 glass interactive rounded-full flex items-center justify-center text-ink shrink-0">
               <ChevronLeft size={24} />
             </button>
@@ -496,7 +496,21 @@ function StickDetailsSubpage({ open, onClose }: { open: boolean; onClose: () => 
             </div>
 
             <div className="flex flex-col gap-3">
-              <h3 className="text-[18px] font-bold text-ink px-1">Sensors</h3>
+              <h3 className="text-[18px] font-bold text-ink px-1">Camera Stream</h3>
+              <div className="glass rounded-[24px] overflow-hidden border border-glass-border aspect-[4/3] relative flex items-center justify-center bg-black/5">
+                {d.link === 'connected' || d.link === 'degraded' ? (
+                  <img 
+                    src="http://192.168.4.1:81/stream" 
+                    className="w-full h-full object-cover" 
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.display = 'none';
+                    }}
+                  />
+                ) : (
+                  <span className="text-ink-3 font-semibold">Camera Disconnected</span>
+                )}
+              </div>
+              <h3 className="text-[18px] font-bold text-ink px-1 mt-2">Sensors</h3>
               <div className="glass rounded-[24px] overflow-hidden border border-glass-border [&>*+*]:border-t [&>*+*]:border-line">
                 {row('Link', `${linkLabel(d.link).text}${d.linkDetail ? ` · ${d.linkDetail}` : ''}`)}
                 {row('Stick', d.identity ? `${d.identity.deviceId} · fw ${d.identity.firmware}` : 'Not paired')}
@@ -561,7 +575,7 @@ function HealthSubpage({ open, onClose }: { open: boolean; onClose: () => void }
           className="absolute inset-0 z-50 bg-bg flex flex-col overflow-hidden"
         >
           <Atmosphere variant="user" />
-          <div className="pt-10 px-4 flex items-center gap-4 z-10 shrink-0">
+          <div className="pt-[calc(env(safe-area-inset-top,16px)+16px)] px-4 flex items-center gap-4 z-10 shrink-0">
             <button onClick={onClose} aria-label="Back" className="h-12 w-12 glass interactive rounded-full flex items-center justify-center text-ink shrink-0">
               <ChevronLeft size={24} />
             </button>
@@ -581,18 +595,7 @@ function HealthSubpage({ open, onClose }: { open: boolean; onClose: () => void }
                 <div className="rounded-[16px] bg-ink/5 p-3"><p className="text-ink-3 text-[13px] font-bold">Time walking</p><p className="font-bold text-ink">{mins(w.today.durationS)}</p></div>
                 <div className="rounded-[16px] bg-ink/5 p-3"><p className="text-ink-3 text-[13px] font-bold">Average speed</p><p className="font-bold text-ink">{pace == null ? '—' : `${pace.toFixed(1)} km/h`}</p></div>
               </div>
-              {useRuntime.getState().mode === 'real' && (
-                <div className="mt-4 grid grid-cols-2 gap-2">
-                  {!cur ? (
-                    <button type="button" onClick={() => startWalk()} className="col-span-2 h-11 rounded-full bg-teal text-[15px] font-bold text-on-teal interactive">Start walk</button>
-                  ) : (
-                    <>
-                      <button type="button" onClick={() => (w.paused ? resumeWalk() : pauseWalk())} className="h-11 rounded-full bg-ink/5 text-[15px] font-bold text-ink interactive">{w.paused ? 'Resume' : 'Pause'}</button>
-                      <button type="button" onClick={() => endWalk()} className="h-11 rounded-full bg-ink/5 text-[15px] font-bold text-ink interactive">End walk</button>
-                    </>
-                  )}
-                </div>
-              )}
+              
               <p className="mt-4 text-[13px] leading-snug text-ink-3">
                 Source: {w.source === 'demo' ? 'simulated demo walk' : 'phone GPS'} · readings worse than 25 m accuracy and jumps faster than walking are ignored
                 {cur ? ` · walk ${w.paused ? 'paused' : 'in progress'} (${km(cur.distanceM)})` : ''}.
@@ -637,7 +640,7 @@ function BatterySubpage({ open, onClose }: { open: boolean; onClose: () => void 
           className="absolute inset-0 z-[60] bg-bg flex flex-col overflow-hidden"
         >
           <Atmosphere variant="user" />
-          <div className="pt-10 px-4 flex items-center gap-4 z-10 shrink-0">
+          <div className="pt-[calc(env(safe-area-inset-top,16px)+16px)] px-4 flex items-center gap-4 z-10 shrink-0">
             <button onClick={onClose} aria-label="Back" className="h-12 w-12 glass interactive rounded-full flex items-center justify-center text-ink shrink-0">
               <ChevronLeft size={24} />
             </button>
@@ -649,7 +652,7 @@ function BatterySubpage({ open, onClose }: { open: boolean; onClose: () => void 
               <div className="absolute inset-0 bg-gradient-to-br from-ok/5 to-teal/5 pointer-events-none" />
 
               <div className="flex-1 flex flex-col justify-center z-10">
-                <p className="text-[54px] font-extrabold text-ink leading-none tracking-tight">{b.percent == null ? '—' : pct}<span className="text-[24px] text-ink-3">{b.percent == null ? '' : '%'}</span></p>
+                <p className="text-[42px] xs:text-[54px] font-extrabold text-ink leading-none tracking-tight overflow-visible">{b.percent == null ? '—' : pct}<span className="text-[24px] text-ink-3">{b.percent == null ? '' : '%'}</span></p>
                 <div className={`mt-4 flex items-center gap-2 w-max px-3 py-1.5 rounded-full shadow-sm ${b.charging ? 'text-ok bg-ok/10' : 'text-ink-2 bg-ink/5'}`}>
                   <Zap size={16} className={b.charging ? 'animate-pulse' : ''} />
                   <span className="text-[13px] font-bold">
@@ -892,8 +895,8 @@ function SafetyCenterSubpage({ open, onClose }: { open: boolean; onClose: () => 
 
                 <h3 className="text-[14px] font-bold text-ink-3 uppercase mb-3">Emergency</h3>
                 <div className="flex flex-col gap-2 text-ink font-medium">
-                   <div className="flex items-center gap-2">{good(linked)} Guardian linked: {linked ? 'yes' : 'not yet'}</div>
-                   <div className="flex items-center gap-2">{good(!!guardianPhone)} Guardian phone number for SMS/call: {guardianPhone ? 'saved' : 'missing'}</div>
+                   <div className="flex items-center gap-2">{good(linked)} Safety contact linked: {linked ? 'yes' : 'not yet'}</div>
+                   <div className="flex items-center gap-2">{good(!!guardianPhone)} Safety phone number for SMS/call: {guardianPhone ? 'saved' : 'missing'}</div>
                 </div>
              </div>
 
@@ -929,12 +932,16 @@ export function UserHome() {
   const setBatteryOpen = (v: boolean) => useUI.setState({ batteryPage: v });
 
   const [chatOpen, setChatOpen] = useState(false);
-  const [mapOpen, setMapOpen] = useState(false);
+  const mapOpen = useUI((s) => s.mapOpen);
+    const setMapOpen = (v: boolean) => useUI.setState({ mapOpen: v });
   const stickDetailsOpen = useUI((s) => s.stickPage);
   const setStickDetailsOpen = (v: boolean) => useUI.setState({ stickPage: v });
-  const [liveAiOpen, setLiveAiOpen] = useState(false);
-  const [healthOpen, setHealthOpen] = useState(false);
-  const [audioOpen, setAudioOpen] = useState(false);
+  const liveAiOpen = useUI((s) => s.liveAiOpen);
+    const setLiveAiOpen = (v: boolean) => useUI.setState({ liveAiOpen: v });
+  const healthOpen = useUI((s) => s.healthOpen);
+    const setHealthOpen = (v: boolean) => useUI.setState({ healthOpen: v });
+  const audioOpen = useUI((s) => s.audioOpen);
+    const setAudioOpen = (v: boolean) => useUI.setState({ audioOpen: v });
 
   const link = linkLabel(linkState);
   const bat = batteryLabel(battery);
@@ -944,9 +951,8 @@ export function UserHome() {
 
   return (
     <AppScreen>
-      <TopNav />
       <SafeAreaContent className="px-5 pb-4" {...bind}>
-        <div className="h-24 shrink-0" /> {/* Spacer for TopNav */}
+          <TopNav />
 
         {/* Big Stick Card */}
         <div className="glass rounded-[36px] p-5 flex border border-glass-border shadow-2xl relative overflow-hidden shrink-0 min-h-[260px] mb-6">

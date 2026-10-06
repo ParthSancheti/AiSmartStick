@@ -65,10 +65,20 @@ export function earcon(name: EarconName) {
 }
 
 /** Looping sounds. Returns a stop function. */
-export function loopEarcon(name: 'thinking' | 'siren'): () => void {
+export function loopEarcon(name: 'thinking' | 'siren' | 'connecting'): () => void {
   if (!getSettings().earcons) return () => {};
   const c = ac();
   if (!c) return () => {};
+
+  if (name === 'connecting') {
+    const play = () => {
+      tone(440, 0, 0.4, { type: 'sine', gain: 0.04 });
+      tone(440, 0.8, 0.4, { type: 'sine', gain: 0.04 });
+    };
+    play();
+    const id = setInterval(play, 2400); // ringing tone
+    return () => clearInterval(id);
+  }
 
   if (name === 'thinking') {
     const play = () => {

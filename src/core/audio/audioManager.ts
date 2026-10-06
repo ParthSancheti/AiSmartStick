@@ -164,3 +164,87 @@ export async function stopAll() {
 }
 
 export const audioVolume = volume;
+
+
+// --- NATIVE PCM SUPPORT FOR GEMINI LIVE ---
+let audioCtx: AudioContext | null = null;
+let pcmStartTime = 0;
+let pcmPlaying = false;
+
+
+function getAudioCtx() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+  }
+  if (audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
+  return audioCtx;
+}
+
+export function playPcmChunk(base64: string, sampleRate = 24000) {
+  if (!getSettings().voiceOut) return;
+  const ctx = getAudioCtx();
+  
+  // Convert base64 to Float32Array
+  const binaryString = atob(base64);
+  const len = binaryString.length;
+  // PCM 16-bit
+  const floats = new Float32Array(len / 2);
+  for (let i = 0; i < len / 2; i++) {
+    const lsb = binaryString.charCodeAt(i * 2);
+    const msb = binaryString.charCodeAt(i * 2 + 1);
+    let int16 = (msb << 8) | lsb;
+    if (int16 >= 0x8000) int16 -= 0x10000;
+    floats[i] = int16 / 0x8000;
+  }
+  
+  const buffer = ctx.createBuffer(1, floats.length, sampleRate);
+  buffer.getChannelData(0).set(floats);
+  
+  const source = ctx.createBufferSource();
+  source.buffer = buffer;
+  source.connect(ctx.destination);
+  
+  const now = ctx.currentTime;
+  if (now < pcmStartTime) {
+    source.start(pcmStartTime);
+    pcmStartTime += buffer.duration;
+  } else {
+    source.start(now);
+    pcmStartTime = now + buffer.duration;
+  }
+  pcmPlaying = true;
+  
+  source.onended = () => {
+    if (ctx.currentTime >= pcmStartTime) {
+      pcmPlaying = false;
+    }
+  };
+}
+
+export function interruptPcm() {
+  
+  pcmStartTime = 0;
+  if (audioCtx) {
+    audioCtx.suspend();
+    setTimeout(() => {
+      if (audioCtx) audioCtx.resume();
+    }, 100);
+  }
+}
+
+export function resetPcmStream() {
+  pcmStartTime = 0;
+  
+  pcmPlaying = false;
+}
+
+export function livePcmPlaying() {
+  return pcmPlaying;
+}
+
+export function onPcmInterrupted(cb: () => void) {
+  // simple mock for now
+  return () => {};
+}

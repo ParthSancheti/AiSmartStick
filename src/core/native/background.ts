@@ -5,6 +5,7 @@ import { useDevice } from '../store/device';
 import { useSafety } from '../store/safety';
 import { useSession } from '../store/session';
 import { useNavView } from '../navigation/navView';
+import { useAssistant } from '../store/assistant';
 import { linkLabelText } from './backgroundText';
 
 /**
@@ -24,7 +25,8 @@ function wanted() {
   const d = useDevice.getState();
   const sos = useSafety.getState().phase;
   const nav = useNavView.getState().active;
-  return useSession.getState().settings.runInBackground && (d.link !== 'unpaired' || sos === 'active' || sos === 'countdown' || nav);
+  const ast = useAssistant.getState().phase !== 'idle';
+  return useSession.getState().settings.runInBackground && (d.link !== 'unpaired' || sos === 'active' || sos === 'countdown' || nav || ast);
 }
 
 function text(): { title: string; body: string } {
@@ -41,12 +43,13 @@ async function sync() {
   if (!Capacitor.isNativePlatform()) return;
   const want = wanted();
   const t = text();
-  const key = `${want}|${t.title}|${t.body}`;
+  const mic = useAssistant.getState().phase !== 'idle';
+  const key = `${want}|${t.title}|${t.body}|${mic}`;
   if (key === lastKey) return;
   lastKey = key;
   try {
     if (want) {
-      await AissNative.startBackgroundService(t); // also updates the notification text
+      await AissNative.startBackgroundService({ ...t, mic }); // also updates the notification text
       useBackground.setState({ running: true, error: null });
     } else if (useBackground.getState().running) {
       await AissNative.stopBackgroundService();
@@ -64,6 +67,7 @@ export function startBackgroundController() {
   useDevice.subscribe(() => void sync());
   useSafety.subscribe(() => void sync());
   useNavView.subscribe(() => void sync());
+  useAssistant.subscribe(() => void sync());
   useSession.subscribe(() => void sync());
   void sync();
 }

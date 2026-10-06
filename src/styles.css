@@ -256,3 +256,12 @@ button { -webkit-user-select: none; user-select: none; touch-action: manipulatio
 :root[data-reduce-motion="true"] .atmo > i,
 :root[data-reduce-motion="true"] .map-pulse,
 :root[data-reduce-motion="true"] .shimmer { animation: none !important; }
+
+
+@layer base {
+  html, body, #root {
+    overscroll-behavior-y: none;
+    overscroll-behavior-x: none;
+    touch-action: pan-y pan-x; /* Allow normal scroll, but avoid pinch zoom / swipe gestures that cause bugginess */
+  }
+}

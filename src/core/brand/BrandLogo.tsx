@@ -10,8 +10,8 @@ export const BRAND_LOGO_URL = logoUrl;
 type Variant = 'icon' | 'full' | 'compact';
 
 export function BrandLogo({ variant = 'full', size = 28, className }: { variant?: Variant; size?: number; className?: string }) {
-  const img = <img src={logoUrl} width={size} height={size} alt={variant === 'icon' ? BRAND.name : ''} className="shrink-0 select-none" draggable={false} />;
-  if (variant === 'icon') return <span className={className}>{img}</span>;
+  const img = <img src={logoUrl} width={size} height={size} alt={variant === 'icon' ? BRAND.name : ''} className={`shrink-0 select-none ${className?.includes('rounded') ? 'rounded-full' : ''}`} draggable={false} />;
+  if (variant === 'icon') return <span className={`inline-flex items-center justify-center shrink-0 ${className ?? ''}`}>{img}</span>;
   return (
     <span className={`inline-flex items-center gap-2 ${className ?? ''}`}>
       {img}

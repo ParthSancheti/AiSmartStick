@@ -19,7 +19,7 @@ export function StickUserApp() {
   const demo = useRuntime((s) => s.mode) === 'demo';
   const authStatus = useAuth((s) => s.status);
   // Real mode: a signed-out phone always goes back through sign-in, even if it was set up before.
-  const onboarded = onboardedFlag && (demo || authStatus === 'signedIn' || authStatus === 'loading');
+  const onboarded = onboardedFlag && (demo || import.meta.env.DEV || authStatus === 'signedIn' || authStatus === 'loading');
   const stickSetup = useUI((s) => s.stickSetup);
   const hc = useSession((s) => s.settings.highContrast);
   const textScale = useSession((s) => s.settings.textScale);

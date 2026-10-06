@@ -128,7 +128,7 @@ export async function clearLocalAccountData() {
     linked: false,
     pairingCode: null,
     contacts: [],
-    person: { name: '', phone: '', email: '', homeAddress: '', workAddress: '', medicalId: '' },
+    person: { name: '', phone: '', email: '', homeAddress: '', workAddress: '', medicalId: '', savedPlaces: [] },
     guardian: { name: '', email: '', heardAs: '', phone: null },
   });
   useActivity.setState({ events: [] });

@@ -41,7 +41,7 @@ export interface AissNativePlugin {
   /** Direct SMS when SEND_SMS is granted (see ANDROID_SETUP.md policy note), else the composer. */
   sendSms(opts: { number: string; body: string; direct: boolean }): Promise<{ result: SmsResult }>;
   /** Android foreground service: keeps stick link, GPS, SOS and sync alive with the screen off. */
-  startBackgroundService(opts: { title: string; body: string }): Promise<{ running: boolean }>;
+  startBackgroundService(opts: { title: string; body: string; mic?: boolean }): Promise<{ running: boolean }>;
   stopBackgroundService(): Promise<{ running: boolean }>;
   isBackgroundServiceRunning(): Promise<{ running: boolean }>;
   setKeepScreenOn(opts: { on: boolean }): Promise<void>;

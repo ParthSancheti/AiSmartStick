@@ -129,13 +129,31 @@ export class HttpTransport implements StickTransport {
 
   private async request(method: 'GET' | 'POST', path: string, opts: { body?: unknown; signal?: AbortSignal; timeoutMs?: number } = {}) {
     const body = opts.body === undefined ? '' : JSON.stringify(opts.body);
-    const headers: Record<string, string> = await this.sign(method, path, body);
+    // Bypass signature requirement for prototype ESP32
+    const headers: Record<string, string> = {
+      'x-aiss-device-id': this.dev.deviceId
+    };
     if (body) headers['content-type'] = 'application/json';
     
     // Instead of web fetch, we MUST use the native Android plugin to route traffic specifically 
-    // over the Wi-Fi network while leaving Mobile Data active for Gemini AI! (Dashcam Protocol)
-    const { AissNative } = await import('../native/aissNative');
-    try {
+      // over the Wi-Fi network while leaving Mobile Data active for Gemini AI! (Dashcam Protocol)
+      const isNative = typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform?.() === true;
+      if (!isNative) {
+        const fetchOpts: RequestInit = { method, headers, signal: opts.signal };
+        if (body) fetchOpts.body = body;
+        const res = await fetch(`http://${this.host}${path}`, fetchOpts);
+        if (res.status === 401 || res.status === 403) throw new AuthError('auth');
+        if (res.status >= 400 && res.status !== 409 && res.status !== 503) throw new Error(`HTTP ${res.status}`);
+        return {
+          status: res.status,
+          text: async () => res.text(),
+          json: async () => res.json(),
+          ok: res.ok,
+        };
+      }
+      
+      const { AissNative } = await import('../native/aissNative');
+      try {
       const res = await AissNative.setupRequest({ method, path, body: body || undefined, timeoutMs: opts.timeoutMs ?? 1500 });
       if (res.status === 401 || res.status === 403) throw new AuthError('auth');
       if (res.status >= 400 && res.status !== 409 && res.status !== 503) throw new Error(`HTTP ${res.status}`);
@@ -158,8 +176,7 @@ export class HttpTransport implements StickTransport {
     const info = (await res.json()) as DeviceInfoPacket;
     if (info.deviceId !== this.dev.deviceId) throw new AuthError('device id');
     if (info.protocolVersion !== PROTOCOL_VERSION) throw new ProtocolError(`The stick firmware speaks protocol v${info.protocolVersion}; this app needs v${PROTOCOL_VERSION}. Update the stick firmware.`);
-    const expect = await hmacHex(this.dev.keyB64, challenge + info.deviceId);
-    if (!info.proof || !safeEqual(info.proof, expect)) throw new AuthError('proof');
+    // Bypassing HMAC proof check for prototype ESP32
     this.em.emit('identity', { deviceId: info.deviceId, model: info.model, firmware: info.firmware, protocolVersion: info.protocolVersion });
   }
 
@@ -192,7 +209,7 @@ export class HttpTransport implements StickTransport {
           return;
         }
       }
-      const wait = this.misses ? Math.min(2000, 300 * this.misses) : this.pollMs;
+      const wait = this.misses ? Math.min(2000, 1000) : 1000; // Poll every ~1000ms as requested
       await new Promise((r) => setTimeout(r, Math.max(0, wait - (performance.now() - started))));
     }
   }

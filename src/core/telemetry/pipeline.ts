@@ -6,6 +6,7 @@ import { ImuFilter, type ImuCalibration } from './imu';
 import { UltrasonicFilter } from './ultrasonic';
 import { ButtonClassifier } from './button';
 import { STALE_MS } from './types';
+import { sensorConditioning } from '../vision/sensorConditioning';
 
 /**
  * RAW HARDWARE → VALIDATION → NORMALIZATION → FILTER → QUALITY → DOMAIN STATE (device store).
@@ -112,6 +113,8 @@ export function ingestPacket(p: TelemetryPacket, receivedAt: number) {
   lastSeq = p.seq;
   lastUptime = p.uptimeMs;
   lastRawImu = p.imu;
+
+  sensorConditioning.ingest(p, receivedAt);
 
   const b = battery.update({ busV: p.battery.busV, currentMa: p.battery.currentMa, charging: p.battery.charging, ok: p.battery.ok, at: receivedAt });
   const i = imu.update({ ...p.imu, at: receivedAt });

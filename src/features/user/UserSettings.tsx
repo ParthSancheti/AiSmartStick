@@ -76,9 +76,9 @@ function ProfileSubpage({ open, onClose }: { open: boolean; onClose: () => void 
   }, [open]);
   const handleSave = () => {
     setSession({ person: form });
-    // Medical details go only to users/{uid}/medical/profile (guardian-readable for emergencies).
+    // Medical details go only to users/{uid}/medical/profile (readable by safety contacts for emergencies).
     void saveMedical({ bloodGroup: med.bloodGroup, allergies: med.allergies, medications: med.medications, conditions: med.conditions, notes: form.medicalId || med.notes }).catch(() => undefined);
-    // Phone number and name are what the guardian sees and calls (real mode → Firebase profile).
+    // Phone number and name are what safety contacts see and calls (real mode → Firebase profile).
     void updateProfileFields({ phone: form.phone.trim() || null, displayName: form.name.trim() || undefined, homeAddress: form.homeAddress.trim() || null }).catch(() => undefined);
     setSaved(true);
     navigator.vibrate?.([50, 50, 50]);
@@ -755,7 +755,7 @@ function PrivacySubpage({ open, onClose }: { open: boolean; onClose: () => void 
               <h1 className="text-[24px] font-bold text-ink">Camera & Location</h1>
             </div>
             <div className="glass overflow-hidden rounded-[28px] [&>*+*]:border-t [&>*+*]:border-line mb-5">
-              <BigRow icon={<MapPin size={22} />} label="Share live location with guardian" detail="During an SOS your location is always shared." on={s.locationSharing} onChange={(v) => update({ locationSharing: v })} />
+              <BigRow icon={<MapPin size={22} />} label="Share live location with safety contact" detail="During an SOS your location is always shared." on={s.locationSharing} onChange={(v) => update({ locationSharing: v })} />
               <BigRow
                 icon={<Smartphone size={22} />}
                 label="Keep running with the screen off"
@@ -770,16 +770,16 @@ function PrivacySubpage({ open, onClose }: { open: boolean; onClose: () => void 
                 </div>
               )}
               <div className="px-4 py-3">
-                <p className="mb-2 flex items-center gap-2 text-[16px] font-medium text-ink"><ScanEye size={18} className="text-ink-3" /> When your guardian asks for the camera</p>
+                <p className="mb-2 flex items-center gap-2 text-[16px] font-medium text-ink"><ScanEye size={18} className="text-ink-3" /> When a safety contact requests the camera</p>
                 <Segmented label="Camera requests" size="sm" value={s.cameraRequests} onChange={(v) => update({ cameraRequests: v })} options={[{ value: 'auto', label: 'Announce & allow' }, { value: 'ask', label: 'Ask me first' }]} />
                 <p className="mt-2 text-[13.5px] leading-snug text-ink-3">You always hear “camera requested”, “camera active” and “camera ended”. Photos go straight to your guardian’s phone and are never stored.</p>
               </div>
               <div className="px-4 py-3">
-                <p className="mb-2 flex items-center gap-2 text-[16px] font-medium text-ink"><Phone size={18} className="text-ink-3" /> Calls to your guardian</p>
+                <p className="mb-2 flex items-center gap-2 text-[16px] font-medium text-ink"><Phone size={18} className="text-ink-3" /> Calls to your safety contact</p>
                 <Segmented label="Call mode" size="sm" value={s.callMode} onChange={(v) => { update({ callMode: v }); if (v === 'direct') void AissNative.requestPermissions({ permissions: ['phone'] }).catch(() => undefined); }} options={[{ value: 'direct', label: 'Call directly' }, { value: 'dialer', label: 'Open dialer' }]} />
               </div>
               <div className="px-4 py-3">
-                <p className="mb-2 flex items-center gap-2 text-[16px] font-medium text-ink"><MessageSquare size={18} className="text-ink-3" /> Texts to your guardian</p>
+                <p className="mb-2 flex items-center gap-2 text-[16px] font-medium text-ink"><MessageSquare size={18} className="text-ink-3" /> Texts to your safety contact</p>
                 <Segmented label="SMS mode" size="sm" value={s.smsMode} onChange={(v) => { update({ smsMode: v }); if (v === 'direct') void AissNative.requestPermissions({ permissions: ['sms'] }).catch(() => undefined); }} options={[{ value: 'composer', label: 'Open messages' }, { value: 'direct', label: 'Send directly' }]} />
                 <p className="mt-2 text-[13.5px] leading-snug text-ink-3">“Send directly” needs Android SMS permission. Otherwise the message opens for you to press send, and the assistant says so.</p>
               </div>
@@ -804,12 +804,12 @@ function ActivitySubpage({ open, onClose }: { open: boolean; onClose: () => void
               <button onClick={onClose} aria-label="Back" className="h-12 w-12 glass interactive rounded-full flex items-center justify-center text-ink shrink-0"><ChevronLeft size={24} /></button>
               <h1 className="text-[24px] font-bold text-ink">Activity History</h1>
             </div>
-            <p className="mb-4 px-1 text-[14.5px] leading-snug text-ink-3">Events (connections, alerts, walks, camera access) are saved to your account and shared with your linked guardian. Camera photos are never saved.</p>
+            <p className="mb-4 px-1 text-[14.5px] leading-snug text-ink-3">Events (connections, alerts, walks, camera access) are saved to your account and shared with your linked safety contact. Camera photos are never saved.</p>
             <div className="glass overflow-hidden rounded-[24px] [&>*+*]:border-t [&>*+*]:border-line">
               {events.length ? events.slice(0, 40).map((e) => <EventRow key={e.id} e={e} now={Date.now()} />) : <p className="px-4 py-6 text-center text-[15px] text-ink-3">No activity yet.</p>}
             </div>
             <GlassButton size="lg" className="mt-4 w-full" onClick={() => useActivity.setState({ events: [] })}>Clear from this screen</GlassButton>
-            <p className="mt-2 px-1 text-[13px] text-ink-3">Clearing hides events on this phone only; account history remains for your guardian.</p>
+            <p className="mt-2 px-1 text-[13px] text-ink-3">Clearing hides events on this phone only; account history remains for them.</p>
           </div>
         </motion.div>
       )}
@@ -862,7 +862,7 @@ function DeviceInfoSubpage({ open, onClose }: { open: boolean; onClose: () => vo
             {mode === 'real' && (
               <div className="glass mt-4 rounded-[24px] border border-sos/20 p-4">
                 <p className="text-[16px] font-bold text-ink">Delete account</p>
-                <p className="mt-1 text-[13.5px] leading-snug text-ink-3">Permanently deletes your profile, settings, activity, assistant history and SOS records, and unlinks your guardian. This cannot be undone.</p>
+                <p className="mt-1 text-[13.5px] leading-snug text-ink-3">Permanently deletes your profile, settings, activity, assistant history and SOS records, and unlinks your safety contact. This cannot be undone.</p>
                 {delState === 'confirm' ? (
                   <div className="mt-3 grid grid-cols-2 gap-2">
                     <GlassButton size="sm" onClick={() => setDelState('idle')}>Cancel</GlassButton>
@@ -887,7 +887,7 @@ export function UserSettings() {
   const open = useUI((s) => s.userSettings);
   const s = useSession((x) => x.settings);
   const update = useSession((x) => x.updateSettings);
-  const layout = useUI((x) => x.layout);
+  
   const close = () => useUI.setState({ userSettings: false });
   const linkState = useDevice((s) => s.link);
   const battery = useDevice((s) => s.battery);
@@ -1039,7 +1039,7 @@ export function UserSettings() {
                 </div>
                 <div className="flex-1">
                   <p className="text-[17px] font-bold text-ink">Emergency & SOS</p>
-                  <p className="text-[14px] text-ink-3 mt-0.5">{guardianName ? `Guardian: ${guardianName}` : 'No guardian linked'} · {contactsCount} contact{contactsCount === 1 ? '' : 's'} · Fall detection {s.sosTriggers.fall ? 'on' : 'off'}</p>
+                  <p className="text-[14px] text-ink-3 mt-0.5">{guardianName ? `Safety Contact: ${guardianName}` : 'No safety contact linked'} · {contactsCount} contact{contactsCount === 1 ? '' : 's'} · Fall detection {s.sosTriggers.fall ? 'on' : 'off'}</p>
                 </div>
                 <ChevronRight size={20} className="text-ink-3" />
               </motion.button>
@@ -1151,11 +1151,7 @@ export function UserSettings() {
               </div>
             </div>
 
-            {layout === 'single' && (
-              <GlassButton size="lg" className="mt-3 w-full" onClick={() => useSession.setState({ entryRole: 'guardian' })}>
-                Switch to the Guardian app (demo)
-              </GlassButton>
-            )}
+            
 
             {/* App Info */}
             <p className="text-center text-[13px] text-ink-3 mt-6 opacity-60">{BRAND.name} · Made with ❤️ in India</p>

@@ -5,6 +5,18 @@ import { isWide } from '../util';
 import { useRuntime } from '../runtime/mode';
 import type { ImuCalibration } from '../telemetry/imu';
 
+
+export interface SavedPlace {
+  id: string; // 'home', 'college', or UUID
+  label: string; // "Home", "College", "Dad's House"
+  placeId: string;
+  name: string;
+  address: string | null;
+  lat: number;
+  lng: number;
+  updatedAt: number;
+}
+
 export interface Settings {
   theme: ThemePref;
   glass: 'auto' | GlassTier;
@@ -95,11 +107,14 @@ const demoContacts: Contact[] = [
 interface SessionData {
   /** For the combined dev build only; shipped builds are single-role. */
   entryRole: Role | null;
+  lastAppPage?: string;
+  lastSubPage?: string;
   guardianOnboarded: boolean;
   userOnboarded: boolean;
   /** The other person in the relationship, as this phone knows them. Empty until paired (real mode). */
   guardian: { name: string; email: string; heardAs: string; phone: string | null };
-  person: { name: string; phone: string; email: string; homeAddress: string; workAddress: string; medicalId: string };
+  person: { name: string; phone: string; email: string; homeAddress: string; workAddress: string;
+  savedPlaces: SavedPlace[]; medicalId: string };
   pairingCode: string | null;
   linked: boolean;
   contacts: Contact[];
@@ -120,7 +135,7 @@ const seeded: SessionData = demo
       guardianOnboarded: stage,
       userOnboarded: stage,
       guardian: { name: 'Demo Guardian', email: 'demo@example.com', heardAs: 'Mom', phone: '+91 00000 00001' },
-      person: { name: 'Aarav', phone: '', email: '', homeAddress: '', workAddress: '', medicalId: '' },
+      person: { name: 'Aarav', phone: '', email: '', homeAddress: '', workAddress: '', medicalId: '', savedPlaces: [] },
       pairingCode: '482913',
       linked: stage,
       contacts: demoContacts,
@@ -131,7 +146,7 @@ const seeded: SessionData = demo
       guardianOnboarded: false,
       userOnboarded: false,
       guardian: { name: '', email: '', heardAs: '', phone: null },
-      person: { name: '', phone: '', email: '', homeAddress: '', workAddress: '', medicalId: '' },
+      person: { name: '', phone: '', email: '', homeAddress: '', workAddress: '', medicalId: '', savedPlaces: [] },
       pairingCode: null,
       linked: false,
       contacts: [],
@@ -163,6 +178,8 @@ export const useSession = create<SessionState>()(
         guardianOnboarded: s.guardianOnboarded,
         entryRole: s.entryRole,
         linked: s.linked,
+        lastAppPage: s.lastAppPage,
+        lastSubPage: s.lastSubPage,
       }),
     },
   ),

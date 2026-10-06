@@ -1,151 +1,111 @@
-import { useEffect, useState } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
-import { Check, ChevronLeft, Loader2, RefreshCw, Wifi, Settings2 } from 'lucide-react';
-import { StickVisual } from '../../components/StickVisual';
+import { savePairedDevice, type PairedDevice } from '../../core/device/pairedDevice';
+import { attachPairedDevice } from '../../core/device/realDevice';
+import { currentUid } from '../../core/auth/authStore';
+import { useState } from 'react';
+import { motion } from 'motion/react';
+import { Wifi, ChevronRight, Settings, Check } from 'lucide-react';
 import { Glass, GlassButton } from '../../components/glass';
-import { Atmosphere } from '../../components/Atmosphere';
-import { AppScreen, SafeAreaContent, FloatingHeader } from '../../components/Layout';
-import { useProvisioning, searchForStick, provisionStick, cancelProvisioning } from '../../core/provisioning/provisioning';
-import { AissNative } from '../../core/native/aissNative';
+import { AppScreen, SafeAreaContent } from '../../components/Layout';
+import { useSession } from '../../core/store/session';
 
-const STEPS = [
-  { id: 'searching', label: 'Searching for SmartStick', desc: 'Finding the setup network...' },
-  { id: 'stick_found', label: 'Stick Found', desc: 'Enter setup details below.' },
-  { id: 'connecting_to_stick', label: 'Connecting', desc: 'Connecting to stick Wi-Fi...' },
-  { id: 'stick_connected', label: 'Connected', desc: 'Reading device information...' },
-  { id: 'reading_device_info', label: 'Reading Info', desc: 'Verifying protocol...' },
-  { id: 'configuring_network', label: 'Configuring', desc: 'Sending network credentials...' },
-  { id: 'waiting_for_stick_network', label: 'Waiting', desc: 'Waiting for stick to join hotspot...' },
-  { id: 'verifying_stick', label: 'Verifying', desc: 'Checking connection...' },
-  { id: 'authenticating', label: 'Authenticating', desc: 'Securing the link...' },
-  { id: 'completed', label: 'Completed', desc: 'Stick is ready.' },
-];
-
-export function StickSetup({ onDone, onCancel }: { onDone: () => void; onCancel: () => void }) {
-  const p = useProvisioning();
-  const [showDiag, setShowDiag] = useState(false);
-
-  useEffect(() => {
-    if (p.step === 'idle') void searchForStick();
-    return () => {
-      if (useProvisioning.getState().step !== 'completed') cancelProvisioning();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-
-  const currentStepInfo = STEPS.find(s => s.id === p.step) || { label: p.step, desc: '' };
-  const isError = p.step === 'error';
-  const isCompleted = p.step === 'completed';
-
+export function StickSetup({ onDone }: { onDone: () => void; onCancel: () => void }) {
+  const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
   return (
-    <AppScreen className="z-[90] bg-bg">
-      <Atmosphere variant="user" />
-      <FloatingHeader className="pt-4 pb-0 items-center">
-        <div className="flex items-center gap-4 w-full">
-          <button type="button" onClick={() => { cancelProvisioning(); onCancel(); }} aria-label="Cancel setup" className="glass interactive grid h-12 w-12 shrink-0 place-items-center rounded-full text-ink">
-            <ChevronLeft size={24} />
-          </button>
-          <h1 className="text-[24px] font-bold text-ink">Set up your SmartStick</h1>
-        </div>
-      </FloatingHeader>
-
-      <SafeAreaContent className="px-4 pb-10 z-10">
-        <div className="h-16 shrink-0" />
-        
-        <div className="flex flex-col items-center pt-4 mb-6">
-          <motion.div animate={p.step === 'searching' ? { rotate: [-3, 3, -3] } : { rotate: 0 }} transition={{ duration: 1.6, repeat: p.step === 'searching' ? Infinity : 0 }}>
-            <StickVisual height={170} link={isCompleted ? 'connected' : isError ? 'searching' : 'connecting'} obstacleCm={null} pose={null} />
-          </motion.div>
-          <p className="mt-4 text-center text-[22px] font-extrabold text-ink" aria-live="polite">
-            {isError ? 'Setup Failed' : currentStepInfo.label}
+    <AppScreen className="z-[90] bg-[#0a0d14]">
+      <SafeAreaContent className="px-6 pb-12 pt-6 flex flex-col h-full">
+        <div className="flex-1 mt-10">
+          <div className="w-16 h-16 rounded-[24px] bg-teal/20 flex items-center justify-center mb-6 border border-teal/30">
+            <Wifi size={32} className="text-teal" />
+          </div>
+          
+          <h1 className="text-[28px] font-extrabold leading-[1.1] text-white mb-4 tracking-tight drop-shadow-md">
+            Connect to Stick
+          </h1>
+          <p className="text-[15px] text-white/80 leading-[1.6] mb-10 font-medium drop-shadow-sm">
+            Follow these steps to connect your phone to the SmartStick.
           </p>
-          <p className="mt-1 text-center text-[15px] leading-snug text-ink-2">
-            {isError ? p.error : currentStepInfo.desc}
-          </p>
-        </div>
 
-        <AnimatePresence mode="wait">
-          {/* STEP 1: SEARCHING */}
-          {p.step === 'searching' && (
-            <motion.div key="searching" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex justify-center p-6">
-              <Loader2 className="animate-spin text-teal" size={32} />
-            </motion.div>
-          )}
-
-          {/* STEP 2: STICK FOUND (Form) */}
-          {p.step === 'stick_found' && (
-            <motion.div key="form" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-4">
-              <Glass className="rounded-[22px] p-5 flex items-center justify-between">
+          <div className="space-y-4">
+            <Glass className="rounded-[24px] p-5 border border-white/10 bg-white/5 relative overflow-hidden">
+              <div className="flex items-start gap-4">
+                <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white font-bold shrink-0">1</div>
                 <div>
-                  <p className="text-[13px] font-bold uppercase tracking-wider text-ink-3">Found Stick</p>
-                  <p className="mt-1 flex items-center gap-2 text-[17px] font-semibold text-ink"><Wifi size={18} className="text-teal" /> {p.ssid}</p>
+                  <p className="text-[16px] font-bold text-white mb-1">Open Wi-Fi Settings</p>
+                  <p className="text-[14px] text-white/60 leading-snug">Go to your phone's settings and turn on Wi-Fi.</p>
                 </div>
-                <Check size={24} className="text-teal" />
-              </Glass>
-              
-              <p className="text-[13px] text-ink-3 px-2 text-center mt-2">
-                Fast Pair ready. The app will automatically connect to the stick.
-              </p>
+              </div>
+            </Glass>
 
-              <GlassButton variant="teal" size="lg" className="w-full mt-4" onClick={() => provisionStick({ setupCode: '', hotspotSsid: '', hotspotPassword: '' })}>
-                Connect
-              </GlassButton>
-            </motion.div>
-          )}
-
-          {/* STEP 3: PROGRESS / PROVISIONING */}
-          {(!isError && p.step !== 'idle' && p.step !== 'searching' && p.step !== 'stick_found' && p.step !== 'completed') && (
-            <motion.div key="progress" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
-              <Glass className="rounded-[26px] p-5">
-                <div className="flex items-center gap-4">
-                  <div className="bg-teal/10 p-3 rounded-full">
-                    <Loader2 className="animate-spin text-teal" size={24} />
-                  </div>
-                  <div>
-                    <p className="text-[16px] font-bold text-ink">{currentStepInfo.label}</p>
-                    <p className="text-[14px] text-ink-2">{currentStepInfo.desc}</p>
+            <Glass className="rounded-[24px] p-5 border border-white/10 bg-white/5 relative overflow-hidden">
+              <div className="flex items-start gap-4">
+                <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white font-bold shrink-0">2</div>
+                <div className="w-full">
+                  <p className="text-[16px] font-bold text-white mb-1">Select the network</p>
+                  <p className="text-[14px] text-white/60 leading-snug mb-3">Connect to the following Wi-Fi network:</p>
+                  <div className="bg-black/30 rounded-lg p-3 border border-white/5 flex items-center justify-between">
+                    <span className="font-mono text-teal font-bold tracking-wide">SmartStick_AI</span>
                   </div>
                 </div>
-              </Glass>
-            </motion.div>
-          )}
+              </div>
+            </Glass>
 
-          {/* STEP 4: ERROR */}
-          {isError && (
-            <motion.div key="error" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
-              {p.error === 'Please turn on your Wi-Fi and try again.' ? (
-                <GlassButton variant="teal" size="lg" className="w-full" onClick={() => AissNative.openWifiSettings()}>
-                  <Settings2 size={18} className="mr-2" /> Turn on Wi-Fi
-                </GlassButton>
-              ) : null}
-              <GlassButton variant="teal" size="lg" className="w-full" onClick={() => searchForStick()}>
-                <RefreshCw size={18} className="mr-2" /> Try Again
-              </GlassButton>
-              <button type="button" className="w-full py-2 text-[14px] font-semibold text-ink-2 underline" onClick={() => setShowDiag((v) => !v)}>
-                {showDiag ? 'Hide' : 'Show'} diagnostics
-              </button>
-              {showDiag && (
-                <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-[16px] bg-ink/[0.06] p-3 text-[12px] text-ink-2">{p.diagnostics.join('\n') || 'No diagnostics available.'}</pre>
-              )}
-            </motion.div>
-          )}
+            <Glass className="rounded-[24px] p-5 border border-teal/30 bg-teal/10 relative overflow-hidden">
+              <div className="flex items-start gap-4">
+                <div className="w-8 h-8 rounded-full bg-teal/20 flex items-center justify-center text-teal font-bold shrink-0">3</div>
+                <div className="w-full">
+                  <p className="text-[16px] font-bold text-white mb-1">Enter Password</p>
+                  <p className="text-[14px] text-teal/80 leading-snug mb-3">Use this exact password:</p>
+                  <div className="bg-black/40 rounded-lg p-3 border border-teal/20 flex items-center justify-between">
+                    <span className="font-mono text-white font-bold tracking-wide">Stick@1234</span>
+                  </div>
+                </div>
+              </div>
+            </Glass>
+          </div>
+        </div>
 
-          {/* STEP 5: COMPLETED */}
-          {isCompleted && (
-            <motion.div key="completed" initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} className="space-y-4">
-              <Glass className="rounded-[22px] p-5 text-[15px] text-ink-2 text-center">
-                SmartStick {p.deviceId} is fully paired and configured! It is connected directly over local Wi-Fi.
-              </Glass>
-              <GlassButton variant="teal" size="lg" className="w-full" onClick={onDone}>
-                Continue
-              </GlassButton>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        <div className="mt-auto pt-6">
+          {errorMsg && <p className="text-red-400 text-sm mb-4 text-center">{errorMsg}</p>}
+          <GlassButton 
+            variant="teal" 
+            className="w-full rounded-[24px] h-14 font-bold text-[17px] shadow-[0_0_20px_var(--teal)] border border-teal/50" 
+            onClick={async () => {
+              setLoading(true);
+              setErrorMsg('');
+              try {
+                const res = await fetch('http://192.168.4.1/api/v1/device', { method: 'GET', signal: AbortSignal.timeout(5000) });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const info = await res.json();
+                if (!info.deviceId || !info.firmware) throw new Error('Invalid device JSON');
+                
+                const dev: PairedDevice = { 
+                  deviceId: info.deviceId, 
+                  model: info.model || 'AISS-ESP32CAM-1', 
+                  firmware: info.firmware, 
+                  protocolVersion: info.protocolVersion || 1, 
+                  keyB64: "dummy", 
+                  host: "192.168.4.1", 
+                  ownerUid: currentUid() || "local", 
+                  pairedAt: Date.now() 
+                };
+                
+                await savePairedDevice(dev);
+                await attachPairedDevice(dev);
+                
+                useSession.setState({ userOnboarded: true });
+                onDone();
+              } catch (e: any) {
+                setErrorMsg('Could not reach SmartStick. Make sure you are connected to SmartStick_AI Wi-Fi. (' + e.message + ')');
+                setLoading(false);
+              }
+            }}
+            disabled={loading}
+          >
+            {loading ? 'Connecting...' : "I've Connected"}
+          </GlassButton>
+        </div>
       </SafeAreaContent>
     </AppScreen>
   );
 }
-
-
