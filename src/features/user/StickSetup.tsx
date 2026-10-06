@@ -28,7 +28,7 @@ const STEP_TEXT: Partial<Record<string, string>> = {
  * The one SmartStick Wi-Fi setup page (onboarding and Settings → Set up again).
  * Opens straight into scanning: SCANNING → FOUND → CONNECTING → CONNECTED, then hands back.
  */
-export function StickSetup({ onDone, onCancel, title = 'Connect SmartStick' }: { onDone: () => void; onCancel?: () => void; title?: string }) {
+export function StickSetup({ onDone, onBack, onSkip, skipLabel = 'Cancel', title = 'Connect SmartStick' }: { onDone: () => void; onBack?: () => void; onSkip?: () => void; skipLabel?: string; title?: string }) {
   const step = useProvisioning((s) => s.step);
   const error = useProvisioning((s) => s.error);
   const needsReset = useProvisioning((s) => s.needsFactoryReset);
@@ -57,7 +57,7 @@ export function StickSetup({ onDone, onCancel, title = 'Connect SmartStick' }: {
   return (
     <AppScreen className="z-[90] bg-[var(--bg)] text-ink">
       <SafeAreaContent className="px-6 pb-8">
-        <ScreenHeader title={title} onBack={onCancel} />
+        <ScreenHeader title={title} onBack={onBack} />
 
         <div className="mt-8 grid place-items-center">
           <div className="relative grid h-44 w-44 place-items-center" aria-hidden>
@@ -120,9 +120,9 @@ export function StickSetup({ onDone, onCancel, title = 'Connect SmartStick' }: {
             </GlassButton>
           )}
           {phase === 'connected' && isLinked(link) && <p className="text-center text-[14px] text-ink-2">Opening Home…</p>}
-          {onCancel && phase !== 'connected' && (
-            <button type="button" className="h-12 w-full text-[15px] font-semibold text-ink-2" onClick={onCancel}>
-              {phase === 'error' ? 'Not now' : 'Cancel'}
+          {(onSkip ?? onBack) && phase !== 'connected' && (
+            <button type="button" className="h-12 w-full text-[15px] font-semibold text-ink-2" onClick={onSkip ?? onBack}>
+              {skipLabel}
             </button>
           )}
         </div>

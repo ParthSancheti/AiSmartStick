@@ -35,6 +35,8 @@ export interface UserDoc {
   phone: string | null;
   /** Stick user's home address (for 'take me home' and the guardian geofence). */
   homeAddress?: string | null;
+  /** The exact place the user picked on the map during setup (preferred over geocoding homeAddress). */
+  homePlace?: { lat: number; lng: number; placeId: string | null; address: string; label: string } | null;
   /** For a stick user: the active guardian relationship (1 user → 1 guardian). */
   guardianRelationshipId: string | null;
   /** For a guardian: the user they look after. */

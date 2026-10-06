@@ -1,4 +1,5 @@
 import { AnimatePresence, motion } from 'motion/react';
+import { useBackHandler } from '../../core/backStack';
 import { toggleThemeWithTransition } from '../../util/theme';
 import { Accessibility, AlertTriangle, Battery, ChevronLeft, ChevronRight, Contrast, Heart, Home, Mic, Minus, Moon, Plus, Shield, Smartphone, Sun, User, Vibrate, Volume2, Wifi, Search, Download, Unplug, ShieldAlert, ScanEye, MessageSquare, Sparkles, Radar, MapPin, Phone } from 'lucide-react';
 import { EventRow } from '../guardian/parts';
@@ -906,6 +907,15 @@ export function UserSettings() {
   const [accessibilityOpen, setAccessibilityOpen] = useState(false);
   const [gameOpen, setGameOpen] = useState(false);
   const [hardwareOpen, setHardwareOpen] = useState(false);
+  // Back closes the open sub-page, not the whole of Settings (core/backStack.ts).
+  useBackHandler(privacyOpen, () => setPrivacyOpen(false));
+  useBackHandler(activityOpen, () => setActivityOpen(false));
+  useBackHandler(infoOpen, () => setInfoOpen(false));
+  useBackHandler(profileOpen, () => setProfileOpen(false));
+  useBackHandler(emergencyOpen, () => setEmergencyOpen(false));
+  useBackHandler(accessibilityOpen, () => setAccessibilityOpen(false));
+  useBackHandler(gameOpen, () => setGameOpen(false));
+  useBackHandler(hardwareOpen, () => setHardwareOpen(false));
   
   const [osTapCount, setOsTapCount] = useState(0);
   const tapTimeoutRef = useRef<any>(undefined);

@@ -264,6 +264,20 @@ button { -webkit-user-select: none; user-select: none; touch-action: manipulatio
   100% { transform: scale(2.6); opacity: 0; }
 }
 @keyframes shimmer { to { background-position: -120% 0; } }
+/* Onboarding atmosphere: layered radial light (cheap: no blur filters), drifting slowly. */
+.intro-atmo {
+  background:
+    radial-gradient(60% 45% at 22% 18%, var(--teal-soft), transparent 70%),
+    radial-gradient(55% 40% at 82% 62%, color-mix(in srgb, var(--info) 18%, transparent), transparent 70%),
+    radial-gradient(80% 60% at 50% 110%, color-mix(in srgb, var(--teal) 14%, transparent), transparent 70%),
+    var(--bg);
+  background-size: 140% 140%;
+  animation: intro-drift 18s ease-in-out infinite alternate;
+}
+.intro-spotlight { background: radial-gradient(circle at 50% 42%, color-mix(in srgb, var(--teal) 34%, transparent), transparent 62%); }
+@keyframes intro-drift { from { background-position: 0% 0%; } to { background-position: 100% 60%; } }
+@media (prefers-reduced-motion: reduce) { .intro-atmo { animation: none; } }
+:root[data-reduce-motion="true"] .intro-atmo { animation: none; }
 @keyframes aiss-drop { from { transform: translateY(-40px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 
 @media (prefers-reduced-motion: reduce) {

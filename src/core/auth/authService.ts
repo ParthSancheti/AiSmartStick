@@ -102,7 +102,7 @@ export async function signOut() {
   await fbSignOut(auth);
 }
 
-export async function updateProfileFields(p: Partial<Pick<UserDoc, 'phone' | 'displayName' | 'homeAddress'>>) {
+export async function updateProfileFields(p: Partial<Pick<UserDoc, 'phone' | 'displayName' | 'homeAddress' | 'homePlace'>>) {
   const uid = useAuth.getState().user?.uid;
   if (!uid || isDemo()) return;
   await updateDoc(doc(fb().db, paths.user(uid)), { ...p, updatedAt: Date.now() });
@@ -133,4 +133,13 @@ export async function clearLocalAccountData() {
   });
   useActivity.setState({ events: [] });
   useAssistant.setState({ thread: [], conversationId: null });
+  // A different account on this phone starts at sign-in, with nothing of the previous one.
+  useSession.setState({ onboardingStep: 'signin' });
+  const { clearProfilePhoto } = await import('../profile/photoCache');
+  clearProfilePhoto();
+  try {
+    localStorage.removeItem('aiss.nav.active.v1');
+  } catch {
+    /* ignore */
+  }
 }

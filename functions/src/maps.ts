@@ -195,6 +195,11 @@ export const mapsReverse = onCall({ ...CALLABLE, secrets: [MAPS_SERVER_KEY] }, a
 export async function homeLocation(uid: string): Promise<{ lat: number; lng: number; address: string; placeId: string } | null> {
   const ref = db.doc(`users/${uid}`);
   const u = await ref.get();
+  // The exact point picked on the map during setup wins over geocoding the address text.
+  const hp = u.get('homePlace') as { lat?: unknown; lng?: unknown; placeId?: unknown; address?: unknown } | undefined;
+  if (hp && typeof hp.lat === 'number' && typeof hp.lng === 'number' && Math.abs(hp.lat) <= 90 && Math.abs(hp.lng) <= 180) {
+    return { lat: hp.lat, lng: hp.lng, address: str(hp.address, 300), placeId: typeof hp.placeId === 'string' ? hp.placeId : '' };
+  }
   const addr = str(u.get('homeAddress'), 300);
   if (!addr) return null;
   const cached = u.get('homeLocation');

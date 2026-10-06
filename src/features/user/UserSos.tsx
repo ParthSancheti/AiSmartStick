@@ -1,4 +1,5 @@
 import { motion } from 'motion/react';
+import { useBackHandler } from '../../core/backStack';
 import { Check, Loader2, ShieldCheck, Siren } from 'lucide-react';
 import { useSafety } from '../../core/store/safety';
 import { useSession } from '../../core/store/session';
@@ -26,6 +27,8 @@ export function UserSos() {
   const names = heardAs;
   const demo = useRuntime((x) => x.mode) === 'demo';
   const hasLocation = useLocation((x) => !!x.fix) || demo;
+  // During an SOS the back button must not exit the app or hide the alert; cancelling stays explicit.
+  useBackHandler(s.phase !== 'idle', () => undefined);
 
   if (s.phase === 'countdown') {
     return (

@@ -18,13 +18,13 @@ export function AppScreen({ children, className = '' }: { children: ReactNode, c
  * Ensures content does not overlap the status or navigation bars.
  * Use this for main scrollable or interactable content that isn't a floating overlay.
  */
-export function SafeAreaContent({ children, className = '', ...props }: { children: ReactNode, className?: string } & React.HTMLAttributes<HTMLDivElement>) {
+export function SafeAreaContent({ children, className = '', bottomInset = true, ...props }: { children: ReactNode, className?: string; /** false when the content places its own bottom bar on --sab */ bottomInset?: boolean } & React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div 
       className={`flex-1 flex flex-col overflow-y-auto no-scrollbar ${className}`}
       style={{
         paddingTop: 'calc(var(--island, var(--sat)) + 24px)',
-        paddingBottom: 'calc(var(--sab) + 16px)'
+        paddingBottom: bottomInset ? 'calc(var(--sab) + 16px)' : 0
       }}
       {...props}
     >

@@ -21,6 +21,8 @@ import { Atmosphere } from '../../components/Atmosphere';
 import { LiveVisionPanel } from '../../components/LiveVisionPanel';
 import { useBackHandler } from '../../core/backStack';
 import { toggleThemeWithTransition } from '../../util/theme';
+import { HomeCarousel } from './home/HomeCarousel';
+import { WalkCard, AssistantCard } from './home/HomeCards';
 import { AppScreen, SafeAreaContent, FloatingHeader } from '../../components/Layout';
 import { AiOrb, orbPhaseFor } from '../../components/AiOrb';
 import { useSafety } from '../../core/store/safety';
@@ -122,6 +124,7 @@ function ProfileMenu({ open, onClose }: { open: boolean; onClose: () => void }) 
 
 function TopNav() {
   const [menuOpen, setMenuOpen] = useState(false);
+  useBackHandler(menuOpen, () => setMenuOpen(false));
 
   return (
     <div className="relative z-50 mb-6 pt-8">
@@ -931,10 +934,13 @@ export function UserHome() {
   const route = useAudioRoute();
 
   const [safetyCenterOpen, setSafetyCenterOpen] = useState(false);
+  // Local-state screens join the one back model (core/backStack.ts).
+  useBackHandler(safetyCenterOpen, () => setSafetyCenterOpen(false));
   const batteryOpen = useUI((s) => s.batteryPage);
   const setBatteryOpen = (v: boolean) => useUI.setState({ batteryPage: v });
 
   const [chatOpen, setChatOpen] = useState(false);
+  useBackHandler(chatOpen, () => setChatOpen(false));
   const mapOpen = useUI((s) => s.mapOpen);
     const setMapOpen = (v: boolean) => useUI.setState({ mapOpen: v });
   const stickDetailsOpen = useUI((s) => s.stickPage);
@@ -957,12 +963,13 @@ export function UserHome() {
       <SafeAreaContent className="px-5 pb-4" {...bind}>
           <TopNav />
 
-        {/* Big Stick Card */}
-        <div className="glass rounded-[36px] p-5 flex border border-glass-border shadow-2xl relative overflow-hidden shrink-0 min-h-[260px] mb-6">
+        {/* Hero carousel: Stick · Walk · Assistant (home/HomeCarousel.tsx) */}
+        <HomeCarousel label="Your stick, walk and assistant">
+        <div className="glass rounded-[36px] p-5 flex border border-glass-border shadow-2xl relative overflow-hidden h-full min-h-[260px]">
           <div className="absolute inset-0 bg-gradient-to-br from-teal/5 to-info/10 pointer-events-none" />
 
-          <button onClick={() => (linkState === 'unpaired' ? openSetup() : setStickDetailsOpen(true))} aria-label="Stick diagnostics" className="w-[160px] flex flex-col items-center justify-center relative interactive rounded-[20px] p-2 hover:bg-glass-bg transition-colors">
-             <StickVisual height={200} />
+          <button onClick={() => (linkState === 'unpaired' ? openSetup() : setStickDetailsOpen(true))} aria-label="Stick diagnostics" className="w-[140px] shrink-0 flex flex-col items-center justify-center relative interactive rounded-[20px] p-2 hover:bg-glass-bg transition-colors">
+             <span data-parallax="18"><StickVisual height={200} /></span>
              <p className="absolute bottom-1 font-bold text-[14px] tracking-widest text-ink uppercase opacity-90 drop-shadow-md">{BRAND.name}</p>
           </button>
 
@@ -985,6 +992,9 @@ export function UserHome() {
              </div>
           </div>
         </div>
+        <WalkCard />
+        <AssistantCard />
+        </HomeCarousel>
 
         {/* Quick Actions Row */}
         <div className="grid grid-cols-2 gap-4 mb-6">

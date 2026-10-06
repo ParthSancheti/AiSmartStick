@@ -109,6 +109,8 @@ interface SessionData {
   entryRole: Role | null;
   lastAppPage?: string;
   lastSubPage?: string;
+  /** Onboarding/setup progress, restored after the app is closed mid-setup. */
+  onboardingStep?: string;
   guardianOnboarded: boolean;
   userOnboarded: boolean;
   /** The other person in the relationship, as this phone knows them. Empty until paired (real mode). */
@@ -182,6 +184,7 @@ export const useSession = create<SessionState>()(
         linked: s.linked,
         lastAppPage: s.lastAppPage,
         lastSubPage: s.lastSubPage,
+        onboardingStep: s.onboardingStep,
       }),
     },
   ),

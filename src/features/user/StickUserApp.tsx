@@ -3,6 +3,7 @@ import { useSession } from '../../core/store/session';
 import { useSafety } from '../../core/store/safety';
 import { useUI } from '../../core/store/ui';
 import { usePocketMode } from '../../hooks/usePocketMode';
+import { useResumeLastPage } from '../../hooks/useResumeLastPage';
 import { Atmosphere } from '../../components/Atmosphere';
 import { UserHome } from './UserHome';
 import { UserOnboarding } from './UserOnboarding';
@@ -26,6 +27,7 @@ export function StickUserApp() {
   const sos = useSafety((s) => s.phase);
   const pocket = useUI((s) => s.pocket);
   usePocketMode(pocket);
+  useResumeLastPage(onboarded);
 
   return (
     <div
@@ -38,7 +40,7 @@ export function StickUserApp() {
       <UserBanner />
       <CallOverlay />
       <UserSettings />
-      {onboarded && stickSetup && <StickSetup onDone={() => useUI.setState({ stickSetup: false })} onCancel={() => useUI.setState({ stickSetup: false })} />}
+      {onboarded && stickSetup && <StickSetup title="Set up SmartStick" onDone={() => useUI.setState({ stickSetup: false })} onBack={() => useUI.setState({ stickSetup: false })} />}
       <AnimatePresence>{pocket && <PocketShield key="pocket" />}</AnimatePresence>
       <AnimatePresence>{onboarded && sos !== 'idle' && <UserSos key="sos" />}</AnimatePresence>
     </div>
