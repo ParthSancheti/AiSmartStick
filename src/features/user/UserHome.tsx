@@ -664,6 +664,7 @@ function BatterySubpage({ open, onClose }: { open: boolean; onClose: () => void 
                   {eta ? <>Time left: <span className="text-ink">{eta}</span></> : lbl.sub}
                 </p>
                 <p className="text-[12.5px] text-ink-3 mt-1">{b.measuredAt ? `Measured ${timeAgo(b.measuredAt, now)} · estimate from voltage and current` : 'No measurement yet'}</p>
+                {b.issue && <p className="mt-2 rounded-[14px] bg-amber/15 px-3 py-2 text-[13px] font-semibold text-amber-ink" role="status">{b.issue}</p>}
               </div>
 
               <div className="relative shrink-0 z-10 mr-2" aria-hidden>
