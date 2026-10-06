@@ -26,6 +26,7 @@ import { UNIT_M } from './sim/geo';
 import { startSettingsSync, stopSettingsSync } from './sync/settingsSync';
 import { startBackgroundController, stopBackground } from './native/background';
 import { startCommandRelay, stopCommandRelay } from './sync/commandRelay';
+import { resumeSavedNavigation } from './navigation/realNavigator';
 
 let booted = false;
 
@@ -105,6 +106,11 @@ function bootReal() {
         void startRealDevice();
         void startLocation();
         onFix(walkFix);
+        // Directions that were running when the app/process died resume from the first fresh fix.
+        const offResume = onFix(() => {
+          offResume();
+          void resumeSavedNavigation();
+        });
         void startUserSync(uid);
         startCameraResponder(uid);
         void registerPush(uid, 'user');

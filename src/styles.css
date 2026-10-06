@@ -253,6 +253,7 @@ button { -webkit-user-select: none; user-select: none; touch-action: manipulatio
   100% { transform: scale(2.6); opacity: 0; }
 }
 @keyframes shimmer { to { background-position: -120% 0; } }
+@keyframes aiss-drop { from { transform: translateY(-40px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 
 @media (prefers-reduced-motion: reduce) {
   .atmo > i, .map-pulse, .shimmer { animation: none !important; }

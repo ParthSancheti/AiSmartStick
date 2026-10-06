@@ -6,6 +6,29 @@ import { logEvent } from '../store/activity';
 import { announce } from '../ai/voiceOut';
 import { haptics } from '../feedback/haptics';
 import { earcon } from '../feedback/earcons';
+import { stickNavCue } from './stickHaptics';
+
+/** The destination survives process death / activity recreation; the route is recomputed on resume. */
+const SAVED_KEY = 'aiss.nav.active.v1';
+const RESUME_WINDOW_MS = 2 * 60 * 60_000;
+function saveActive(place: PlaceResult | null) {
+  try {
+    if (place) localStorage.setItem(SAVED_KEY, JSON.stringify({ place, savedAt: Date.now() }));
+    else localStorage.removeItem(SAVED_KEY);
+  } catch {
+    /* storage unavailable: navigation still works, it just won't resume after a restart */
+  }
+}
+export function savedNavigation(): PlaceResult | null {
+  try {
+    const raw = localStorage.getItem(SAVED_KEY);
+    if (!raw) return null;
+    const v = JSON.parse(raw) as { place: PlaceResult; savedAt: number };
+    return Date.now() - v.savedAt < RESUME_WINDOW_MS && v.place?.placeId ? v.place : null;
+  } catch {
+    return null;
+  }
+}
 
 const OFF_ROUTE_M = 35;
 const ARRIVE_M = 15;
@@ -78,6 +101,14 @@ export async function startRealNavigation(place: PlaceResult) {
     updatedAt: Date.now(),
   });
   logEvent({ kind: 'navigation', severity: 'info', title: `Started directions to ${place.name}`, detail: `${Math.round(route.distanceM)} m, about ${Math.max(1, Math.round(route.durationS / 60))} min` });
+  saveActive(place);
+  // Spoken start for every entry point (map tap, voice, resume): where, how far, first instruction.
+  const mins = Math.max(1, Math.round(route.durationS / 60));
+  const first = route.steps[0]?.instruction;
+  announce(
+    { en: `Walking to ${place.name}, ${Math.round(route.distanceM / 10) * 10} metres, about ${mins} minute${mins === 1 ? '' : 's'}.${first ? ` ${first}.` : ''}`, hi: `${place.name} तक पैदल, ${Math.round(route.distanceM / 10) * 10} मीटर, लगभग ${mins} मिनट।${first ? ` ${first}.` : ''}` },
+    { nav: true, dedupeKey: 'nav-start' },
+  );
   onLocation(fix);
   return route;
 }
@@ -87,6 +118,7 @@ export function stopRealNavigation(reason: 'user' | 'arrived' = 'user') {
   unsubFix = null;
   if (active && reason === 'user') logEvent({ kind: 'navigation', severity: 'info', title: `Stopped directions to ${active.place.name}` });
   active = null;
+  saveActive(null);
   useNavView.setState(emptyNav());
 }
 
@@ -98,10 +130,12 @@ export async function reroute() {
   useNavView.setState({ rerouting: true, state: 'REROUTING' });
   try {
     const route = await walkingRoute({ origin: { lat: fix.lat, lng: fix.lng }, destination: { placeId: a.place.placeId } });
+    if (active !== a) return; // stopped (or restarted) while the route was being computed
     active = build(a.place, route);
     useNavView.setState({ path: route.path, totalM: route.distanceM, remainingM: route.distanceM, etaSec: route.durationS, offRoute: false, rerouting: false, error: null, state: 'NAVIGATING' });
     announce({ en: 'New route found.', hi: 'New route found.' }, { high: true, dedupeKey: 'nav-reroute' });
   } catch {
+    if (active !== a) return;
     useNavView.setState({ rerouting: false, error: 'Could not get a new route. Directions may be out of date.', state: 'NAVIGATION_ERROR' });
   }
 }
@@ -116,7 +150,9 @@ function onLocation(fix: Fix) {
   const toDest = haversineM(fix, { lat: a.place.lat, lng: a.place.lng });
 
   if (toDest <= Math.max(ARRIVE_M, fix.accuracyM * 0.6) || remaining < 5) {
+    if (useNavView.getState().arrived) return; // already announced; waiting for the grace period to end
     haptics.play('arrive');
+    void stickNavCue('arrive');
     earcon('arrive');
     announce({ en: `You have arrived near ${a.place.name}. Please confirm the entrance with the camera or someone nearby.`, hi: `You have arrived near ${a.place.name}.` }, { high: true });
     logEvent({ kind: 'navigation', severity: 'success', title: `Arrived near ${a.place.name}`, detail: `Walked about ${Math.round(total)} m` });
@@ -128,6 +164,11 @@ function onLocation(fix: Fix) {
 
   if (off > OFF_ROUTE_M) {
     a.offCount++;
+    if (a.offCount === 2) {
+      haptics.play('warning');
+      void stickNavCue('off_route');
+      announce({ en: 'You are off the route. Finding a new one.', hi: 'आप रास्ते से हट गए हैं। नया रास्ता ढूँढ रही हूँ।' }, { nav: true, dedupeKey: 'nav-off' });
+    }
     useNavView.setState({ offRoute: a.offCount >= 2, state: a.offCount >= 2 ? 'OFF_ROUTE' : 'NAVIGATING' });
     if (a.offCount >= 3 && Date.now() - a.lastReroute > 20000) void reroute();
   } else {
@@ -150,10 +191,14 @@ function onLocation(fix: Fix) {
     if (toNext <= PRE_ANNOUNCE_M && a.preAnnounced !== nextIdx) {
       a.preAnnounced = nextIdx;
       announce({ en: `In ${Math.round(toNext / 5) * 5 || 5} meters, ${nextStep.instruction}`, hi: `In ${Math.round(toNext / 5) * 5 || 5} meters, ${nextStep.instruction}` }, { nav: true, dedupeKey: 'nav-next' });
+      void stickNavCue('upcoming');
     }
     if (toNext <= NOW_M && a.nowAnnounced !== nextIdx) {
       a.nowAnnounced = nextIdx;
-      if (man === 'left' || man === 'right') haptics.play(man);
+      if (man === 'left' || man === 'right') {
+        haptics.play(man);
+        void stickNavCue(man);
+      }
       earcon('turn');
     }
   }
@@ -171,3 +216,16 @@ function onLocation(fix: Fix) {
 
 export const realNavActive = () => active !== null;
 export const currentDestination = () => active?.place ?? null;
+
+/** After a restart: resume directions to the saved destination from the current position (route recomputed). */
+export async function resumeSavedNavigation() {
+  const place = savedNavigation();
+  if (!place || active) return false;
+  try {
+    await startRealNavigation(place);
+    logEvent({ kind: 'navigation', severity: 'info', title: `Resumed directions to ${place.name}` });
+    return true;
+  } catch {
+    return false;
+  }
+}

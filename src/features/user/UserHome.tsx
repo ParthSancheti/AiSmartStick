@@ -19,6 +19,7 @@ import { EventRow } from '../guardian/parts';
 import { StickVisual } from '../../components/StickVisual';
 import { Atmosphere } from '../../components/Atmosphere';
 import { LiveVisionPanel } from '../../components/LiveVisionPanel';
+import { useBackHandler } from '../../core/backStack';
 import { AppScreen, SafeAreaContent, FloatingHeader } from '../../components/Layout';
 import { AiOrb, orbPhaseFor } from '../../components/AiOrb';
 import { useSafety } from '../../core/store/safety';
@@ -294,7 +295,16 @@ function DestinationSearch() {
   const [items, setItems] = useState<Suggestion[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [token] = useState(() => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())));
+  const newToken = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()));
+  const [token, setToken] = useState(newToken);
+  // Search around where the user is, but don't re-query on every 1 Hz GPS fix: ~100 m grid.
+  const near = fix ? `${fix.lat.toFixed(3)},${fix.lng.toFixed(3)}` : null;
+  // Back closes the search first (core/backStack.ts).
+  useBackHandler(q.length > 0 || items.length > 0, () => {
+    setQ('');
+    setItems([]);
+    setErr(null);
+  });
 
   useEffect(() => {
     setErr(null);
@@ -312,7 +322,8 @@ function DestinationSearch() {
         .catch((e) => setErr(`Search unavailable. ${friendlyError(e)}`));
     }, 300); // debounce: one request per pause in typing
     return () => clearTimeout(t);
-  }, [q, demo, fix?.lat, fix?.lng, internet, token]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `near` stands in for fix
+  }, [q, demo, near, internet, token]);
 
   const pick = async (s: Suggestion) => {
     setBusy(true);
@@ -323,6 +334,7 @@ function DestinationSearch() {
         if (p) startDemoNavigation(p);
       } else {
         const { place } = await placeDetails(s.placeId, token);
+        setToken(newToken()); // a Places session ends with the details call
         await startRealNavigation(place);
       }
       setQ('');

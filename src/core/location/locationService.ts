@@ -68,7 +68,8 @@ export async function startLocation() {
       useLocation.setState({ status: 'error', error: 'Location permission denied' });
       return;
     }
-    watchId = await Geolocation.watchPosition({ enableHighAccuracy: true, timeout: 20000, maximumAge: 5000 }, (p, err) => {
+    // On Android `interval` defaults to `timeout` (one fix per 20 s ≈ 28 m of walking): ask for 1 Hz.
+    watchId = await Geolocation.watchPosition({ enableHighAccuracy: true, timeout: 20000, maximumAge: 3000, interval: 1000, minimumUpdateInterval: 1000 }, (p, err) => {
       if (err) {
         const msg = String((err as { message?: string }).message ?? err);
         const denied = /denied|permission/i.test(msg);

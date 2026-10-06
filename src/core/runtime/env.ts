@@ -18,6 +18,8 @@ export const ENV = {
   },
   firebaseRegion: (e.VITE_FIREBASE_FUNCTIONS_REGION as string | undefined) ?? 'asia-south1',
   appCheckSiteKey: e.VITE_APPCHECK_RECAPTCHA_ENTERPRISE_KEY as string | undefined,
+  /** Sideloaded/debug APKs fail Play Integrity: opt in to the App Check debug provider (register the logged token in the console). Never in Play builds. */
+  appCheckDebug: e.VITE_APPCHECK_DEBUG === 'true',
   fcmVapidKey: e.VITE_FCM_VAPID_KEY as string | undefined,
   mapsBrowserKey: e.VITE_GOOGLE_MAPS_BROWSER_KEY as string | undefined,
   mapsMapId: e.VITE_GOOGLE_MAPS_MAP_ID as string | undefined,

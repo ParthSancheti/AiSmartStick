@@ -33,10 +33,15 @@ export function fb(): FirebaseHandles {
 
   // App Check: Play Integrity via the native plugin on Android, reCAPTCHA Enterprise on the web.
   if (Capacitor.isNativePlatform()) {
-    void FirebaseAppCheck.initialize({ isTokenAutoRefreshEnabled: true }).catch(() => undefined);
+    // Every callable (maps, Live token, assistant) enforces App Check: token requests must wait for
+    // the native provider, or the first calls after launch fail.
+    const ready = FirebaseAppCheck.initialize({ isTokenAutoRefreshEnabled: true, ...(ENV.appCheckDebug ? { debugToken: true } : {}) }).catch((e) => {
+      console.error('[app-check] native init failed', e);
+    });
     initializeAppCheck(app, {
       provider: new CustomProvider({
         getToken: async () => {
+          await ready;
           const r = await FirebaseAppCheck.getToken();
           return { token: r.token, expireTimeMillis: r.expireTimeMillis ?? Date.now() + 30 * 60_000 };
         },
