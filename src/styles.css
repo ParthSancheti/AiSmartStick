@@ -126,6 +126,17 @@
   color-scheme: dark;
 }
 
+/* Theme reveal (util/theme.ts): the new snapshot is clipped from the touch point; no default crossfade. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+::view-transition-new(root) { z-index: 2; }
+::view-transition-old(root) { z-index: 1; }
+/* While the snapshots are taken, colour transitions would capture a half-faded frame. */
+:root.theme-switching *, :root.theme-switching *::before, :root.theme-switching *::after { transition: none !important; }
+
 html, body, #root { height: 100%; }
 html { scroll-padding-top: env(safe-area-inset-top, 0px); }
 body {

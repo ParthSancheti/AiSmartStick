@@ -22,13 +22,14 @@ export async function placeCall(name: string, number: string | null): Promise<Ca
   return result;
 }
 
-export async function sendSms(name: string, number: string | null, body: string): Promise<SmsResult | 'demo' | 'no_number'> {
+export async function sendSms(name: string, number: string | null, body: string, opts: { direct?: boolean } = {}): Promise<SmsResult | 'demo' | 'no_number'> {
   if (isDemo()) {
     logEvent({ kind: 'message', severity: 'info', title: `Message to ${name}`, detail: `${body} (demo, not sent)` });
     return 'demo';
   }
   if (!number) return 'no_number';
-  const { result } = await AissNative.sendSms({ number, body, direct: getSettings().smsMode === 'direct' });
+  // direct = send without a tap when SEND_SMS is granted; the plugin falls back to the composer truthfully.
+  const { result } = await AissNative.sendSms({ number, body, direct: opts.direct ?? getSettings().smsMode === 'direct' });
   logEvent({ kind: 'message', severity: 'info', title: result === 'sent' ? `Text sent to ${name}` : `Opened a text to ${name}`, detail: body });
   return result;
 }

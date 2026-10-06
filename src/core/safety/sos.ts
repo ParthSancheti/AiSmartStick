@@ -30,10 +30,17 @@ const userFx = (fn: () => void) => {
   if (userSurfaceActive()) fn();
 };
 
-const alertNames = () => {
-  const g = useSession.getState().guardian;
-  return g.heardAs || g.name || 'your guardian';
-};
+/**
+ * Who SOS reaches. One user + one stick: the Safety Number from setup is the SOS contact; a linked
+ * guardian app (older builds) also receives the cloud alert.
+ */
+export function safetyContact(): { name: string; phone: string | null } {
+  const s = useSession.getState();
+  const c = s.contacts.find((x) => x.id === 'emergency');
+  if (c?.phone) return { name: c.name || 'your safety contact', phone: c.phone };
+  return { name: s.guardian.heardAs || s.guardian.name || 'your guardian', phone: s.guardian.phone };
+}
+const alertNames = () => safetyContact().name;
 
 export function startSos(trigger: SosTrigger) {
   const s = useSafety.getState();
@@ -103,27 +110,29 @@ async function activateReal(trigger: SosTrigger) {
   const loc = useLocation.getState().fix;
   logEvent({ kind: 'safety', severity: 'critical', title: 'SOS sent', detail: `${TRIGGER_LABEL[trigger]}${loc ? '' : '. Location was not available'}` });
   const result = await createSosEvent(sosId, trigger);
-  if (result === 'synced') {
+  // The cloud alert only reaches someone through a linked guardian app. Without one, "synced" means
+  // nobody was told: the Safety Number must get an SMS either way.
+  if (result === 'synced' && useSession.getState().linked) {
     useSafety.setState({ delivery: 'cloud' });
     announce(P.sosSent(alertNames()), { high: true });
     return;
   }
-  // Cloud not confirmed: the write stays queued (Firestore offline cache) AND we try SMS now.
-  const g = useSession.getState().guardian;
+  // Cloud not confirmed (stays queued in the offline cache) or no guardian app: SMS now.
+  const g = safetyContact();
   const where = loc ? ` Location: https://maps.google.com/?q=${loc.lat.toFixed(6)},${loc.lng.toFixed(6)}` : '';
   const body = `${getSettings().sosMessage}${where}`;
   try {
-    const r = await sendSms(g.heardAs || g.name || 'Guardian', g.phone, body);
+    const r = await sendSms(g.name, g.phone, body, { direct: true });
     if (r === 'sent') {
       useSafety.setState({ delivery: 'sms' });
       announce(P.sosSms, { high: true });
       void updateSosEvent(sosId, { smsFallback: 'sent' });
     } else if (r === 'composer_opened') {
       useSafety.setState({ delivery: 'sms' });
-      announce({ en: 'No internet. I opened a text message to your guardian. Press send to deliver it.', hi: 'इंटरनेट नहीं है। गार्डियन के लिए मैसेज खोला है, भेजने के लिए सेंड दबाइए।' }, { high: true });
+      announce({ en: `I opened a text message to ${g.name}. Press send to deliver it.`, hi: `${g.name} के लिए मैसेज खोला है, भेजने के लिए सेंड दबाइए।` }, { high: true });
       void updateSosEvent(sosId, { smsFallback: 'composer_opened' });
     } else {
-      announce({ en: 'No internet and no guardian phone number saved. The alert will send as soon as you are online.', hi: 'इंटरनेट नहीं है और गार्डियन का नंबर नहीं है। ऑनलाइन होते ही अलर्ट जाएगा।' }, { high: true });
+      announce({ en: 'No safety number is saved, so I could not text anyone. Add one in Settings. If you can, call someone for help.', hi: 'कोई सेफ़्टी नंबर सेव नहीं है, इसलिए मैसेज नहीं भेज सका। सेटिंग्स में नंबर जोड़िए।' }, { critical: true });
       void updateSosEvent(sosId, { smsFallback: 'unavailable' });
     }
   } catch {

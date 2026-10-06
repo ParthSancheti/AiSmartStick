@@ -20,6 +20,7 @@ import { StickVisual } from '../../components/StickVisual';
 import { Atmosphere } from '../../components/Atmosphere';
 import { LiveVisionPanel } from '../../components/LiveVisionPanel';
 import { useBackHandler } from '../../core/backStack';
+import { toggleThemeWithTransition } from '../../util/theme';
 import { AppScreen, SafeAreaContent, FloatingHeader } from '../../components/Layout';
 import { AiOrb, orbPhaseFor } from '../../components/AiOrb';
 import { useSafety } from '../../core/store/safety';
@@ -90,7 +91,7 @@ function ProfileMenu({ open, onClose }: { open: boolean; onClose: () => void }) 
             <button type="button" className="glass interactive flex items-center gap-3 px-4 py-3 rounded-[20px] text-[15px] font-semibold text-ink w-full" onClick={() => { onClose(); useUI.setState({ userSettings: true }); }}>
               <Settings size={18} /> Settings
             </button>
-            <button type="button" className="glass interactive flex items-center gap-3 px-4 py-3 rounded-[20px] text-[15px] font-semibold text-ink w-full" onClick={() => { updateSettings({ theme: isDark ? 'light' : 'dark' }); }}>
+            <button type="button" className="glass interactive flex items-center gap-3 px-4 py-3 rounded-[20px] text-[15px] font-semibold text-ink w-full" onClick={(e) => toggleThemeWithTransition(e)}>
               {isDark ? <Sun size={18} /> : <Moon size={18} />} Toggle Theme
             </button>
             <button type="button" className="glass interactive flex items-center gap-3 px-4 py-3 rounded-[20px] text-[15px] font-semibold text-ink w-full" onClick={() => { onClose(); if (link === 'unpaired' || link === 'auth_failed') openSetup(); else useUI.setState({ stickPage: true }); }}>

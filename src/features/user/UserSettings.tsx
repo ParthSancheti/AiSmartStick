@@ -1,4 +1,5 @@
 import { AnimatePresence, motion } from 'motion/react';
+import { toggleThemeWithTransition } from '../../util/theme';
 import { Accessibility, AlertTriangle, Battery, ChevronLeft, ChevronRight, Contrast, Heart, Home, Mic, Minus, Moon, Plus, Shield, Smartphone, Sun, User, Vibrate, Volume2, Wifi, Search, Download, Unplug, ShieldAlert, ScanEye, MessageSquare, Sparkles, Radar, MapPin, Phone } from 'lucide-react';
 import { EventRow } from '../guardian/parts';
 import { useUI } from '../../core/store/ui';
@@ -1008,7 +1009,7 @@ export function UserSettings() {
               {/* Theme Toggle */}
               <motion.button 
                 whileTap={{ scale: 0.98 }}
-                onClick={() => update({ theme: isDark ? 'light' : 'dark' })}
+                onClick={(e) => toggleThemeWithTransition(e)}
                 className="glass rounded-[24px] p-5 border border-glass-border flex items-center gap-4 w-full text-left interactive shadow-sm"
               >
                 <div className={`p-3 rounded-[14px] ${isDark ? 'bg-info/10 text-info' : 'bg-amber/10 text-amber'}`}>
