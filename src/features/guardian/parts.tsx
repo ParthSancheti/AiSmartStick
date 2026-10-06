@@ -18,7 +18,7 @@ import { cx } from '../../components/glass';
 
 export function GScreen({ children, wide }: { children: ReactNode; wide?: boolean }) {
   return (
-    <div className="absolute inset-0 overflow-y-auto no-scrollbar" style={{ paddingTop: 'calc(var(--island, 0px) + 10px)' }}>
+    <div className="absolute inset-0 overflow-y-auto no-scrollbar" style={{ paddingTop: 'calc(var(--island, var(--sat)) + 10px)' }}>
       <div className={cx('mx-auto px-4 pb-32', wide ? 'max-w-[980px]' : 'max-w-[680px]')}>{children}</div>
     </div>
   );
@@ -243,7 +243,7 @@ export function EventRow({ e, now }: { e: ActivityEvent; now: number }) {
 export function GuardianToast() {
   const toast = useUI((s) => s.guardianToast);
   return (
-    <div className="pointer-events-none absolute inset-x-0 z-[60] flex justify-center px-4" style={{ top: 'calc(var(--island, 0px) + 10px)' }} aria-live="polite">
+    <div className="pointer-events-none absolute inset-x-0 z-[60] flex justify-center px-4" style={{ top: 'calc(var(--island, var(--sat)) + 10px)' }} aria-live="polite">
       <AnimatePresence>
         {toast && (
           <motion.div

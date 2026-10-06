@@ -97,7 +97,7 @@ function ProfileSubpage({ open, onClose }: { open: boolean; onClose: () => void 
           className="absolute inset-0 z-[70] bg-bg overflow-y-auto no-scrollbar"
         >
           <Atmosphere variant="user" />
-          <div className="px-4 pb-8" style={{ paddingTop: 'calc(var(--island, 0px) + 12px)' }}>
+          <div className="px-4 pb-8" style={{ paddingTop: 'calc(var(--island, var(--sat)) + 12px)' }}>
             <div className="mb-6 mt-8 flex items-center gap-4">
               <button onClick={onClose} className="h-12 w-12 glass interactive rounded-full flex items-center justify-center text-ink shrink-0">
                 <ChevronLeft size={24} />
@@ -186,7 +186,7 @@ function ContactSubpage({ open, onClose, contact, onSave, onDelete }: { open: bo
       {open && (
         <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', damping: 30, stiffness: 300 }} className="absolute inset-0 z-[80] bg-bg overflow-y-auto no-scrollbar">
           <Atmosphere variant="user" />
-          <div className="px-4 pb-8" style={{ paddingTop: 'calc(var(--island, 0px) + 12px)' }}>
+          <div className="px-4 pb-8" style={{ paddingTop: 'calc(var(--island, var(--sat)) + 12px)' }}>
             <div className="mb-6 mt-8 flex items-center gap-4">
               <button onClick={onClose} className="h-12 w-12 glass interactive rounded-full flex items-center justify-center text-ink shrink-0"><ChevronLeft size={24} /></button>
               <h1 className="text-[24px] font-bold text-ink">{contact ? 'Edit Contact' : 'New Contact'}</h1>
@@ -268,7 +268,7 @@ function EmergencySubpage({ open, onClose }: { open: boolean; onClose: () => voi
           <Atmosphere variant="user" />
           
           {/* Scrollable inner content */}
-          <div className="absolute inset-0 overflow-y-auto no-scrollbar px-4 pb-8" style={{ paddingTop: 'calc(var(--island, 0px) + 12px)' }}>
+          <div className="absolute inset-0 overflow-y-auto no-scrollbar px-4 pb-8" style={{ paddingTop: 'calc(var(--island, var(--sat)) + 12px)' }}>
             <div className="mb-6 mt-8 flex items-center gap-4">
               <button onClick={onClose} className="h-12 w-12 glass interactive rounded-full flex items-center justify-center text-ink shrink-0">
                 <ChevronLeft size={24} />
@@ -504,7 +504,7 @@ function AccessibilitySubpage({ open, onClose }: { open: boolean; onClose: () =>
       {open && (
         <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', damping: 30, stiffness: 300 }} className="absolute inset-0 z-[70] bg-bg overflow-y-auto no-scrollbar">
           <Atmosphere variant="user" />
-          <div className="px-4 pb-8" style={{ paddingTop: 'calc(var(--island, 0px) + 12px)' }}>
+          <div className="px-4 pb-8" style={{ paddingTop: 'calc(var(--island, var(--sat)) + 12px)' }}>
             <div className="mb-6 mt-8 flex items-center gap-4">
               <button onClick={onClose} className="h-12 w-12 glass interactive rounded-full flex items-center justify-center text-ink shrink-0"><ChevronLeft size={24} /></button>
               <h1 className="text-[24px] font-bold text-ink">Accessibility</h1>
@@ -652,7 +652,7 @@ function HardwareSubpage({ open, onClose }: { open: boolean; onClose: () => void
       {open && (
         <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', damping: 30, stiffness: 300 }} className="absolute inset-0 z-[70] bg-bg overflow-y-auto no-scrollbar">
           <Atmosphere variant="user" />
-          <div className="px-4 pb-8" style={{ paddingTop: 'calc(var(--island, 0px) + 12px)' }}>
+          <div className="px-4 pb-8" style={{ paddingTop: 'calc(var(--island, var(--sat)) + 12px)' }}>
             <div className="mb-6 mt-8 flex items-center gap-4">
               <button onClick={onClose} aria-label="Back" className="h-12 w-12 glass interactive rounded-full flex items-center justify-center text-ink shrink-0"><ChevronLeft size={24} /></button>
               <h1 className="text-[24px] font-bold text-ink">Hardware</h1>
@@ -749,7 +749,7 @@ function PrivacySubpage({ open, onClose }: { open: boolean; onClose: () => void 
       {open && (
         <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', damping: 30, stiffness: 300 }} className="absolute inset-0 z-[70] bg-bg overflow-y-auto no-scrollbar">
           <Atmosphere variant="user" />
-          <div className="px-4 pb-8" style={{ paddingTop: 'calc(var(--island, 0px) + 12px)' }}>
+          <div className="px-4 pb-8" style={{ paddingTop: 'calc(var(--island, var(--sat)) + 12px)' }}>
             <div className="mb-6 mt-8 flex items-center gap-4">
               <button onClick={onClose} aria-label="Back" className="h-12 w-12 glass interactive rounded-full flex items-center justify-center text-ink shrink-0"><ChevronLeft size={24} /></button>
               <h1 className="text-[24px] font-bold text-ink">Camera & Location</h1>
@@ -799,7 +799,7 @@ function ActivitySubpage({ open, onClose }: { open: boolean; onClose: () => void
       {open && (
         <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', damping: 30, stiffness: 300 }} className="absolute inset-0 z-[70] bg-bg overflow-y-auto no-scrollbar">
           <Atmosphere variant="user" />
-          <div className="px-4 pb-8" style={{ paddingTop: 'calc(var(--island, 0px) + 12px)' }}>
+          <div className="px-4 pb-8" style={{ paddingTop: 'calc(var(--island, var(--sat)) + 12px)' }}>
             <div className="mb-6 mt-8 flex items-center gap-4">
               <button onClick={onClose} aria-label="Back" className="h-12 w-12 glass interactive rounded-full flex items-center justify-center text-ink shrink-0"><ChevronLeft size={24} /></button>
               <h1 className="text-[24px] font-bold text-ink">Activity History</h1>
@@ -832,7 +832,7 @@ function DeviceInfoSubpage({ open, onClose }: { open: boolean; onClose: () => vo
       {open && (
         <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', damping: 30, stiffness: 300 }} className="absolute inset-0 z-[70] bg-bg overflow-y-auto no-scrollbar">
           <Atmosphere variant="user" />
-          <div className="px-4 pb-8" style={{ paddingTop: 'calc(var(--island, 0px) + 12px)' }}>
+          <div className="px-4 pb-8" style={{ paddingTop: 'calc(var(--island, var(--sat)) + 12px)' }}>
             <div className="mb-6 mt-8 flex items-center gap-4">
               <button onClick={onClose} aria-label="Back" className="h-12 w-12 glass interactive rounded-full flex items-center justify-center text-ink shrink-0"><ChevronLeft size={24} /></button>
               <h1 className="text-[24px] font-bold text-ink">Device Information</h1>
@@ -944,7 +944,7 @@ export function UserSettings() {
             }} 
             transition={{ duration: 0.3, ease: 'easeOut' }}
             className={`absolute inset-0 overflow-y-auto no-scrollbar px-4 pb-8 ${profileOpen || emergencyOpen || accessibilityOpen || hardwareOpen ? 'pointer-events-none' : ''}`}
-            style={{ paddingTop: 'calc(var(--island, 0px) + 12px)' }}
+            style={{ paddingTop: 'calc(var(--island, var(--sat)) + 12px)' }}
           >
             <div className="mb-5 mt-8 flex items-center gap-4">
               <button onClick={close} className="h-12 w-12 glass interactive rounded-full flex items-center justify-center text-ink shrink-0">

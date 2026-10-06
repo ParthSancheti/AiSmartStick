@@ -7,6 +7,7 @@ import { UltrasonicFilter } from './ultrasonic';
 import { ButtonClassifier } from './button';
 import { STALE_MS } from './types';
 import { sensorConditioning } from '../vision/sensorConditioning';
+import { trace } from '../device/deviceTrace';
 
 /**
  * RAW HARDWARE → VALIDATION → NORMALIZATION → FILTER → QUALITY → DOMAIN STATE (device store).
@@ -96,14 +97,17 @@ export function validatePacket(p: unknown): p is TelemetryPacket {
 
 export function ingestPacket(p: TelemetryPacket, receivedAt: number) {
   if (!validatePacket(p)) {
+    trace('packet_rejected', { error: 'malformed packet' });
     handlers.onRejected?.('malformed packet');
     return;
   }
   const id = useDevice.getState().identity;
   if (id && p.deviceId !== id.deviceId) {
+    trace('packet_rejected', { error: 'unexpected device' });
     handlers.onRejected?.(`packet from unexpected device ${p.deviceId}`);
     return;
   }
+  trace('packet_valid', { seq: p.seq });
   if (p.uptimeMs < lastUptime) {
     // Stick rebooted: sequence and button ids restart.
     resetPipeline();
@@ -119,6 +123,7 @@ export function ingestPacket(p: TelemetryPacket, receivedAt: number) {
   const b = battery.update({ busV: p.battery.busV, currentMa: p.battery.currentMa, charging: p.battery.charging, ok: p.battery.ok, at: receivedAt });
   const i = imu.update({ ...p.imu, at: receivedAt });
   const u = ultrasonic.update(p.ultrasonic, receivedAt);
+  trace('telemetry_parsed', { batteryPct: b.percent, distanceCm: u.distanceCm, pitch: i.pitch });
   const cam = useDevice.getState().camera;
   useDevice.setState({
     battery: b,
@@ -131,7 +136,12 @@ export function ingestPacket(p: TelemetryPacket, receivedAt: number) {
     camera: { ...cam, status: p.health.camera === 'error' ? 'error' : cam.status === 'capturing' ? 'capturing' : 'idle' },
   });
 
-  for (const g of buttons.ingest(p.button, p.uptimeMs)) handlers.onButton(g);
+  trace('store_updated', { seq: p.seq });
+
+  for (const g of buttons.ingest(p.button, p.uptimeMs)) {
+    trace('button_event', { gesture: g });
+    handlers.onButton(g);
+  }
   for (const e of p.safety ?? []) {
     if (e.id <= lastSafetyId) continue;
     lastSafetyId = e.id;

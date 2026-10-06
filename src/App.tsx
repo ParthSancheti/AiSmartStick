@@ -8,10 +8,10 @@ import { useApplySettings } from './hooks/useApplySettings';
 import { SvgDefs } from './components/SvgDefs';
 import { DemoPanel } from './components/DemoPanel';
 import { StickUserApp } from './features/user/StickUserApp';
-import { GuardianApp } from './features/guardian/GuardianApp';
 import { Stage } from './features/stage/Stage';
 import { DetectionDebugView } from './features/debug/DetectionDebugView';
 import { useRuntime } from './core/runtime/mode';
+import { popBack } from './core/backStack';
 
 function SinglePhone() {
   const demoOpen = useUI((s) => s.demoOpen);
@@ -88,29 +88,32 @@ export default function App() {
     };
     window.addEventListener('keydown', onKey);
 
-    CapApp.addListener('backButton', ({ canGoBack }) => {
+    // One back model (core/backStack.ts): the top registered layer first, then global screen flags,
+    // then normal Android exit from the root screen. The app has no browser history to go back in.
+    const back = () => {
+      if (popBack()) return true;
       const st = useUI.getState();
-      if (st.demoOpen) { useUI.setState({ demoOpen: false }); return; }
-      if (st.visionDebug) { useUI.setState({ visionDebug: false }); return; }
-      if (st.pocket) { useUI.setState({ pocket: false }); return; }
-      if (st.userSettings) { useUI.setState({ userSettings: false }); return; }
-      if (st.stickSetup) { useUI.setState({ stickSetup: false }); return; }
-      if (st.stickPage) { useUI.setState({ stickPage: false }); return; }
-      if (st.batteryPage) { useUI.setState({ batteryPage: false }); return; }
-      if (st.mapOpen) { useUI.setState({ mapOpen: false }); return; }
-      if (st.healthOpen) { useUI.setState({ healthOpen: false }); return; }
-      if (st.liveAiOpen) { useUI.setState({ liveAiOpen: false }); return; }
-      if (st.audioOpen) { useUI.setState({ audioOpen: false }); return; }
-      if (st.talkSheet) { useUI.setState({ talkSheet: false }); return; }
-      
-      if (!canGoBack) {
-        CapApp.exitApp();
-      } else {
-        window.history.back();
+      const flags = ['demoOpen', 'visionDebug', 'talkSheet', 'stickSetup', 'userSettings', 'batteryPage', 'stickPage', 'healthOpen', 'liveAiOpen', 'audioOpen', 'mapOpen', 'pocket'] as const;
+      const open = flags.find((f) => st[f]);
+      if (open) {
+        useUI.setState({ [open]: false });
+        return true;
       }
+      return false;
+    };
+    const onEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') back();
+    };
+    window.addEventListener('keydown', onEscape);
+    const handle = CapApp.addListener('backButton', () => {
+      if (!back()) void CapApp.exitApp();
     });
 
-    return () => window.removeEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('keydown', onEscape);
+      void handle.then((h) => h.remove());
+    };
   }, []);
 
   return (

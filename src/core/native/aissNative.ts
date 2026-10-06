@@ -1,7 +1,7 @@
 import { registerPlugin, type PermissionState, type PluginListenerHandle } from '@capacitor/core';
 
 /**
- * Custom Android plugin (android/app/src/main/java/in/aismartstick/app/AissNativePlugin.kt).
+ * Custom Android plugin (android/app/src/main/java/in/aismartstick/app/AissNativePlugin.java).
  * Everything here needs platform APIs a WebView doesn't have. On the web each method
  * reports itself unavailable instead of pretending (see aissNativeWeb.ts).
  */
@@ -20,8 +20,9 @@ export interface AissNativePlugin {
   /** Android 10+: WifiNetworkSpecifier request; shows one system "Connect to device?" sheet. */
   connectToSetupNetwork(opts: { ssid: string; passphrase: string; timeoutMs?: number }): Promise<{ connected: boolean; reason?: string }>;
   /** HTTP over the setup network specifically (process stays on mobile data for everything else). */
-  setupRequest(opts: { method: 'GET' | 'POST'; path: string; body?: string; timeoutMs?: number }): Promise<{ status: number; body: string }>;
-  requestBinary(opts: { path: string; timeoutMs?: number }): Promise<{ status: number; body: string }>;
+  setupRequest(opts: { method: 'GET' | 'POST'; path: string; body?: string; bodyBase64?: string; headers?: Record<string, string>; timeoutMs?: number }): Promise<{ status: number; body: string }>;
+  /** GET returning the raw response bytes base64-encoded (camera JPEG). Same network binding and headers as setupRequest. */
+  requestBinary(opts: { path: string; headers?: Record<string, string>; timeoutMs?: number }): Promise<{ status: number; body: string; contentType?: string }>;
   releaseSetupNetwork(): Promise<void>;
   /** Listen for the stick's UDP discovery broadcast on the hotspot. */
   startDiscovery(opts: { port: number }): Promise<void>;

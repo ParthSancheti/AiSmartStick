@@ -20,6 +20,15 @@ export const DEVICE_API = {
 /** SoftAP the stick raises after a 5 s button hold: "AISmartStick-4F2A". */
 export const SETUP_AP_PREFIX = 'AISmartStick-';
 export const SETUP_AP_HOST = '192.168.4.1';
+/**
+ * Dashcam topology (current firmware, Net.cpp startSetupAp): the stick ALWAYS runs its own access
+ * point and never joins another network. The phone binds this one network for stick traffic
+ * (WifiNetworkSpecifier) while mobile data stays the default route for Firebase, Maps and Gemini.
+ */
+export const STICK_AP_SSID = 'SmartStick_AI';
+export const STICK_AP_PASSPHRASE = 'Stick@1234';
+/** Provisioning still validates station credentials (8–63 char password) although dashcam mode never uses them. */
+export const DASHCAM_STATION_PLACEHOLDER = { ssid: 'dashcam-ap-only', password: 'dashcam-ap-only' } as const;
 /** The stick announces itself on the phone's hotspot with UDP broadcast on this port. */
 export const DISCOVERY_UDP_PORT = 4210;
 /** mDNS host: aismartstick-<last4>.local */

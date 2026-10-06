@@ -260,7 +260,7 @@ export function UserOnboarding() {
 
           {step === 'welcome' && (
             <motion.div key="welcome" initial={{ opacity: 0, filter: 'blur(20px)', scale: 1.05 }} animate={{ opacity: 1, filter: 'blur(0px)', scale: 1 }} exit={{ opacity: 0, filter: 'blur(20px)', scale: 0.95 }} transition={{ duration: 0.4, ease: [0.2, 0.8, 0.2, 1] }} className="absolute inset-0 flex flex-col px-6 pb-12 pt-0">
-              <div className="relative z-50 px-0 pb-4" style={{ paddingTop: 'calc(var(--island, env(safe-area-inset-top, 0px)) + 16px)' }}>
+              <div className="relative z-50 px-0 pb-4" style={{ paddingTop: 'calc(var(--island, var(--sat)) + 16px)' }}>
                 {/* Space for status bar */}
               </div>
               
@@ -306,7 +306,7 @@ export function UserOnboarding() {
 
           {step === 'address' && (
             <motion.div key="address" initial={{ opacity: 0, filter: 'blur(20px)', scale: 1.05 }} animate={{ opacity: 1, filter: 'blur(0px)', scale: 1 }} exit={{ opacity: 0, filter: 'blur(20px)', scale: 0.95 }} transition={{ duration: 0.4, ease: [0.2, 0.8, 0.2, 1] }} className="absolute inset-0 flex flex-col px-6 pb-12 pt-0">
-              <div className="relative z-50 px-0 pb-4" style={{ paddingTop: 'calc(var(--island, env(safe-area-inset-top, 0px)) + 16px)' }}>
+              <div className="relative z-50 px-0 pb-4" style={{ paddingTop: 'calc(var(--island, var(--sat)) + 16px)' }}>
                 <button onClick={() => setStep('welcome')} className="h-12 w-12 glass rounded-full flex items-center justify-center text-white shrink-0 bg-white/10 border border-white/20"><ChevronRight size={24} className="rotate-180" /></button>
               </div>
               
@@ -345,7 +345,7 @@ export function UserOnboarding() {
 
           {step === 'safety' && (
             <motion.div key="safety" initial={{ opacity: 0, filter: 'blur(20px)', scale: 1.05 }} animate={{ opacity: 1, filter: 'blur(0px)', scale: 1 }} exit={{ opacity: 0, filter: 'blur(20px)', scale: 0.95 }} transition={{ duration: 0.4, ease: [0.2, 0.8, 0.2, 1] }} className="absolute inset-0 flex flex-col px-6 pb-12 pt-0">
-              <div className="relative z-50 px-0 pb-4" style={{ paddingTop: 'calc(var(--island, env(safe-area-inset-top, 0px)) + 16px)' }}>
+              <div className="relative z-50 px-0 pb-4" style={{ paddingTop: 'calc(var(--island, var(--sat)) + 16px)' }}>
                 <button onClick={() => setStep('welcome')} className="h-12 w-12 glass rounded-full flex items-center justify-center text-white shrink-0 bg-white/10 border border-white/20"><ChevronRight size={24} className="rotate-180" /></button>
               </div>
               

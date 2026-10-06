@@ -45,7 +45,7 @@ export function GuardianMap() {
     window.open(`https://www.google.com/maps/dir/?api=1&destination=${loc.lat},${loc.lng}`, '_blank', 'noopener');
   };
   return (
-    <div className="absolute inset-0 flex flex-col overflow-y-auto no-scrollbar pb-[120px]" style={{ paddingTop: 'calc(var(--island, 0px) + 10px)' }}>
+    <div className="absolute inset-0 flex flex-col overflow-y-auto no-scrollbar pb-[120px]" style={{ paddingTop: 'calc(var(--island, var(--sat)) + 10px)' }}>
       <div className="z-10 px-4 pb-2 shrink-0 relative">
         <TopNav />
         <Glass className="flex items-center gap-3 rounded-full py-2 pl-2 pr-5 mt-2 shadow-sm">

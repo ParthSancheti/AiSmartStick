@@ -94,6 +94,10 @@
 
   --font-ui: "Atkinson Hyperlegible Next", "Noto Sans Devanagari", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --text-scale: 1;
+  /* Safe areas. Capacitor 8 SystemBars injects --safe-area-inset-* on <html> (0 when it pads the WebView
+     natively, the real inset when it passes insets through); browsers use env(). Use these, never env() directly. */
+  --sat: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  --sab: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
 
   color-scheme: light;
   box-sizing: border-box;

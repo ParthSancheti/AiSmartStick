@@ -62,9 +62,12 @@ export async function validateJpeg(blob: Blob): Promise<string | null> {
   if (blob.size < 2_000) return 'frame too small';
   if (blob.size > 2_000_000) return 'frame too large';
   const head = new Uint8Array(await blob.slice(0, 3).arrayBuffer());
-  const tail = new Uint8Array(await blob.slice(blob.size - 2).arrayBuffer());
+  // Some camera drivers pad the buffer after EOI; accept EOI within the last 64 bytes.
+  const tail = new Uint8Array(await blob.slice(Math.max(0, blob.size - 64)).arrayBuffer());
   if (head[0] !== 0xff || head[1] !== 0xd8) return 'not a JPEG (missing SOI)';
-  if (tail[0] !== 0xff || tail[1] !== 0xd9) return 'truncated JPEG (missing EOI)';
+  let eoi = false;
+  for (let i = tail.length - 2; i >= 0 && !eoi; i--) eoi = tail[i] === 0xff && tail[i + 1] === 0xd9;
+  if (!eoi) return 'truncated JPEG (missing EOI)';
   return null;
 }
 

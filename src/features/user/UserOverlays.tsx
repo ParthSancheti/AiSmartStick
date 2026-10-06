@@ -12,7 +12,7 @@ const ICONS = { eye: Eye, message: MessageCircle, link: Link2, info: Info };
 export function UserBanner() {
   const b = useUI((s) => s.userBanner);
   return (
-    <div className="pointer-events-none absolute inset-x-3 z-[70]" style={{ top: 'calc(var(--island, 0px) + 6px)' }}>
+    <div className="pointer-events-none absolute inset-x-3 z-[70]" style={{ top: 'calc(var(--island, var(--sat)) + 6px)' }}>
       <AnimatePresence>
         {b && (
           <motion.div
@@ -49,7 +49,7 @@ export function CallOverlay() {
       {call && (
         <motion.div
           className="absolute inset-0 z-[72] flex flex-col items-center justify-between bg-[#0c1d24] px-6 pb-10 text-white"
-          style={{ paddingTop: 'calc(var(--island, 0px) + 60px)' }}
+          style={{ paddingTop: 'calc(var(--island, var(--sat)) + 60px)' }}
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 30 }}

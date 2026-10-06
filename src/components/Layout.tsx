@@ -1,4 +1,6 @@
 import React, { ReactNode } from 'react';
+import { ChevronLeft } from 'lucide-react';
+import { useBackHandler } from '../core/backStack';
 
 /** 
  * Wraps an entire screen, extending edge-to-edge. 
@@ -21,8 +23,8 @@ export function SafeAreaContent({ children, className = '', ...props }: { childr
     <div 
       className={`flex-1 flex flex-col overflow-y-auto no-scrollbar ${className}`}
       style={{
-        paddingTop: 'calc(var(--island, env(safe-area-inset-top, 0px)) + 32px)',
-        paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 16px)'
+        paddingTop: 'calc(var(--island, var(--sat)) + 24px)',
+        paddingBottom: 'calc(var(--sab) + 16px)'
       }}
       {...props}
     >
@@ -39,9 +41,36 @@ export function FloatingHeader({ children, className = '' }: { children: ReactNo
   return (
     <div 
       className={`absolute top-0 left-0 right-0 z-50 pointer-events-none px-4 pb-4 flex flex-col ${className}`}
-      style={{ paddingTop: 'calc(var(--island, env(safe-area-inset-top, 0px)) + 32px)' }}
+      style={{ paddingTop: 'calc(var(--island, var(--sat)) + 32px)' }}
     >
       {children}
+    </div>
+  );
+}
+
+/**
+ * The canonical screen header: back button, title, optional trailing action. Registering `onBack`
+ * also binds the Android back button (core/backStack.ts), so the on-screen and hardware back
+ * paths can never disagree. Place it inside SafeAreaContent (which already clears the status bar).
+ */
+export function ScreenHeader({ title, onBack, trailing, className = '' }: { title?: ReactNode; onBack?: () => void; trailing?: ReactNode; className?: string }) {
+  useBackHandler(!!onBack, () => onBack?.());
+  return (
+    <div className={`relative z-20 flex min-h-12 items-center gap-3 ${className}`}>
+      {onBack ? (
+        <button
+          type="button"
+          onClick={onBack}
+          aria-label="Back"
+          className="glass interactive grid h-12 w-12 shrink-0 place-items-center rounded-full text-ink"
+        >
+          <ChevronLeft size={24} aria-hidden />
+        </button>
+      ) : (
+        <span className="h-12 w-12 shrink-0" aria-hidden />
+      )}
+      <div className="min-w-0 flex-1 truncate text-center text-[17px] font-bold text-ink">{title}</div>
+      <div className="flex h-12 w-12 shrink-0 items-center justify-end">{trailing}</div>
     </div>
   );
 }

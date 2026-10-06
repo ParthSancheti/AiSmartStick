@@ -77,7 +77,7 @@ export function UserSos() {
       role="alertdialog"
       aria-label="SOS sent"
       className="absolute inset-0 z-[80] flex flex-col bg-sos-deep px-5 pb-5 text-white"
-      style={{ paddingTop: 'calc(var(--island, 0px) + 24px)' }}
+      style={{ paddingTop: 'calc(var(--island, var(--sat)) + 24px)' }}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}

@@ -93,7 +93,7 @@ export function LiveAiSubpage({ open, onClose }: { open: boolean; onClose: () =>
           <Atmosphere variant="user" />
 
           {/* Top Bar */}
-          <div className="relative z-50 pointer-events-auto pt-[calc(env(safe-area-inset-top)+16px)] mt-8 px-4 flex items-center gap-4 w-full">
+          <div className="relative z-50 pointer-events-auto pt-[calc(var(--sat)+16px)] mt-8 px-4 flex items-center gap-4 w-full">
             <button onClick={onClose} className="h-12 w-12 glass interactive rounded-full flex items-center justify-center text-ink shrink-0 hover:bg-black/5 transition-colors">
               <ChevronLeft size={24} />
             </button>
@@ -135,7 +135,7 @@ export function LiveAiSubpage({ open, onClose }: { open: boolean; onClose: () =>
           </div>
 
           {/* Bottom Control / Status */}
-          <div className="relative z-10 w-full pb-[calc(env(safe-area-inset-bottom)+2rem)] flex flex-col items-center">
+          <div className="relative z-10 w-full pb-[calc(var(--sab)+2rem)] flex flex-col items-center">
             {visualState === 'error' ? (
               <button 
                 onClick={() => ai.start()}

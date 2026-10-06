@@ -70,7 +70,8 @@ public class AissNativePlugin extends Plugin {
     private static final String SETUP_HOST = "http://192.168.4.1";
     private final ExecutorService io = Executors.newCachedThreadPool();
     private ConnectivityManager.NetworkCallback setupCallback;
-    private Network setupNetwork;
+    private volatile Network setupNetwork;
+    private String setupSsid;
     private DatagramSocket discoverySocket;
     private WifiManager.MulticastLock multicastLock;
     private SharedPreferences securePrefs;
@@ -154,15 +155,26 @@ public class AissNativePlugin extends Plugin {
             return;
         }
 
+        final String ssid = call.getString("ssid", "SmartStick_AI");
+        final String passphrase = call.getString("passphrase", "Stick@1234");
+        // Already bound to this stick network (telemetry reconnects call this every time): keep it.
+        if (setupNetwork != null && ssid.equals(setupSsid)) {
+            JSObject r = new JSObject();
+            r.put("connected", true);
+            call.resolve(r);
+            return;
+        }
         releaseSetup();
+        setupSsid = ssid;
         ConnectivityManager cm = (ConnectivityManager) getContext().getSystemService(Context.CONNECTIVITY_SERVICE);
-        
-        // Dashcam Protocol: Hardcoded AP
+
+        // Dashcam topology: the stick is always its own AP. Android remembers the user's approval
+        // for this SSID, so later requests (app restart, reconnect) connect without a dialog.
         WifiNetworkSpecifier spec = new WifiNetworkSpecifier.Builder()
-            .setSsid("SmartStick_AI")
-            .setWpa2Passphrase("Stick@1234")
+            .setSsid(ssid)
+            .setWpa2Passphrase(passphrase)
             .build();
-            
+
         NetworkRequest req = new NetworkRequest.Builder()
             .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
             .removeCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
@@ -200,6 +212,10 @@ public class AissNativePlugin extends Plugin {
             @Override
             public void onLost(Network network) {
                 if (network.equals(setupNetwork)) setupNetwork = null;
+                JSObject event = new JSObject();
+                event.put("event", "WIFI_LOST");
+                event.put("ip", "192.168.4.1");
+                notifyListeners("WIFI_STATE", event);
             }
         };
         // Shows ONE system dialog ("Connect to device?"). Mobile data stays the default network.
@@ -212,22 +228,36 @@ public class AissNativePlugin extends Plugin {
         final String method = call.getString("method", "GET");
         final String path = call.getString("path", "/");
         final String body = call.getString("body");
+        final String bodyBase64 = call.getString("bodyBase64");
+        final JSObject headers = call.getObject("headers", new JSObject());
         final int timeout = call.getInt("timeoutMs", 8000);
         io.execute(() -> {
             HttpURLConnection c = null;
             try {
-                // Bound to the setup network specifically, regardless of the default route.
-                // If net is null (e.g. already connected manually via OS settings), fallback to default route.
+                // Bound to the stick network specifically, regardless of the default route.
+                // If net is null (e.g. joined manually via OS settings), fall back to the default route.
                 URL url = new URL(SETUP_HOST + path);
                 c = (HttpURLConnection) (net != null ? net.openConnection(url) : url.openConnection());
                 c.setRequestMethod(method);
                 c.setConnectTimeout(timeout);
                 c.setReadTimeout(timeout);
-                if (body != null) {
+                c.setUseCaches(false);
+                applyHeaders(c, headers);
+                if (bodyBase64 != null) {
+                    byte[] bytes = Base64.decode(bodyBase64, Base64.DEFAULT);
                     c.setDoOutput(true);
+                    c.setFixedLengthStreamingMode(bytes.length);
+                    c.setRequestProperty("content-type", "application/octet-stream");
+                    try (OutputStream os = c.getOutputStream()) {
+                        os.write(bytes);
+                    }
+                } else if (body != null) {
+                    byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+                    c.setDoOutput(true);
+                    c.setFixedLengthStreamingMode(bytes.length);
                     c.setRequestProperty("content-type", "application/json");
                     try (OutputStream os = c.getOutputStream()) {
-                        os.write(body.getBytes(StandardCharsets.UTF_8));
+                        os.write(bytes);
                     }
                 }
                 int status = c.getResponseCode();
@@ -254,6 +284,7 @@ public class AissNativePlugin extends Plugin {
     public void requestBinary(PluginCall call) {
         final Network net = setupNetwork;
         final String path = call.getString("path", "/");
+        final JSObject headers = call.getObject("headers", new JSObject());
         final int timeout = call.getInt("timeoutMs", 8000);
         io.execute(() -> {
             HttpURLConnection c = null;
@@ -263,7 +294,9 @@ public class AissNativePlugin extends Plugin {
                 c.setRequestMethod("GET");
                 c.setConnectTimeout(timeout);
                 c.setReadTimeout(timeout);
-                
+                c.setUseCaches(false);
+                applyHeaders(c, headers);
+
                 int status = c.getResponseCode();
                 if (status >= 400) {
                     JSObject r = new JSObject();
@@ -285,6 +318,7 @@ public class AissNativePlugin extends Plugin {
                 JSObject r = new JSObject();
                 r.put("status", status);
                 r.put("body", base64Image);
+                r.put("contentType", c.getContentType());
                 call.resolve(r);
             } catch (Exception e) {
                 call.reject("requestBinary failed: " + e.getMessage());
@@ -292,6 +326,17 @@ public class AissNativePlugin extends Plugin {
                 if (c != null) c.disconnect();
             }
         });
+    }
+
+    /** Device auth headers (x-aiss-device/ts/nonce/sig) computed in JS; the key never crosses the bridge. */
+    private static void applyHeaders(HttpURLConnection c, JSObject headers) {
+        if (headers == null) return;
+        java.util.Iterator<String> keys = headers.keys();
+        while (keys.hasNext()) {
+            String k = keys.next();
+            String v = headers.getString(k);
+            if (v != null) c.setRequestProperty(k, v);
+        }
     }
 
     @PluginMethod
@@ -309,6 +354,7 @@ public class AissNativePlugin extends Plugin {
         }
         setupCallback = null;
         setupNetwork = null;
+        setupSsid = null;
     }
 
     // ── Discovery (UDP broadcast on the hotspot) ─────────────────
