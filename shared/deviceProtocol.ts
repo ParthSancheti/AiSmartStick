@@ -27,8 +27,11 @@ export const SETUP_AP_HOST = '192.168.4.1';
  */
 export const STICK_AP_SSID = 'SmartStick_AI';
 export const STICK_AP_PASSPHRASE = 'Stick@1234';
-/** Provisioning still validates station credentials (8–63 char password) although dashcam mode never uses them. */
-export const DASHCAM_STATION_PLACEHOLDER = { ssid: 'dashcam-ap-only', password: 'dashcam-ap-only' } as const;
+/**
+ * Provisioning still validates station credentials (SSID + 8–63 char passphrase) although dashcam mode
+ * never joins another network: the app sends this SSID and a random, never-used value per pairing.
+ */
+export const DASHCAM_STATION_SSID = 'dashcam-ap-only';
 /** The stick announces itself on the phone's hotspot with UDP broadcast on this port. */
 export const DISCOVERY_UDP_PORT = 4210;
 /** mDNS host: aismartstick-<last4>.local */

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { PluginListenerHandle } from '@capacitor/core';
-import { DASHCAM_STATION_PLACEHOLDER, DEVICE_API, PROTOCOL_VERSION, SETUP_AP_HOST, STICK_AP_PASSPHRASE, STICK_AP_SSID, type DeviceInfoPacket, type ProvisioningPacket, type ProvisioningResult } from '../../../shared/deviceProtocol';
+import { DASHCAM_STATION_SSID, DEVICE_API, PROTOCOL_VERSION, SETUP_AP_HOST, STICK_AP_PASSPHRASE, STICK_AP_SSID, type DeviceInfoPacket, type ProvisioningPacket, type ProvisioningResult } from '../../../shared/deviceProtocol';
 import { AissNative } from '../native/aissNative';
 import { randomBytes, sha256Hex, toB64, toHex, hmacHex, safeEqual } from '../device/crypto';
 import { loadPairedDevice, savePairedDevice, type PairedDevice } from '../device/pairedDevice';
@@ -198,7 +198,7 @@ export async function provisionStick() {
       set({ step: 'configuring_network' });
       const keyB64 = toB64(randomBytes(32));
       // Dashcam firmware never joins another network but still validates the credential fields (8–63 chars).
-      const packet: ProvisioningPacket = { v: 1, ssid: DASHCAM_STATION_PLACEHOLDER.ssid, password: DASHCAM_STATION_PLACEHOLDER.password, deviceKey: keyB64, ownerHash: await sha256Hex(uid), nonce: toHex(randomBytes(12)) };
+      const packet: ProvisioningPacket = { v: 1, ssid: DASHCAM_STATION_SSID, password: toHex(randomBytes(8)), deviceKey: keyB64, ownerHash: await sha256Hex(uid), nonce: toHex(randomBytes(12)) };
       const result = await setupJson<ProvisioningResult>('POST', DEVICE_API.provision, packet);
       check();
       if (!result.ok) throw new Error(`The stick refused the configuration (${result.error ?? 'unknown'}).`);
