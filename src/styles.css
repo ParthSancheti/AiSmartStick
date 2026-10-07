@@ -360,6 +360,12 @@ body { overflow-wrap: break-word; }
 /* Home header: on a narrow screen / large text the logo stands alone instead of a clipped name. */
 .home-header-bar { container-type: inline-size; }
 @container (max-width: 16em) { .home-brand-name { display: none; } .home-brand-spacer { display: block; } }
+@container (max-width: 12.5em) { .home-mode-badge { display: none; } }
+
+/* Home stick card: with very large text (or a very narrow phone) the stick picture makes room for the
+   status tiles instead of squeezing "Connected" into "Conn-ecte-d". The Stick tile opens the same page. */
+.stick-card { container-type: inline-size; }
+@container (max-width: 11.5em) { .stick-card-visual { display: none !important; } }
 
 /* AI orb (components/AiOrb.tsx): CSS-only motion. */
 .orb-spin { animation: orb-spin var(--orb-spin, 24s) linear infinite; will-change: transform; }

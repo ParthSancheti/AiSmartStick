@@ -39,7 +39,8 @@ import { signOut } from '../../core/auth/authService';
 import { useAuth } from '../../core/auth/authStore';
 import { useSafetyEval } from '../../core/safety/safetyRuntime';
 import { useNavView } from '../../core/navigation/navView';
-import { useLocation, freshnessLabel } from '../../core/location/locationService';
+import { useLocation, freshnessLabel, locationProblem } from '../../core/location/locationService';
+import { useProfileName, firstName } from '../../core/profile/profile';
 import { useWalking } from '../../core/walking/walkTracker';
 import { autocomplete, placeDetails, type Suggestion } from '../../core/maps/mapsService';
 import { startRealNavigation, stopRealNavigation } from '../../core/navigation/realNavigator';
@@ -75,7 +76,7 @@ function ProfileMenu({ open, onClose }: { open: boolean; onClose: () => void }) 
   const link = useDevice((s) => s.link);
   const mode = useRuntime((s) => s.mode);
   const user = useAuth((s) => s.user);
-  const personName = useSession((s) => s.person.name);
+  const profileName = useProfileName();
   const l = linkLabel(link);
   const item = 'flex min-h-12 w-full items-center gap-3 rounded-[18px] px-4 py-3 text-left text-[15px] font-semibold text-ink active:bg-ink/[0.06]';
 
@@ -93,9 +94,9 @@ function ProfileMenu({ open, onClose }: { open: boolean; onClose: () => void }) 
             transition={{ duration: 0.16, ease: [0.2, 0.8, 0.2, 1] }}
             className="glass absolute right-5 top-full z-[101] mt-2 flex w-[min(17rem,calc(100vw-40px))] origin-top-right flex-col gap-0.5 rounded-[26px] p-2 shadow-2xl"
           >
-            {(user || personName) && (
+            {(user || profileName) && (
               <div className="min-w-0 px-4 pb-2 pt-2">
-                <p className="truncate text-[15px] font-bold text-ink">{personName || user?.displayName || 'Signed in'}</p>
+                <p className="truncate text-[15px] font-bold text-ink">{profileName || user?.displayName || 'Signed in'}</p>
                 <p className="truncate text-[13px] text-ink-3">{mode === 'demo' ? 'Demo mode · simulated data' : (user?.email ?? '')}</p>
               </div>
             )}
@@ -136,7 +137,7 @@ function HomeHeader({ headerRef }: { headerRef: React.Ref<HTMLElement> }) {
         <BrandLogo variant="round" size={44} />
         <span className="home-brand-name min-w-0 flex-1 truncate text-[17px] font-bold tracking-tight text-ink">{BRAND.name}</span>
         <span className="home-brand-spacer hidden flex-1" aria-hidden />
-        <ModeBadge className="shrink-0" />
+        <ModeBadge className="home-mode-badge shrink-0" />
         <button type="button" className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-full active:scale-95" aria-label="Open profile menu" aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}>
           <AccountAvatar size={44} />
         </button>
@@ -188,9 +189,9 @@ const StickCard = memo(function StickCard() {
   const stickAction = () => (linkState === 'unpaired' || linkState === 'auth_failed' ? openSetup() : useUI.setState({ stickPage: true }));
   const BatIcon = bCharging ? BatteryCharging : bPercent != null && bPercent <= 20 ? BatteryLow : BatteryFull;
   return (
-    <div className={`${HOME_CARD} flex-row items-stretch gap-3`}>
+    <div className={`${HOME_CARD} stick-card flex-row items-stretch gap-3`}>
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-teal/5 to-info/10" />
-      <button type="button" onClick={stickAction} aria-label="Stick diagnostics" className="relative flex w-[32%] min-w-[80px] max-w-[140px] shrink-0 flex-col items-center justify-center rounded-[24px] active:scale-[0.98]">
+      <button type="button" onClick={stickAction} aria-label="Stick diagnostics" className="stick-card-visual relative flex w-[32%] min-w-[80px] max-w-[140px] shrink-0 flex-col items-center justify-center rounded-[24px] active:scale-[0.98]">
         <StickVisual height={168} />
         <span className="mt-1 max-w-full truncate text-[12px] font-bold uppercase tracking-[0.1em] text-ink-2">Stick</span>
       </button>
@@ -316,8 +317,7 @@ function AiChatSubpage({ open, onClose }: { open: boolean; onClose: () => void }
 
 function AiChatPage({ onClose }: { onClose: () => void }) {
   const [historyOpen, setHistoryOpen] = useState(false);
-  const personName = useSession((s) => s.person.name);
-  const userName = personName || useAuth.getState().user?.displayName?.split(' ')[0] || '';
+  const userName = firstName(useProfileName());
   const thread = useAssistant((s) => s.thread);
   const phase = useAssistant((s) => s.phase);
   const [text, setText] = useState('');
@@ -565,6 +565,7 @@ function WalkingPage({ onClose }: { onClose: () => void }) {
   const nav = useNavView();
   const fix = useLocation((s) => s.fix);
   const locStatus = useLocation((s) => s.status);
+  const locProblem = useLocation((s) => locationProblem(s)?.kind ?? null);
   const demo = useRuntime((s) => s.mode) === 'demo';
   const now = useNow(1000);
   const fresh = freshnessLabel(fix?.ts, now);
@@ -589,7 +590,7 @@ function WalkingPage({ onClose }: { onClose: () => void }) {
           <BackButton onClick={onClose} className="!bg-transparent !shadow-none" />
           <div className="flex min-w-0 flex-1 items-center justify-center gap-2 px-1">
             <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${live ? 'bg-ok' : 'bg-ink-3'}`} />
-            <span className="truncate text-[14px] font-bold uppercase tracking-wider text-ink">{demo ? 'Demo walk' : fix ? (live ? 'Live location' : fresh) : locStatus === 'error' ? 'Location off' : 'Finding location'}</span>
+            <span className="truncate text-[14px] font-bold uppercase tracking-wider text-ink">{demo ? 'Demo walk' : fix ? (live ? 'Live location' : fresh) : locProblem === 'off' ? 'Location off' : locProblem === 'denied' || locProblem === 'prompt' ? 'Location not allowed' : 'Finding location'}</span>
           </div>
           <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-ink/5 text-ink-3" aria-hidden>
             <Map size={20} />
@@ -623,7 +624,7 @@ function WalkingPage({ onClose }: { onClose: () => void }) {
           ) : (
             <>
               <DestinationSearch />
-              <LocationStatus className="mt-3" />
+              <LocationStatus className="mt-3" wantPrecise />
             </>
           )}
         </div>
@@ -682,9 +683,19 @@ function StickDetailsContent() {
       <Section title="Camera & detection">
         <LiveVisionPanel />
       </Section>
+      {d.link === 'auth_failed' && (
+        <div className="mb-4 rounded-[24px] bg-sos/10 p-4 ring-1 ring-sos/30" role="alert">
+          <p className="text-[15px] font-bold text-sos">This stick needs firmware 1.2</p>
+          <p className="mt-1 text-[14px] leading-snug text-ink-2">{d.linkDetail ?? 'It still runs the old secure firmware. Flash firmware 1.2 with the Arduino IDE, then set it up again.'}</p>
+          <button type="button" onClick={() => openSetup()} className="mt-3 min-h-11 rounded-full bg-sos px-4 text-[14px] font-bold text-white active:scale-[0.98]">
+            Set up SmartStick again
+          </button>
+        </div>
+      )}
       <Section title="Sensors">
         <div className={listCls}>
           <KV k="Link" v={`${linkLabel(d.link).text}${d.linkDetail ? ` · ${d.linkDetail}` : ''}`} />
+          <KV k="Connection" v={d.link === 'auth_failed' ? 'Needs firmware 1.2' : 'Stick Wi-Fi (SmartStick_AI) · no key needed'} />
           <KV k="Stick" v={d.identity ? `${d.identity.deviceId} · fw ${d.identity.firmware}` : 'Not paired'} />
           <KV k="Battery" v={d.battery.voltage != null ? `${d.battery.voltage.toFixed(2)} V · ${d.battery.currentMa == null ? '— mA' : `${Math.round(d.battery.currentMa)} mA`}` : batteryLabel(d.battery).sub} />
           <KV k="Motion" v={d.imu.status === 'ok' ? `pitch ${d.imu.pitch}° · roll ${d.imu.roll}°${d.imu.calibrated ? '' : ' · not calibrated'}` : d.imu.status} />
@@ -961,6 +972,7 @@ function SafetyCenterContent() {
   const ev = useSafetyEval();
   const locStatus = useLocation((s) => s.status);
   const fix = useLocation((s) => s.fix);
+  const locProblemText = useLocation((s) => locationProblem(s)?.text ?? null);
   const linked = useSession((s) => s.linked);
   // Re-render when contacts change; the number itself comes from the same lookup SOS uses.
   useSession((s) => s.contacts);
@@ -1002,7 +1014,7 @@ function SafetyCenterContent() {
           <Check
             ok={mode === 'demo' ? null : locStatus === 'ok' ? true : locStatus === 'idle' ? null : false}
             label="GPS"
-            value={mode === 'demo' ? 'simulated in demo' : fix ? `±${Math.round(fix.accuracyM)} m · ${freshnessLabel(fix.ts)}` : locStatus === 'error' ? 'permission denied' : 'no position yet'}
+            value={mode === 'demo' ? 'simulated in demo' : fix ? `±${Math.round(fix.accuracyM)} m · ${freshnessLabel(fix.ts)}` : locProblemText ?? 'no position yet'}
           />
           <Check ok={internet} label="Internet" value={internet == null ? 'checking' : internet ? 'online' : 'offline'} />
         </div>

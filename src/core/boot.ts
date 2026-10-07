@@ -10,6 +10,8 @@ import { unlockAudio } from './feedback/earcons';
 import { useSession } from './store/session';
 import { useRuntime } from './runtime/mode';
 import { startAuth, clearLocalAccountData } from './auth/authService';
+import { mirrorNameToAuth } from './profile/profile';
+import { seedTextScaleFromSystem } from './native/textScale';
 import { useAuth } from './auth/authStore';
 import { watchRelationship, stopRelationshipWatch, useRelationship } from './pairing/pairingService';
 import { startUserSync, stopUserSync, stopSosWatch } from './sync/userSync';
@@ -62,6 +64,8 @@ function bootDemo() {
   guidanceEngine.start();
   startWorld();
   useSession.setState({ person: { ...useSession.getState().person, name: useSession.getState().person.name || 'Aarav' } });
+  // The profile menu reads the auth name: show the same demo name everywhere.
+  mirrorNameToAuth(useSession.getState().person.name);
   // Demo navigation feeds the same normalised view the real navigator uses.
   let walked = 0;
   let lastTravelled = 0;
@@ -93,6 +97,7 @@ function bootDemo() {
 
 function bootReal() {
   void startNetworkMonitor();
+  void seedTextScaleFromSystem();
   const isUserApp = () => {
     const role = useAuth.getState().role ?? useSession.getState().entryRole;
     return role !== 'guardian';
@@ -107,7 +112,8 @@ function bootReal() {
       watchRelationship(uid, userSide ? 'user' : 'guardian');
       if (userSide) {
         void startRealDevice();
-        void startLocation();
+        // Android shows one permission dialog at a time: ask for notifications only after location.
+        void startLocation().finally(() => void registerPush(uid, 'user'));
         onFix(walkFix);
         // Directions that were running when the app/process died resume from the first fresh fix.
         const offResume = onFix(() => {
@@ -116,7 +122,6 @@ function bootReal() {
         });
         void startUserSync(uid);
         startCameraResponder(uid);
-        void registerPush(uid, 'user');
         startBackgroundController();
         startCommandRelay(uid);
         visionEngine.start();

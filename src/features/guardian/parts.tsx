@@ -228,8 +228,8 @@ export function EventRow({ e, now }: { e: ActivityEvent; now: number }) {
         <Icon size={17} />
       </span>
       <div className="min-w-0 flex-1">
-        <div className="flex items-baseline justify-between gap-3">
-          <p className="text-[15.5px] font-semibold leading-snug text-ink">{e.title}</p>
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+          <p className="min-w-0 text-[15.5px] font-semibold leading-snug text-ink">{e.title}</p>
           <time className="shrink-0 text-[13px] text-ink-3 tabular" dateTime={new Date(e.ts).toISOString()}>
             {now - e.ts < 3_600_000 ? timeAgo(e.ts, now) : clock(e.ts)}
           </time>

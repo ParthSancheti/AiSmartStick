@@ -441,6 +441,19 @@ public class AissNativePlugin extends Plugin {
         return null;
     }
 
+    /** Android's font size setting. The WebView is pinned to 100 % (MainActivity); the app scales text itself from this. */
+    @PluginMethod
+    public void getFontScale(PluginCall call) {
+        float scale = 1f;
+        try {
+            scale = getContext().getResources().getConfiguration().fontScale;
+        } catch (Exception ignored) {
+        }
+        JSObject r = new JSObject();
+        r.put("fontScale", (Object) Double.valueOf(scale));
+        call.resolve(r);
+    }
+
     /** Wi-Fi state for the setup screen: on/off, current SSID (needs location), stick network present. */
     @PluginMethod
     @SuppressWarnings("deprecation")
