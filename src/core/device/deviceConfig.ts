@@ -30,6 +30,7 @@ export function buildDeviceConfig(s: Settings, version: number): DeviceConfig {
 const key = (s: Settings) => JSON.stringify([s.obstacleSensitivity, s.hapticStrength, s.obstacleVibration, s.autoSleepMin, s.sosTriggers.fall]);
 let lastKey = '';
 let busy = false;
+let dirty = false;
 
 /** Pushes the desired config if the stick's active version differs. Safe to call often. */
 export async function syncDeviceConfig(force = false) {
@@ -44,8 +45,13 @@ export async function syncDeviceConfig(force = false) {
   const active = d.health?.configVersion ?? null;
   const desired = d.configSync.desiredVersion;
   if (!force && k === lastKey && desired != null && active === desired) return;
-  if (busy) return;
+  if (busy) {
+    // A change while the previous push is in flight (e.g. dragging a slider) is applied right after it.
+    dirty = true;
+    return;
+  }
   busy = true;
+  dirty = false;
   // Monotonic across restarts: seconds since epoch, strictly above what the stick has.
   const version = Math.max(Math.floor(Date.now() / 1000), (active ?? 0) + 1);
   useDevice.setState({ configSync: { desiredVersion: version, appliedVersion: active, state: 'pending', error: null } });
@@ -63,6 +69,10 @@ export async function syncDeviceConfig(force = false) {
     useDevice.setState({ configSync: { desiredVersion: version, appliedVersion: active, state: 'offline', error: (e as Error).message } });
   } finally {
     busy = false;
+    if (dirty) {
+      dirty = false;
+      if (key(useSession.getState().settings) !== lastKey) void syncDeviceConfig(true);
+    }
   }
 }
 

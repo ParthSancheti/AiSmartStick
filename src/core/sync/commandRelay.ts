@@ -3,11 +3,12 @@ import { fb } from '../firebase/app';
 import { paths } from '../../../shared/firestoreSchema';
 import { getTransport } from '../device/bridge';
 import { useDevice, isLinked } from '../store/device';
-import { useSession } from '../store/session';
+import { useSession, getSettings } from '../store/session';
 import { logEvent } from '../store/activity';
 import { announce } from '../ai/voiceOut';
 import { runVision } from '../ai/executor';
 import { log } from '../log';
+import { askUser } from '../camera/cameraSession';
 
 /**
  * USER PHONE side of Guardian remote commands: queued → received → executing → completed/failed/expired.
@@ -55,6 +56,11 @@ async function execute(uid: string, c: RemoteCommandDoc) {
   try {
     if (c.type === 'scan') {
       announce({ en: `${who} asked for a description of what is in front of you.`, hi: `${who} ने आपके सामने का विवरण माँगा है।` }, { high: true });
+      // Same consent rule as live camera viewing: the scan sends a camera image to the AI.
+      if (getSettings().cameraRequests === 'ask' && !(await askUser(who))) {
+        logEvent({ kind: 'vision', severity: 'info', title: `AI scan request from ${who} declined` });
+        return set({ status: 'failed', error: 'The user did not allow the camera.' });
+      }
       await set({ status: 'executing' });
       const r = await runVision('describe_scene');
       announce(r.spoken);

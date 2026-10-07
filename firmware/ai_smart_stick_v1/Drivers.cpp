@@ -51,6 +51,12 @@ void begin() {
   out(false);
 }
 void setIntensity(uint8_t pct) { dutyPct = pct > 100 ? 100 : pct; }
+void pulse(uint16_t ms) {
+  curDuty = 100;
+  out(true);
+  delay(ms);
+  out(false);
+}
 bool knownPattern(const char *p) { for (auto &x : PATS) if (!strcmp(x.name, p)) return true; return false; }
 
 bool play(const char *pattern, Priority prio, bool repeat, uint8_t intensityPct) {
@@ -208,10 +214,18 @@ Reading read() {
 namespace button {
 static bool state = false, raw = false;
 static uint32_t changeAt = 0, pressAt = 0;
+static bool suppressed = false;
 void begin() { pinMode(PIN_BUTTON, INPUT_PULLUP); }
+void suppressUntilRelease() { suppressed = true; }
 int tick() {
   bool r = digitalRead(PIN_BUTTON) == LOW;
   uint32_t now = millis();
+  if (suppressed) {
+    if (!r) suppressed = false;
+    raw = state = false;
+    changeAt = now;
+    return 0;
+  }
   if (r != raw) { raw = r; changeAt = now; }
   if (raw != state && now - changeAt >= BTN_DEBOUNCE_MS) {
     state = raw;

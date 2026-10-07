@@ -66,6 +66,9 @@ export class LiveSession {
   /** Confirm-gated tool waiting for the user's "yes". */
   private pendingConfirm: { name: string; args: unknown } | null = null;
   private confirmedByUser = false;
+  /** The user's last complete utterance (for confirmations arriving with the model's tool call). */
+  private lastUserText = '';
+  private wordsTimer: ReturnType<typeof setTimeout> | undefined;
 
   get isActive() {
     return this.active;
@@ -130,13 +133,18 @@ export class LiveSession {
       this.stopTone();
 
       audioManager.setLiveSessionOpen(true);
-      this.mic = new MicStream();
-      this.mic.onData = (data) => {
+      const mic = new MicStream();
+      this.mic = mic;
+      mic.onData = (data) => {
         if (this.active && this.session) this.session.sendRealtimeInput({ audio: { data, mimeType: 'audio/pcm;rate=16000' } });
       };
-      await this.mic.start();
-      if (stale()) return false;
-      log.info('live: session open', { model: cfg.liveModel, micRate: this.mic.sampleRate });
+      await mic.start();
+      if (stale()) {
+        // Stopped while the permission prompt / getUserMedia was pending: never leave the mic open.
+        mic.stop();
+        return false;
+      }
+      log.info('live: session open', { model: cfg.liveModel, micRate: mic.sampleRate });
       useAssistant.setState({ phase: 'listening' });
       this.bumpIdle();
       return true;
@@ -166,7 +174,13 @@ export class LiveSession {
       this.bumpIdle();
       this.inText += sc.inputTranscription.text;
       useAssistant.setState({ heard: this.inText.trim() });
-      await this.onUserWords(this.inText);
+      // Transcription arrives in pieces ("Okay" … ", what about a hospital?"): judge the utterance
+      // only once it has settled, never a first fragment.
+      clearTimeout(this.wordsTimer);
+      const snapshot = this.inText;
+      this.wordsTimer = setTimeout(() => {
+        if (this.active && this.inText === snapshot) void this.onUserWords(snapshot);
+      }, 900);
     }
     if (sc?.outputTranscription?.text) this.outText += sc.outputTranscription.text;
 
@@ -179,7 +193,12 @@ export class LiveSession {
     }
 
     if (sc?.turnComplete || sc?.generationComplete) {
-      if (this.inText.trim()) pushThread('user', this.inText.trim());
+      if (this.inText.trim()) {
+        clearTimeout(this.wordsTimer);
+        this.lastUserText = this.inText.trim();
+        pushThread('user', this.lastUserText);
+        void this.onUserWords(this.lastUserText);
+      }
       if (this.outText.trim()) {
         pushThread('assistant', this.outText.trim());
         useAssistant.setState({ reply: this.outText.trim(), lastSpoken: { text: this.outText.trim(), lang: useAssistant.getState().lang } });
@@ -204,7 +223,8 @@ export class LiveSession {
     }
     if (!isAffirmative(text)) return;
     if (this.pendingConfirm) this.confirmedByUser = true;
-    if (pendingOffer()) {
+    if (pendingOffer() && !confirming) {
+      confirming = true;
       try {
         const r = await confirmPendingOffer();
         if (r?.started) {
@@ -213,6 +233,8 @@ export class LiveSession {
         }
       } catch (e) {
         log.error('live: confirmed navigation failed to start', { error: (e as Error).message });
+      } finally {
+        confirming = false;
       }
     }
   }
@@ -229,7 +251,9 @@ export class LiveSession {
       }
       if (spec.confirm) {
         const same = this.pendingConfirm?.name === name;
-        if (!same || !this.confirmedByUser) {
+        // The "yes" may still be settling when the model calls the tool again.
+        const saidYes = this.confirmedByUser || isAffirmative(this.inText) || isAffirmative(this.lastUserText);
+        if (!same || !saidYes) {
           this.pendingConfirm = { name, args: c.args };
           this.confirmedByUser = false;
           responses.push({ id: c.id, name, response: { needsConfirmation: true, instruction: 'Ask the user to confirm in one short sentence. Call this tool again only after they say yes.' } });
@@ -254,6 +278,8 @@ export class LiveSession {
     this.generation++;
     this.active = false;
     clearTimeout(this.idleTimer);
+    clearTimeout(this.wordsTimer);
+    this.lastUserText = '';
     this.stopTone();
     this.stopTone = () => {};
     this.mic?.stop();
@@ -281,4 +307,5 @@ export class LiveSession {
   }
 }
 
+let confirming = false;
 export const liveSession = new LiveSession();

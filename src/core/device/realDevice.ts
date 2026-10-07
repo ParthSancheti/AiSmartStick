@@ -33,14 +33,19 @@ export async function attachPairedDevice(dev: PairedDevice) {
   useDevice.setState({ link: 'searching', identity: { deviceId: dev.deviceId, model: dev.model, firmware: dev.firmware, protocolVersion: dev.protocolVersion } });
   const t = new HttpTransport(dev);
   await connectStick(t);
+  let savedHost = dev.host;
+  // UDP discovery only matters for firmware that joins another network; the AP address is fixed.
   await startDiscovery(dev, (ip) => {
     const cur = getTransport();
     if (cur instanceof HttpTransport) cur.setHost(ip);
-    if (ip !== dev.host) void savePairedDevice({ ...dev, host: ip });
-  });
+    if (ip !== savedHost) {
+      savedHost = ip;
+      void savePairedDevice({ ...dev, host: ip }).catch(() => undefined);
+    }
+  }).catch(() => undefined);
 }
 
-/** Unpair: forget the key locally. The stick must be factory-reset (hold the button while switching it on) to accept a new owner. */
+/** Unpair: forget the key locally. The stick must be factory-reset (hold its button while switching it on, about 10 s, until it buzzes) to accept a new owner. */
 export async function unpairStick() {
   const id = useDevice.getState().identity?.deviceId;
   const uid = currentUid();
@@ -49,7 +54,8 @@ export async function unpairStick() {
   await forgetPairedDevice();
   // Release ownership so the stick (after a factory reset) can be paired by anyone again.
   if (id && uid) {
-    await Promise.all([deleteDoc(doc(fb().db, paths.deviceRegistry(id))), updateDoc(doc(fb().db, paths.devices(uid), id), { authState: 'revoked', revokedAt: Date.now() })]).catch(() => undefined);
+    // Not awaited: offline, Firestore writes only settle when the server acknowledges them.
+    void Promise.all([deleteDoc(doc(fb().db, paths.deviceRegistry(id))), updateDoc(doc(fb().db, paths.devices(uid), id), { authState: 'revoked', revokedAt: Date.now() })]).catch(() => undefined);
   }
   useDevice.setState({ link: 'unpaired', identity: null, linkDetail: null });
 }

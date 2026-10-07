@@ -27,8 +27,18 @@ bool takeFactoryResetRequest() { bool r = resetReq; resetReq = false; return r; 
 bool takeProvisioned() { bool r = provDone; provDone = false; return r; }
 
 static esp_err_t send(httpd_req_t *r, int status, JsonDocument &d) {
-  static char buf[2048];
-  size_t n = serializeJson(d, buf, sizeof buf);
+  // Busy telemetry (16 button events, 8 safety events, errors) reaches ~2.4 KB: 2 KB truncated it
+  // into invalid JSON. One buffer is safe: every handler runs in the single httpd task.
+  static char buf[4096];
+  size_t n = measureJson(d);
+  if (n >= sizeof buf) {
+    JsonDocument e;
+    e["error"] = "too_large";
+    n = serializeJson(e, buf, sizeof buf);
+    status = 503;
+  } else {
+    n = serializeJson(d, buf, sizeof buf);
+  }
   httpd_resp_set_status(r, status == 200 ? "200 OK" : status == 401 ? "401 Unauthorized" : status == 400 ? "400 Bad Request" : status == 409 ? "409 Conflict" : status == 413 ? "413 Payload Too Large" : "503 Service Unavailable");
   httpd_resp_set_type(r, "application/json");
   httpd_resp_set_hdr(r, "Cache-Control", "no-store");

@@ -138,6 +138,10 @@ describe('Gemini Live session', () => {
     offerDestination(place); // what find_nearest_place does
     msg({ serverContent: { inputTranscription: { text: 'Yes.' } } });
     await flush();
+    // Judged only once the utterance is complete, never on a first fragment.
+    expect(startRealNavigation).not.toHaveBeenCalled();
+    msg({ serverContent: { turnComplete: true } });
+    await flush();
     expect(startRealNavigation).toHaveBeenCalledTimes(1);
     expect(vi.mocked(startRealNavigation).mock.calls[0][0].placeId).toBe('pl_barber');
 
@@ -146,6 +150,16 @@ describe('Gemini Live session', () => {
     const again = await startNavigationTo(place);
     expect(again.started).toBe(false);
     expect(startRealNavigation).toHaveBeenCalledTimes(1);
+  });
+
+  it('"Okay, what about a hospital?" is a new request, not a yes', async () => {
+    const msg = await openSession();
+    offerDestination(place);
+    msg({ serverContent: { inputTranscription: { text: 'Okay' } } });
+    msg({ serverContent: { inputTranscription: { text: ', what about a hospital?' } } });
+    msg({ serverContent: { turnComplete: true } });
+    await flush();
+    expect(startRealNavigation).not.toHaveBeenCalled();
   });
 
   it('"No" withdraws the offer; nothing starts', async () => {

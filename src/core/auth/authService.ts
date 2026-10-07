@@ -54,7 +54,9 @@ async function loadOrCreateProfile(uid: string, name: string | null, email: stri
   const snap = await getDoc(ref);
   if (snap.exists()) {
     const d = snap.data() as UserDoc;
-    if (d.displayName !== (name ?? d.displayName) || d.photoURL !== photo) await updateDoc(ref, { displayName: name ?? d.displayName, photoURL: photo, updatedAt: Date.now() });
+    // Not awaited: offline, the write only settles when the server acknowledges it, and sign-in
+    // (which starts the stick link, GPS and SOS) must never wait on that.
+    if (d.displayName !== (name ?? d.displayName) || d.photoURL !== photo) void updateDoc(ref, { displayName: name ?? d.displayName, photoURL: photo, updatedAt: Date.now() }).catch(() => undefined);
     return d;
   }
   const pending = useAuth.getState().role;
@@ -70,7 +72,7 @@ async function loadOrCreateProfile(uid: string, name: string | null, email: stri
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
-  await setDoc(ref, { ...profile, serverCreatedAt: serverTimestamp() });
+  void setDoc(ref, { ...profile, serverCreatedAt: serverTimestamp() }).catch(() => undefined);
   return profile;
 }
 

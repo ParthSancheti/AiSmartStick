@@ -111,7 +111,8 @@ export function HomeLocationStep({ onSaved }: { onSaved: () => void }) {
     try {
       if (label === 'Home') {
         const { updateProfileFields } = await import('../../../core/auth/authService');
-        await updateProfileFields({ homeAddress: picked.address, homePlace: { lat: picked.lat, lng: picked.lng, placeId: picked.placeId, address: picked.address, label } });
+        // Saved on the phone already; the cloud copy syncs whenever there is internet (never blocks setup).
+        void updateProfileFields({ homeAddress: picked.address, homePlace: { lat: picked.lat, lng: picked.lng, placeId: picked.placeId, address: picked.address, label } }).catch(() => undefined);
       }
       onSaved();
     } catch (e) {

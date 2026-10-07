@@ -84,8 +84,21 @@ void setup() {
   // Factory reset: hold the button WHILE powering on (never reachable by a long press during use,
   // so it cannot collide with the 3 s SOS hold).
   uint32_t t0 = millis();
+  bool heldAtBoot = digitalRead(PIN_BUTTON) == LOW;
+  if (heldAtBoot) {
+    Serial.println("[boot] button held: keep holding for factory reset");
+    motor::pulse(120);   // "I feel the button": the user knows the hold is being counted
+  }
   while (digitalRead(PIN_BUTTON) == LOW && millis() - t0 < BOOT_RESET_HOLD_MS + 50) delay(10);
   bool bootReset = millis() - t0 >= BOOT_RESET_HOLD_MS;
+  if (bootReset) {
+    Serial.println("[boot] factory reset");
+    motor::pulse(600);   // long buzz: reset done, release the button
+    uint32_t r0 = millis();
+    while (digitalRead(PIN_BUTTON) == LOW && millis() - r0 < 15000) delay(10);
+  }
+  // A hold that began at power-on must never turn into a click or the 3 s SOS hold.
+  if (heldAtBoot) button::suppressUntilRelease();
 
   WiFi.mode(WIFI_STA);
   identity::load();

@@ -49,7 +49,7 @@ const Cool3DSpeaker = () => (
  * Android Bluetooth settings; the app follows whatever route the system picks.
  */
 export function AudioSubpage({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const route = useAudioRoute(3000);
+  const route = useAudioRoute(open ? 3000 : 0);
   const s = useSession((x) => x.settings);
   const update = useSession((x) => x.updateSettings);
   const speaking = useAudio((x) => x.speaking);

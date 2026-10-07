@@ -29,8 +29,15 @@ export async function sendSms(name: string, number: string | null, body: string,
   }
   if (!number) return 'no_number';
   // direct = send without a tap when SEND_SMS is granted; the plugin falls back to the composer truthfully.
-  const { result } = await AissNative.sendSms({ number, body, direct: opts.direct ?? getSettings().smsMode === 'direct' });
-  logEvent({ kind: 'message', severity: 'info', title: result === 'sent' ? `Text sent to ${name}` : `Opened a text to ${name}`, detail: body });
+  const direct = opts.direct ?? getSettings().smsMode === 'direct';
+  let { result, error } = await AissNative.sendSms({ number, body, direct });
+  if (result === 'failed' && direct) {
+    // The radio refused it (no signal, no balance): the Messages app can still retry it.
+    logEvent({ kind: 'message', severity: 'warning', title: `Text to ${name} failed`, detail: error ?? 'SMS failed' });
+    ({ result, error } = await AissNative.sendSms({ number, body, direct: false }));
+  }
+  const title = result === 'sent' ? `Text sent to ${name}` : result === 'queued' ? `Sending a text to ${name}` : result === 'composer_opened' ? `Opened a text to ${name}` : `Could not text ${name}`;
+  logEvent({ kind: 'message', severity: result === 'failed' ? 'warning' : 'info', title, detail: error ? `${body} (${error})` : body });
   return result;
 }
 

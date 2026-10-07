@@ -10,7 +10,7 @@ import { searchPlaces, reverseLookup, type PlaceResult } from '../maps/mapsServi
 import { startRealNavigation, stopRealNavigation, reroute as realReroute } from '../navigation/realNavigator';
 import { useNavView } from '../navigation/navView';
 import { useSafetyEval } from '../safety/safetyRuntime';
-import { startSos, cancelSos } from '../safety/sos';
+import { startSos, cancelSos, safetyContact } from '../safety/sos';
 import { placeCall, sendSms } from '../phone';
 import { say, stopAll, useAudio } from '../audio/audioManager';
 import { usePhoneInfo, phoneLabel } from '../native/deviceInfo';
@@ -214,16 +214,24 @@ async function executeActionInner(a: Action): Promise<ToolResult> {
         return ok(a, { phase: useSafety.getState().phase });
       // ── COMMUNICATION ──
       case 'communication.getGuardianContact':
-        return ok(a, { name: s.guardian.name || null, heardAs: s.guardian.heardAs || null, hasPhoneNumber: !!s.guardian.phone });
+      {
+        const c = safetyContact();
+        return ok(a, { name: c.name, heardAs: s.guardian.heardAs || null, hasPhoneNumber: !!c.phone });
+      }
       case 'communication.callGuardian': {
-        const r = await placeCall(s.guardian.heardAs || s.guardian.name, s.guardian.phone);
-        if (r === 'no_number') return fail(a, 'No phone number is saved for the guardian.');
+        const c = safetyContact();
+        const r = await placeCall(c.name, c.phone);
+        if (r === 'no_number') return fail(a, 'No safety phone number is saved. The user can add one in Settings.');
         return ok(a, { result: r, meaning: r === 'call_started' ? 'The phone is calling now.' : 'The dialer is open; the user must press call.' });
       }
       case 'communication.sendSmsToGuardian': {
-        const r = await sendSms(s.guardian.heardAs || s.guardian.name, s.guardian.phone, String(args.text));
-        if (r === 'no_number') return fail(a, 'No phone number is saved for the guardian.');
-        return ok(a, { result: r, meaning: r === 'sent' ? 'The SMS was handed to Android for sending.' : 'The message composer is open; the user must press send. Do not say it was sent.' });
+        const c = safetyContact();
+        const r = await sendSms(c.name, c.phone, String(args.text));
+        if (r === 'no_number') return fail(a, 'No safety phone number is saved. The user can add one in Settings.');
+        if (r === 'failed') return fail(a, 'The text could not be sent (no mobile network or SMS balance). Do not say it was sent.');
+        const meaning =
+          r === 'sent' ? 'The mobile network accepted the SMS.' : r === 'queued' ? 'The SMS was handed to the phone; delivery is not confirmed yet.' : r === 'demo' ? 'Demo mode: nothing was sent.' : 'The message composer is open; the user must press send. Do not say it was sent.';
+        return ok(a, { result: r, meaning });
       }
       // ── AUDIO ──
       case 'audio.speak':

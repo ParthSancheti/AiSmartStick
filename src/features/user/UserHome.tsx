@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { BatteryFull, Settings, Smartphone, Unlink, Moon, Sun, Footprints, MessageSquare, Map, ChevronLeft, Activity, ShieldAlert, Heart, Flame, Phone, Zap, LogOut, Wand2, Link2, Headphones, Mic, StopCircle, Send, Plus, Bluetooth, Speaker } from 'lucide-react';
 
@@ -32,7 +32,7 @@ import { MapView } from '../../components/MapView';
 import { ObstacleView } from '../../components/ObstacleView';
 import { BrandLogo } from '../../core/brand/BrandLogo';
 import { BRAND } from '../../core/brand/brand';
-import { startSos } from '../../core/safety/sos';
+import { startSos, safetyContact } from '../../core/safety/sos';
 import { AudioSubpage } from './AudioSubpage';
 import { useRuntime } from '../../core/runtime/mode';
 import { firebaseConfigured } from '../../core/runtime/env';
@@ -320,12 +320,16 @@ function DestinationSearch() {
     }
     if (!fix) return setErr('Waiting for GPS before searching nearby.');
     if (internet === false) return setErr('Search needs internet.');
+    let alive = true; // an older, slower answer must not replace a newer one
     const t = setTimeout(() => {
       autocomplete(text, fix.lat, fix.lng, token)
-        .then((r) => setItems(r.suggestions))
-        .catch((e) => setErr(`Search unavailable. ${friendlyError(e)}`));
+        .then((r) => alive && setItems(r.suggestions))
+        .catch((e) => alive && setErr(`Search unavailable. ${friendlyError(e)}`));
     }, 300); // debounce: one request per pause in typing
-    return () => clearTimeout(t);
+    return () => {
+      alive = false;
+      clearTimeout(t);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `near` stands in for fix
   }, [q, demo, near, internet, token]);
 
@@ -737,10 +741,12 @@ function LiveAiSubpage({ open, onClose }: { open: boolean; onClose: () => void }
   const netState = useDevice((x) => x.internet);
   const navActive = useNavView((x) => x.active);
   
+  // Closing the panel ends the conversation. Only a real open → closed change: on mount (open is
+  // false) this must not cancel a session started from the stick button.
+  const wasOpen = useRef(open);
   useEffect(() => {
-    if (!open) {
-      ai.cancel();
-    }
+    if (wasOpen.current && !open) ai.cancel();
+    wasOpen.current = open;
   }, [open]);
 
   return (
@@ -849,7 +855,9 @@ function SafetyCenterSubpage({ open, onClose }: { open: boolean; onClose: () => 
   const ev = useSafetyEval();
   const loc = useLocation();
   const linked = useSession((s) => s.linked);
-  const guardianPhone = useSession((s) => s.guardian.phone);
+  // Re-render when contacts change; the number itself comes from the same lookup SOS uses.
+  useSession((s) => s.contacts);
+  const guardianPhone = safetyContact().phone;
   const mode = useRuntime((s) => s.mode);
   const [checked, setChecked] = useState<string | null>(null);
   const good = (ok: boolean | null) => (ok == null ? <div className="w-5 flex justify-center text-ink-3">–</div> : <div className={`w-5 flex justify-center ${ok ? 'text-ok' : 'text-amber'}`}>{ok ? '✓' : '⚠'}</div>);

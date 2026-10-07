@@ -12,6 +12,7 @@ import { useRuntime } from '../../core/runtime/mode';
 import { BRAND } from '../../core/brand/brand';
 import { linkLabel } from '../shared/labels';
 import { Link2, Unlink, Navigation, Mic } from 'lucide-react';
+import { useBackHandler } from '../../core/backStack';
 
 /**
  * Dim touch shield for walking with the phone in a pocket. Swallows every
@@ -28,6 +29,8 @@ export function PocketShield() {
   const pointers = useRef(new Set<number>());
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [arming, setArming] = useState(false);
+  // Back must not reach the screens underneath (or close the app) while the phone is in a pocket.
+  useBackHandler(true, () => undefined);
 
   const exit = () => {
     haptics.play('success');

@@ -12,6 +12,8 @@ void setIntensity(uint8_t pct);                                        // for CO
 /** Plays a named semantic pattern. Lower priority never interrupts higher. Returns false if rejected. */
 bool play(const char *pattern, Priority prio, bool repeat = false, uint8_t intensityPct = 0);
 void stop(Priority prio);                                              // stops only if the current pattern ≤ prio
+/** Blocking buzz for boot-time feedback only (before loop() runs tick()). */
+void pulse(uint16_t ms);
 void tick();
 bool running();
 bool knownPattern(const char *pattern);
@@ -42,6 +44,8 @@ namespace button {
 void begin();
 /** Returns 0 none, 1 pressed edge, 2 released edge. */
 int tick();
+/** Ignore the button until it is released once (a hold that started at power-on is not a press). */
+void suppressUntilRelease();
 bool down();
 uint32_t heldMs();
 }

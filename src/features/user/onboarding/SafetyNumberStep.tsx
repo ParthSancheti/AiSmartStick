@@ -11,7 +11,7 @@ import { Capacitor } from '@capacitor/core';
 export const validIndianMobile = (digits: string) => /^[6-9]\d{9}$/.test(digits);
 export const digitsOf = (s: string) => s.replace(/\D/g, '').replace(/^(91|0)(?=[6-9]\d{9}$)/, '');
 
-type TestState = { kind: 'idle' } | { kind: 'sending' } | { kind: 'sent' } | { kind: 'composer' } | { kind: 'failed'; why: string };
+type TestState = { kind: 'idle' } | { kind: 'sending' } | { kind: 'sent' } | { kind: 'queued' } | { kind: 'composer' } | { kind: 'failed'; why: string };
 
 /**
  * The SOS contact. Saved on the phone (SOS texts it — directly when Android allows SMS, otherwise
@@ -53,6 +53,8 @@ export function SafetyNumberStep({ onSaved }: { onSaved: () => void }) {
     try {
       const r = await sendSms('Safety contact', full, 'You were added as the safety contact for an AI SmartStick user. In an emergency you will get an SMS with their location.', { direct: true });
       if (r === 'sent') setTest({ kind: 'sent' });
+      else if (r === 'queued') setTest({ kind: 'queued' });
+      else if (r === 'failed') setTest({ kind: 'failed', why: 'The mobile network refused it. Check signal and SMS balance.' });
       else if (r === 'composer_opened') setTest({ kind: 'composer' });
       else if (r === 'demo') setTest({ kind: 'failed', why: 'Demo mode: no SMS was sent.' });
       else setTest({ kind: 'failed', why: 'No number to send to.' });
@@ -110,8 +112,9 @@ export function SafetyNumberStep({ onSaved }: { onSaved: () => void }) {
             {test.kind === 'sending' ? <Loader2 size={16} className="animate-spin" /> : <MessageSquare size={16} />} {test.kind === 'idle' ? 'Send a message' : 'Send again'}
           </button>
           {test.kind !== 'idle' && test.kind !== 'sending' && (
-            <p className={cx('mt-2 text-[13.5px] font-semibold', test.kind === 'failed' ? 'text-sos' : test.kind === 'composer' ? 'text-amber-ink' : 'text-ok')} role="status">
+            <p className={cx('mt-2 text-[13.5px] font-semibold', test.kind === 'failed' ? 'text-sos' : test.kind === 'composer' || test.kind === 'queued' ? 'text-amber-ink' : 'text-ok')} role="status">
               {test.kind === 'sent' && 'Message sent to your safety contact from this phone.'}
+              {test.kind === 'queued' && 'Message handed to the phone. The network has not confirmed it yet.'}
               {test.kind === 'composer' && 'Messages app opened. It is not sent until you press Send there.'}
               {test.kind === 'failed' && `Not sent: ${test.why}`}
             </p>

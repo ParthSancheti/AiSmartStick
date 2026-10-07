@@ -7,6 +7,7 @@ import { useSafety } from '../store/safety';
 import { useSession } from '../store/session';
 import { useNavView } from '../navigation/navView';
 import { useAssistant } from '../store/assistant';
+import { useAuth } from '../auth/authStore';
 import { linkLabelText } from './backgroundText';
 
 /**
@@ -27,6 +28,7 @@ function wanted() {
   const sos = useSafety.getState().phase;
   const nav = useNavView.getState().active;
   const ast = useAssistant.getState().phase !== 'idle';
+  if (useAuth.getState().status !== 'signedIn') return false;
   return useSession.getState().settings.runInBackground && (d.link !== 'unpaired' || sos === 'active' || sos === 'countdown' || nav || ast);
 }
 
@@ -75,6 +77,7 @@ export function startBackgroundController() {
   useNavView.subscribe(() => void sync());
   useAssistant.subscribe(() => void sync());
   useSession.subscribe(() => void sync());
+  useAuth.subscribe(() => void sync());
   // Back on screen: re-acquire service types for permissions granted meanwhile (GPS, microphone).
   void CapApp.addListener('appStateChange', ({ isActive }) => {
     if (isActive) void sync(true);

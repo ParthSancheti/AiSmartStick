@@ -602,7 +602,7 @@ function HardwareSubpage({ open, onClose }: { open: boolean; onClose: () => void
     setConfirmUnpair(false);
     if (mode === 'demo') getMock()?.setLinked(false);
     else await unpairStick();
-    setMsg('Stick unpaired from this phone. To pair it again, reset it: hold its button while switching it on (5 s).');
+    setMsg('Stick unpaired from this phone. To pair it again, reset it: hold its button and switch it on, and keep holding about 10 seconds until it buzzes.');
   };
 
   const [otaChecking, setOtaChecking] = useState(false);
@@ -614,7 +614,7 @@ function HardwareSubpage({ open, onClose }: { open: boolean; onClose: () => void
     setMsg('Checking for updates...');
     try {
       const release = await call<any, any>('getLatestFirmwareRelease', {});
-      if (!release || release.version <= d.identity.firmware) {
+      if (!release || compareVersions(String(release.version), d.identity.firmware) <= 0) {
         setMsg('Your stick is already up to date.');
         return;
       }
@@ -1181,4 +1181,15 @@ export function UserSettings() {
       )}
     </AnimatePresence>
   );
+}
+
+/** Numeric, part by part: 1.10.0 is newer than 1.9.0 (string comparison says otherwise). */
+function compareVersions(a: string, b: string) {
+  const pa = a.split(/[.-]/).map((x) => parseInt(x, 10) || 0);
+  const pb = b.split(/[.-]/).map((x) => parseInt(x, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (d) return d;
+  }
+  return 0;
 }

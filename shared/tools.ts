@@ -58,9 +58,9 @@ export const TOOLS: ToolSpec[] = [
   { name: 'trigger_sos', type: 'safety.triggerSOS', category: 'safety', description: 'Start the SOS countdown. Only when the user clearly asks for help or says it is an emergency.', params: { reason: { type: 'string', maxLength: 120 } }, requires: [], sideEffect: true },
   { name: 'cancel_sos', type: 'safety.cancelSOS', category: 'safety', description: 'Cancel an SOS countdown or mark an active SOS as safe, when the user says they are okay.', params: {}, requires: [], sideEffect: true },
   // COMMUNICATION
-  { name: 'get_guardian_contact', type: 'communication.getGuardianContact', category: 'communication', description: "The guardian's name and whether a phone number is saved.", params: {}, requires: ['guardian'], sideEffect: false },
-  { name: 'call_guardian', type: 'communication.callGuardian', category: 'communication', description: 'Place a real phone call to the guardian.', params: {}, requires: ['guardian'], sideEffect: true },
-  { name: 'send_sms_to_guardian', type: 'communication.sendSmsToGuardian', category: 'communication', description: 'Send a short text message to the guardian.', params: { text: { type: 'string', required: true, maxLength: 300 } }, requires: ['guardian'], confirm: true, sideEffect: true },
+  { name: 'get_guardian_contact', type: 'communication.getGuardianContact', category: 'communication', description: "The safety contact's (or guardian's) name and whether a phone number is saved.", params: {}, requires: [], sideEffect: false },
+  { name: 'call_guardian', type: 'communication.callGuardian', category: 'communication', description: 'Place a real phone call to the safety contact (or guardian).', params: {}, requires: [], sideEffect: true },
+  { name: 'send_sms_to_guardian', type: 'communication.sendSmsToGuardian', category: 'communication', description: 'Send a short text message to the safety contact (or guardian).', params: { text: { type: 'string', required: true, maxLength: 300 } }, requires: [], confirm: true, sideEffect: true },
   // AUDIO
   { name: 'speak', type: 'audio.speak', category: 'audio', description: 'Say a short announcement aloud (use for reminders the user asks to hear again).', params: { text: { type: 'string', required: true, maxLength: 400 } }, requires: [], sideEffect: true },
   { name: 'stop_speaking', type: 'audio.stopSpeaking', category: 'audio', description: 'Stop the current speech.', params: {}, requires: [], sideEffect: true },

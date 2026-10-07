@@ -1,4 +1,7 @@
-import { connectStick } from './device/bridge';
+import { connectStick, disconnectStick } from './device/bridge';
+import { stopDiscovery } from './device/discovery';
+import { useDevice } from './store/device';
+import { liveSession } from './ai/liveSession';
 import { visionEngine } from './vision/visionLoop';
 import { guidanceEngine } from './guidance/guidanceEngine';
 import { MockTransport } from './transport/mockTransport';
@@ -9,12 +12,12 @@ import { useRuntime } from './runtime/mode';
 import { startAuth, clearLocalAccountData } from './auth/authService';
 import { useAuth } from './auth/authStore';
 import { watchRelationship, stopRelationshipWatch, useRelationship } from './pairing/pairingService';
-import { startUserSync, stopUserSync } from './sync/userSync';
+import { startUserSync, stopUserSync, stopSosWatch } from './sync/userSync';
 import { startRealFeed, startDemoFeed, stopFeed } from './sync/guardianFeed';
 import { startCameraResponder, stopCameraResponder } from './camera/cameraSession';
 import { startRealDevice } from './device/realDevice';
 import { startNetworkMonitor } from './device/network';
-import { startLocation } from './location/locationService';
+import { startLocation, stopLocation } from './location/locationService';
 import { onFix } from './location/locationService';
 import { walkFix, demoWalk } from './walking/walkTracker';
 import { startSafetyRuntime } from './safety/safetyRuntime';
@@ -26,7 +29,7 @@ import { UNIT_M } from './sim/geo';
 import { startSettingsSync, stopSettingsSync } from './sync/settingsSync';
 import { startBackgroundController, stopBackground } from './native/background';
 import { startCommandRelay, stopCommandRelay } from './sync/commandRelay';
-import { resumeSavedNavigation } from './navigation/realNavigator';
+import { resumeSavedNavigation, stopRealNavigation } from './navigation/realNavigator';
 
 let booted = false;
 
@@ -133,6 +136,14 @@ function bootReal() {
       // Signed out: nothing from the previous account may stay on screen.
       if (useAuth.getState().status === 'signedOut' && wasSignedIn) void clearLocalAccountData();
       stopUserSync();
+      stopSosWatch();
+      // The previous account's stick link, GPS, directions and voice session end with it.
+      liveSession.stop();
+      stopRealNavigation();
+      void stopLocation();
+      void stopDiscovery();
+      disconnectStick();
+      useDevice.setState({ link: 'unpaired', identity: null, linkDetail: null });
       visionEngine.stop();
       guidanceEngine.stop();
       stopCameraResponder();

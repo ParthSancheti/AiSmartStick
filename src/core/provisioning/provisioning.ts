@@ -5,6 +5,8 @@ import { AissNative } from '../native/aissNative';
 import { randomBytes, sha256Hex, toB64, toHex, hmacHex, safeEqual } from '../device/crypto';
 import { loadPairedDevice, savePairedDevice, type PairedDevice } from '../device/pairedDevice';
 import { attachPairedDevice } from '../device/realDevice';
+import { disconnectStick } from '../device/bridge';
+import { stopDiscovery } from '../device/discovery';
 import { currentUid } from '../auth/authStore';
 import { isDemo } from '../runtime/mode';
 import { getMock } from '../device/bridge';
@@ -162,7 +164,12 @@ export async function provisionStick() {
   if (!uid) return set({ step: 'error', error: 'Sign in first.' });
 
   let handle: PluginListenerHandle | null = null;
+  let saved = false;
   try {
+    // An earlier pairing's transport keeps retrying in the background and would compete for the
+    // stick network (and the stick's few sockets) during setup: stop it first.
+    disconnectStick();
+    await stopDiscovery().catch(() => undefined);
     set({ step: 'connecting_to_stick', error: null, needsFactoryReset: false });
     diag(`joining ${STICK_AP_SSID}`);
     handle = await AissNative.addListener('WIFI_STATE', (ev) => {
@@ -212,18 +219,27 @@ export async function provisionStick() {
     }
     check();
     await savePairedDevice(dev);
-
-    const meta = { deviceId: dev.deviceId, model: dev.model, firmware: dev.firmware, protocolVersion: dev.protocolVersion, pairedAt: dev.pairedAt, authState: 'verified', revokedAt: null };
-    await Promise.all([setDoc(doc(fb().db, paths.devices(uid), dev.deviceId), meta), setDoc(doc(fb().db, paths.deviceRegistry(dev.deviceId)), { ownerUid: uid, ...meta })]).catch((e) =>
-      diag(`cloud save deferred: ${(e as Error).message}`),
-    );
+    saved = true;
 
     // The stick network stays bound: the authenticated transport keeps using it.
     await attachPairedDevice(dev);
+
+    // Cloud record in the background. The stick network often has no internet (and Firestore writes
+    // only resolve once the server acknowledges them), so pairing never waits for it.
+    const meta = { deviceId: dev.deviceId, model: dev.model, firmware: dev.firmware, protocolVersion: dev.protocolVersion, pairedAt: dev.pairedAt, authState: 'verified', revokedAt: null };
+    void Promise.all([setDoc(doc(fb().db, paths.devices(uid), dev.deviceId), meta), setDoc(doc(fb().db, paths.deviceRegistry(dev.deviceId)), { ownerUid: uid, ...meta })]).catch((e) =>
+      diag(`cloud save deferred: ${(e as Error).message}`),
+    );
     logEvent({ kind: 'device', severity: 'success', title: 'AI SmartStick paired', detail: `${dev.deviceId}, firmware ${dev.firmware}` });
     set({ step: 'completed' });
   } catch (e) {
     if (e instanceof Abort) return;
+    if (saved) {
+      // Phone and stick already share the key: this is paired. Keep the network and the link.
+      diag(`after pairing: ${(e as Error).message}`);
+      set({ step: 'completed' });
+      return;
+    }
     await AissNative.releaseSetupNetwork().catch(() => undefined);
     diag(`error: ${(e as Error).message}`);
     set({ step: 'error', error: (e as Error).message });
@@ -250,7 +266,7 @@ async function verifyProof(deviceId: string, keyB64: string) {
   const challenge = toHex(randomBytes(16));
   const info = await setupJson<DeviceInfoPacket>('GET', `${DEVICE_API.device}?challenge=${challenge}`);
   const expect = await hmacHex(keyB64, challenge + deviceId);
-  if (info.deviceId !== deviceId || !info.proof || !safeEqual(info.proof, expect)) throw new Error('The stick could not prove it received the key. Reset it (hold the button while switching it on), then set up again.');
+  if (info.deviceId !== deviceId || !info.proof || !safeEqual(info.proof, expect)) throw new Error('The stick could not prove it received the key. Reset it (hold its button and switch it on, and keep holding about 10 seconds until it buzzes), then set up again.');
 }
 
 async function demoProvision(me: number) {

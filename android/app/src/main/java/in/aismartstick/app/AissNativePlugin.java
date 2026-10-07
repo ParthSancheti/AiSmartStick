@@ -1,7 +1,14 @@
 package in.aismartstick.app;
 
 import android.Manifest;
+import android.app.Activity;
+import android.app.PendingIntent;
+import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.IntentFilter;
+import android.location.LocationManager;
+import android.os.Handler;
+import android.os.Looper;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.media.AudioDeviceInfo;
@@ -48,6 +55,8 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -75,6 +84,40 @@ public class AissNativePlugin extends Plugin {
     private DatagramSocket discoverySocket;
     private WifiManager.MulticastLock multicastLock;
     private SharedPreferences securePrefs;
+    /** Calls waiting for the in-flight stick network request (transport + setup may ask at once). */
+    private final List<PluginCall> connectWaiters = new ArrayList<>();
+    private boolean connecting;
+    private final Handler main = new Handler(Looper.getMainLooper());
+    private static final AtomicInteger SMS_SEQ = new AtomicInteger();
+    private static final int MAX_TEXT_BYTES = 1 << 20;
+    private static final int MAX_BINARY_BYTES = 4 << 20;
+
+    /** Starts the first intent that resolves. Never throws (OEM ROMs lack some Settings screens). */
+    private boolean launch(Intent... candidates) {
+        for (Intent i : candidates) {
+            try {
+                getContext().startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                return true;
+            } catch (Exception ignored) {
+            }
+        }
+        return false;
+    }
+
+    private Intent appDetails() {
+        return new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getContext().getPackageName()));
+    }
+
+    private boolean locationEnabled() {
+        try {
+            LocationManager lm = (LocationManager) getContext().getSystemService(Context.LOCATION_SERVICE);
+            if (lm == null) return true;
+            if (Build.VERSION.SDK_INT >= 28) return lm.isLocationEnabled();
+            return lm.isProviderEnabled(LocationManager.GPS_PROVIDER) || lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER);
+        } catch (Exception e) {
+            return true;
+        }
+    }
 
     @PluginMethod
     public void scanForSetupNetworks(PluginCall call) {
@@ -102,34 +145,68 @@ public class AissNativePlugin extends Plugin {
 
     @SuppressWarnings("deprecation")
     private void doScan(PluginCall call) {
-        String prefix = call.getString("prefix", "AISmartStick-");
-        WifiManager wm = (WifiManager) getContext().getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+        final String prefix = call.getString("prefix", "AISmartStick-");
+        final WifiManager wm = (WifiManager) getContext().getApplicationContext().getSystemService(Context.WIFI_SERVICE);
         if (wm == null || !wm.isWifiEnabled()) {
             call.reject("Wi-Fi is off");
             return;
         }
-        wm.startScan(); // throttled by Android (4 scans / 2 min); cached results are still returned
-        JSArray arr = new JSArray();
-        List<ScanResult> results = wm.getScanResults();
-        for (ScanResult r : results) {
-            if (r.SSID != null) {
-                String ssid = r.SSID.replace("\"", "");
-                if (ssid.startsWith(prefix) && r.frequency < 3000) {
-                    JSObject o = new JSObject();
-                    o.put("ssid", ssid);
-                    o.put("rssi", r.level);
-                    arr.put(o);
+        final boolean locOn = locationEnabled();
+        final AtomicBoolean finished = new AtomicBoolean(false);
+        final BroadcastReceiver[] holder = { null };
+        final Runnable finish = () -> {
+            if (!finished.compareAndSet(false, true)) return;
+            if (holder[0] != null) {
+                try {
+                    getContext().unregisterReceiver(holder[0]);
+                } catch (Exception ignored) {
                 }
             }
+            JSArray arr = new JSArray();
+            try {
+                List<ScanResult> results = wm.getScanResults();
+                if (results != null) {
+                    for (ScanResult r : results) {
+                        if (r.SSID == null) continue;
+                        String ssid = r.SSID.replace("\"", "");
+                        if (ssid.startsWith(prefix) && r.frequency < 3000) {
+                            JSObject o = new JSObject();
+                            o.put("ssid", ssid);
+                            o.put("rssi", r.level);
+                            arr.put(o);
+                        }
+                    }
+                }
+            } catch (SecurityException e) {
+                call.reject("Wi-Fi scanning permission denied");
+                return;
+            }
+            JSObject ret = new JSObject();
+            ret.put("networks", arr);
+            ret.put("locationEnabled", locOn);
+            call.resolve(ret);
+        };
+        boolean started = false;
+        try {
+            holder[0] = new BroadcastReceiver() {
+                @Override
+                public void onReceive(Context c, Intent intent) {
+                    finish.run();
+                }
+            };
+            androidx.core.content.ContextCompat.registerReceiver(getContext(), holder[0], new IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION), androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED);
+            // Throttled by Android (4 scans / 2 min): false means only cached results are available.
+            started = wm.startScan();
+        } catch (Exception ignored) {
         }
-        JSObject ret = new JSObject();
-        ret.put("networks", arr);
-        call.resolve(ret);
+        if (!started) finish.run();
+        else main.postDelayed(finish, 6000);
     }
 
     @PluginMethod
     public void connectToSetupNetwork(PluginCall call) {
-        int timeout = call.getInt("timeoutMs", 30000);
+        int t = call.getInt("timeoutMs", 30000);
+        final int timeout = t > 0 ? t : 30000;
         if (Build.VERSION.SDK_INT < 29) {
             call.reject("SmartStick needs Android 10 or newer");
             return;
@@ -146,8 +223,7 @@ public class AissNativePlugin extends Plugin {
 
         WifiManager wm = (WifiManager) getContext().getApplicationContext().getSystemService(Context.WIFI_SERVICE);
         if (wm != null && !wm.isWifiEnabled()) {
-            Intent panelIntent = new Intent(Settings.Panel.ACTION_WIFI);
-            getContext().startActivity(panelIntent);
+            launch(new Intent(Settings.Panel.ACTION_WIFI), new Intent(Settings.ACTION_WIFI_SETTINGS));
             JSObject r = new JSObject();
             r.put("connected", false);
             r.put("reason", "WIFI_DISABLED");
@@ -157,60 +233,59 @@ public class AissNativePlugin extends Plugin {
 
         final String ssid = call.getString("ssid", "SmartStick_AI");
         final String passphrase = call.getString("passphrase", "Stick@1234");
-        // Already bound to this stick network (telemetry reconnects call this every time): keep it.
-        if (setupNetwork != null && ssid.equals(setupSsid)) {
-            JSObject r = new JSObject();
-            r.put("connected", true);
-            call.resolve(r);
-            return;
+        synchronized (connectWaiters) {
+            // Already bound to this stick network (telemetry reconnects call this every time): keep it.
+            if (setupNetwork != null && ssid.equals(setupSsid)) {
+                JSObject r = new JSObject();
+                r.put("connected", true);
+                call.resolve(r);
+                return;
+            }
+            // A request for the same network is in flight: wait for it instead of cancelling it
+            // (cancelling would leave the first caller's promise pending forever).
+            if (connecting && ssid.equals(setupSsid)) {
+                connectWaiters.add(call);
+                return;
+            }
         }
         releaseSetup();
-        setupSsid = ssid;
-        ConnectivityManager cm = (ConnectivityManager) getContext().getSystemService(Context.CONNECTIVITY_SERVICE);
 
-        // Dashcam topology: the stick is always its own AP. Android remembers the user's approval
-        // for this SSID, so later requests (app restart, reconnect) connect without a dialog.
-        WifiNetworkSpecifier spec = new WifiNetworkSpecifier.Builder()
-            .setSsid(ssid)
-            .setWpa2Passphrase(passphrase)
-            .build();
-
+        final WifiNetworkSpecifier spec;
+        try {
+            // Dashcam topology: the stick is always its own AP. Android remembers the user's approval
+            // for this SSID, so later requests (app restart, reconnect) connect without a dialog.
+            spec = new WifiNetworkSpecifier.Builder().setSsid(ssid).setWpa2Passphrase(passphrase).build();
+        } catch (Exception e) {
+            call.reject("Invalid stick network settings: " + e.getMessage());
+            return;
+        }
         NetworkRequest req = new NetworkRequest.Builder()
             .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
             .removeCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
             .setNetworkSpecifier(spec)
             .build();
-        final boolean[] done = { false };
-        setupCallback = new ConnectivityManager.NetworkCallback() {
+        final ConnectivityManager cm = (ConnectivityManager) getContext().getSystemService(Context.CONNECTIVITY_SERVICE);
+        final ConnectivityManager.NetworkCallback cb = new ConnectivityManager.NetworkCallback() {
             @Override
             public void onAvailable(Network network) {
+                if (setupCallback != this) return;
                 setupNetwork = network;
-                
                 JSObject event = new JSObject();
                 event.put("event", "WIFI_CONNECTED");
                 event.put("ip", "192.168.4.1");
                 notifyListeners("WIFI_STATE", event);
-                
-                if (!done[0]) {
-                    done[0] = true;
-                    JSObject r = new JSObject();
-                    r.put("connected", true);
-                    call.resolve(r);
-                }
+                settleConnect(true, null);
             }
 
             @Override
             public void onUnavailable() {
-                if (!done[0]) {
-                    done[0] = true;
-                    JSObject r = new JSObject();
-                    r.put("connected", false);
-                    call.resolve(r);
-                }
+                if (setupCallback != this) return;
+                settleConnect(false, "UNAVAILABLE");
             }
 
             @Override
             public void onLost(Network network) {
+                if (setupCallback != this) return;
                 if (network.equals(setupNetwork)) setupNetwork = null;
                 JSObject event = new JSObject();
                 event.put("event", "WIFI_LOST");
@@ -218,13 +293,44 @@ public class AissNativePlugin extends Plugin {
                 notifyListeners("WIFI_STATE", event);
             }
         };
-        // Shows ONE system dialog ("Connect to device?"). Mobile data stays the default network.
-        cm.requestNetwork(req, setupCallback, timeout);
+        synchronized (connectWaiters) {
+            setupSsid = ssid;
+            setupCallback = cb;
+            connecting = true;
+            connectWaiters.add(call);
+        }
+        try {
+            // Shows ONE system dialog ("Connect to device?"). Mobile data stays the default network.
+            cm.requestNetwork(req, cb, timeout);
+        } catch (Exception e) {
+            releaseSetup();
+            call.reject("Could not request the stick network: " + e.getMessage());
+        }
+    }
+
+    /** Resolves every caller waiting for the current request. */
+    private void settleConnect(boolean connected, String reason) {
+        List<PluginCall> waiting;
+        synchronized (connectWaiters) {
+            connecting = false;
+            waiting = new ArrayList<>(connectWaiters);
+            connectWaiters.clear();
+        }
+        for (PluginCall c : waiting) {
+            JSObject r = new JSObject();
+            r.put("connected", connected);
+            if (reason != null) r.put("reason", reason);
+            c.resolve(r);
+        }
     }
 
     @PluginMethod
     public void setupRequest(PluginCall call) {
         final Network net = setupNetwork;
+        if (net == null && setupCallback != null) {
+            call.reject("Setup request failed: not bound to the stick network (connection lost)");
+            return;
+        }
         final String method = call.getString("method", "GET");
         final String path = call.getString("path", "/");
         final String body = call.getString("body");
@@ -235,13 +341,15 @@ public class AissNativePlugin extends Plugin {
             HttpURLConnection c = null;
             try {
                 // Bound to the stick network specifically, regardless of the default route.
-                // If net is null (e.g. joined manually via OS settings), fall back to the default route.
+                // net is null only when no binding was requested (joined manually via OS settings).
                 URL url = new URL(SETUP_HOST + path);
                 c = (HttpURLConnection) (net != null ? net.openConnection(url) : url.openConnection());
                 c.setRequestMethod(method);
                 c.setConnectTimeout(timeout);
                 c.setReadTimeout(timeout);
                 c.setUseCaches(false);
+                // The stick purges idle sockets (LRU, 5 max): never reuse a pooled keep-alive socket.
+                c.setRequestProperty("Connection", "close");
                 applyHeaders(c, headers);
                 if (bodyBase64 != null) {
                     byte[] bytes = Base64.decode(bodyBase64, Base64.DEFAULT);
@@ -266,7 +374,10 @@ public class AissNativePlugin extends Plugin {
                 if (is != null) {
                     byte[] buf = new byte[4096];
                     int n;
-                    while ((n = is.read(buf)) > 0) out.write(buf, 0, n);
+                    while ((n = is.read(buf)) > 0) {
+                        out.write(buf, 0, n);
+                        if (out.size() > MAX_TEXT_BYTES) throw new java.io.IOException("response too large");
+                    }
                 }
                 JSObject r = new JSObject();
                 r.put("status", status);
@@ -283,6 +394,10 @@ public class AissNativePlugin extends Plugin {
     @PluginMethod
     public void requestBinary(PluginCall call) {
         final Network net = setupNetwork;
+        if (net == null && setupCallback != null) {
+            call.reject("requestBinary failed: not bound to the stick network (connection lost)");
+            return;
+        }
         final String path = call.getString("path", "/");
         final JSObject headers = call.getObject("headers", new JSObject());
         final int timeout = call.getInt("timeoutMs", 8000);
@@ -295,6 +410,8 @@ public class AissNativePlugin extends Plugin {
                 c.setConnectTimeout(timeout);
                 c.setReadTimeout(timeout);
                 c.setUseCaches(false);
+                // The stick purges idle sockets (LRU, 5 max): never reuse a pooled keep-alive socket.
+                c.setRequestProperty("Connection", "close");
                 applyHeaders(c, headers);
 
                 int status = c.getResponseCode();
@@ -311,7 +428,10 @@ public class AissNativePlugin extends Plugin {
                 if (is != null) {
                     byte[] buf = new byte[16384];
                     int n;
-                    while ((n = is.read(buf)) > 0) out.write(buf, 0, n);
+                    while ((n = is.read(buf)) > 0) {
+                        out.write(buf, 0, n);
+                        if (out.size() > MAX_BINARY_BYTES) throw new java.io.IOException("image too large");
+                    }
                 }
                 String base64Image = Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP);
                 
@@ -346,6 +466,7 @@ public class AissNativePlugin extends Plugin {
     }
 
     private void releaseSetup() {
+        settleConnect(false, "CANCELLED");
         if (setupCallback != null) {
             try {
                 ((ConnectivityManager) getContext().getSystemService(Context.CONNECTIVITY_SERVICE)).unregisterNetworkCallback(setupCallback);
@@ -375,6 +496,7 @@ public class AissNativePlugin extends Plugin {
             discoverySocket.setBroadcast(true);
             discoverySocket.bind(new InetSocketAddress(port));
         } catch (Exception e) {
+            stopDiscoveryInternal();
             call.reject("Could not listen for the stick: " + e.getMessage());
             return;
         }
@@ -414,33 +536,49 @@ public class AissNativePlugin extends Plugin {
 
     @PluginMethod
     public void openHotspotSettings(PluginCall call) {
-        Intent i = new Intent(Intent.ACTION_MAIN).setClassName("com.android.settings", "com.android.settings.TetherSettings");
-        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        try {
-            getContext().startActivity(i);
-        } catch (Exception e) {
-            Intent w = new Intent(Settings.ACTION_WIRELESS_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            getContext().startActivity(w);
-        }
+        launch(new Intent(Intent.ACTION_MAIN).setClassName("com.android.settings", "com.android.settings.TetherSettings"), new Intent(Settings.ACTION_WIRELESS_SETTINGS), new Intent(Settings.ACTION_SETTINGS));
         call.resolve();
     }
 
     @PluginMethod
     public void openBluetoothSettings(PluginCall call) {
-        getContext().startActivity(new Intent(Settings.ACTION_BLUETOOTH_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        launch(new Intent(Settings.ACTION_BLUETOOTH_SETTINGS), new Intent(Settings.ACTION_SETTINGS));
         call.resolve();
     }
 
     // ── Secure storage (Android Keystore) ────────────────────────
 
-    private SharedPreferences prefs() throws Exception {
-        if (securePrefs == null) {
-            MasterKey key = new MasterKey.Builder(getContext()).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build();
-            securePrefs = EncryptedSharedPreferences.create(getContext(), "aiss_secure", key,
-                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM);
+    private SharedPreferences openSecurePrefs() throws Exception {
+        MasterKey key = new MasterKey.Builder(getContext()).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build();
+        return EncryptedSharedPreferences.create(getContext(), "aiss_secure", key,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM);
+    }
+
+    /**
+     * The encrypted store. If it can't be decrypted (a file restored from a backup or another phone
+     * without its Keystore key), it is unrecoverable by design: wipe it and start empty, so the app
+     * simply re-pairs instead of failing every secure read forever.
+     */
+    private synchronized SharedPreferences prefs() throws Exception {
+        if (securePrefs != null) return securePrefs;
+        try {
+            securePrefs = openSecurePrefs();
+        } catch (Exception first) {
+            getContext().deleteSharedPreferences("aiss_secure");
+            securePrefs = openSecurePrefs();
         }
         return securePrefs;
+    }
+
+    /** A single entry that fails to decrypt is dropped rather than failing the read. */
+    private String secureRead(String key) throws Exception {
+        try {
+            return prefs().getString(key, null);
+        } catch (SecurityException e) {
+            prefs().edit().remove(key).apply();
+            return null;
+        }
     }
 
     @PluginMethod
@@ -457,7 +595,7 @@ public class AissNativePlugin extends Plugin {
     public void secureGet(PluginCall call) {
         try {
             JSObject r = new JSObject();
-            r.put("value", prefs().getString(call.getString("key"), null));
+            r.put("value", secureRead(call.getString("key")));
             call.resolve(r);
         } catch (Exception e) {
             call.reject("Secure storage unavailable: " + e.getMessage());
@@ -511,12 +649,13 @@ public class AissNativePlugin extends Plugin {
         }
         Uri uri = Uri.parse("tel:" + number.replaceAll("[^0-9+]", ""));
         JSObject r = new JSObject();
-        if (direct && getPermissionState("phone") == PermissionState.GRANTED) {
-            getContext().startActivity(new Intent(Intent.ACTION_CALL, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        if (direct && getPermissionState("phone") == PermissionState.GRANTED && launch(new Intent(Intent.ACTION_CALL, uri))) {
             r.put("result", "call_started");
-        } else {
-            getContext().startActivity(new Intent(Intent.ACTION_DIAL, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        } else if (launch(new Intent(Intent.ACTION_DIAL, uri))) {
             r.put("result", "dialer_opened");
+        } else {
+            call.reject("This phone can't place calls");
+            return;
         }
         call.resolve(r);
     }
@@ -524,31 +663,97 @@ public class AissNativePlugin extends Plugin {
     @PluginMethod
     public void sendSms(PluginCall call) {
         String number = call.getString("number");
-        String body = call.getString("body", "");
+        final String body = call.getString("body", "");
         boolean direct = Boolean.TRUE.equals(call.getBoolean("direct", false));
         if (number == null || number.trim().isEmpty()) {
             call.reject("No number");
             return;
         }
-        String clean = number.replaceAll("[^0-9+]", "");
+        final String clean = number.replaceAll("[^0-9+]", "");
+        if (direct && getPermissionState("sms") == PermissionState.GRANTED && sendDirect(call, clean, body)) return;
+        openComposer(call, clean, body);
+    }
+
+    private void openComposer(PluginCall call, String clean, String body) {
         JSObject r = new JSObject();
-        if (direct && getPermissionState("sms") == PermissionState.GRANTED) {
-            try {
-                SmsManager sms = Build.VERSION.SDK_INT >= 31 ? getContext().getSystemService(SmsManager.class) : SmsManager.getDefault();
-                ArrayList<String> parts = sms.divideMessage(body);
-                sms.sendMultipartTextMessage(clean, null, parts, null, null);
-                // "sent" = handed to the Android telephony stack; delivery reports are not tracked yet.
-                r.put("result", "sent");
-                call.resolve(r);
-                return;
-            } catch (Exception e) {
-                // fall through to composer
-            }
+        if (launch(new Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:" + clean)).putExtra("sms_body", body))) {
+            r.put("result", "composer_opened");
+            call.resolve(r);
+        } else {
+            r.put("result", "failed");
+            r.put("error", "No messaging app");
+            call.resolve(r);
         }
-        Intent i = new Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:" + clean)).putExtra("sms_body", body).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        getContext().startActivity(i);
-        r.put("result", "composer_opened");
-        call.resolve(r);
+    }
+
+    /**
+     * Sends with SmsManager and reports the radio's answer: "sent" only when every part was accepted
+     * by the network (RESULT_OK), "failed" otherwise (no service, airplane mode, no SIM credit…).
+     * No answer within 30 s → "queued" (handed to Android, outcome unknown).
+     */
+    private boolean sendDirect(final PluginCall call, String clean, String body) {
+        try {
+            SmsManager sms = Build.VERSION.SDK_INT >= 31 ? getContext().getSystemService(SmsManager.class) : SmsManager.getDefault();
+            if (sms == null) return false;
+            final ArrayList<String> parts = sms.divideMessage(body);
+            final String action = getContext().getPackageName() + ".SMS_SENT." + SMS_SEQ.incrementAndGet();
+            final AtomicInteger remaining = new AtomicInteger(parts.size());
+            final AtomicBoolean settled = new AtomicBoolean(false);
+            final BroadcastReceiver[] holder = { null };
+            final java.util.function.BiConsumer<String, String> settle = (result, error) -> {
+                if (!settled.compareAndSet(false, true)) return;
+                try {
+                    getContext().unregisterReceiver(holder[0]);
+                } catch (Exception ignored) {
+                }
+                JSObject r = new JSObject();
+                r.put("result", result);
+                if (error != null) r.put("error", error);
+                call.resolve(r);
+            };
+            holder[0] = new BroadcastReceiver() {
+                @Override
+                public void onReceive(Context c, Intent intent) {
+                    int code = getResultCode();
+                    if (code != Activity.RESULT_OK) settle.accept("failed", smsError(code));
+                    else if (remaining.decrementAndGet() <= 0) settle.accept("sent", null);
+                }
+            };
+            androidx.core.content.ContextCompat.registerReceiver(getContext(), holder[0], new IntentFilter(action), androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED);
+            ArrayList<PendingIntent> sent = new ArrayList<>();
+            for (int k = 0; k < parts.size(); k++) {
+                Intent i = new Intent(action).setPackage(getContext().getPackageName());
+                sent.add(PendingIntent.getBroadcast(getContext(), k, i, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_ONE_SHOT));
+            }
+            try {
+                sms.sendMultipartTextMessage(clean, null, parts, sent, null);
+            } catch (Exception e) {
+                try {
+                    getContext().unregisterReceiver(holder[0]);
+                } catch (Exception ignored) {
+                }
+                return false; // → composer
+            }
+            main.postDelayed(() -> settle.accept("queued", null), 30000);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private static String smsError(int code) {
+        switch (code) {
+            case SmsManager.RESULT_ERROR_NO_SERVICE:
+                return "No mobile network";
+            case SmsManager.RESULT_ERROR_RADIO_OFF:
+                return "Mobile radio is off (airplane mode?)";
+            case SmsManager.RESULT_ERROR_NULL_PDU:
+                return "Message could not be encoded";
+            case SmsManager.RESULT_ERROR_GENERIC_FAILURE:
+                return "The network rejected the message (check SIM balance)";
+            default:
+                return "SMS failed (code " + code + ")";
+        }
     }
 
     // ── Background execution (foreground service) ────────────────
@@ -663,33 +868,27 @@ public class AissNativePlugin extends Plugin {
     /** Opens the system list; the user chooses "Don't optimise". No restricted permission needed. */
     @PluginMethod
     public void openBatteryOptimizationSettings(PluginCall call) {
-        try {
-            getContext().startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
-        } catch (Exception e) {
-            getContext().startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getContext().getPackageName())).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
-        }
+        launch(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS), appDetails());
         call.resolve();
     }
 
     /** Android's location switch (GPS off is the most common reason the map shows no position). */
     @PluginMethod
     public void openLocationSettings(PluginCall call) {
-        getContext().startActivity(new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        launch(new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS), new Intent(Settings.ACTION_SETTINGS));
         call.resolve();
     }
 
     /** This app's settings page: where a permanently denied permission can be turned back on. */
     @PluginMethod
     public void openAppSettings(PluginCall call) {
-        getContext().startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getContext().getPackageName())).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        launch(appDetails(), new Intent(Settings.ACTION_SETTINGS));
         call.resolve();
     }
 
     @PluginMethod
     public void openWifiSettings(PluginCall call) {
-        Intent intent = new Intent(Settings.Panel.ACTION_WIFI);
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        getContext().startActivity(intent);
+        launch(new Intent(Settings.Panel.ACTION_WIFI), new Intent(Settings.ACTION_WIFI_SETTINGS));
         call.resolve();
     }
 
@@ -697,6 +896,14 @@ public class AissNativePlugin extends Plugin {
     protected void handleOnDestroy() {
         stopDiscoveryInternal();
         releaseSetup();
+        main.removeCallbacksAndMessages(null);
         io.shutdownNow();
+        // User closed the app (swiped away / back out): don't leave an orphaned foreground service.
+        try {
+            if (getActivity() != null && getActivity().isFinishing()) {
+                getContext().stopService(new Intent(getContext(), StickForegroundService.class));
+            }
+        } catch (Exception ignored) {
+        }
     }
 }

@@ -27,6 +27,8 @@ export class VisionEngine {
   private enabled = false;
   private looping = false;
   private loopId: ReturnType<typeof setTimeout> | null = null;
+  /** Each start gets a new generation; a loop from an earlier start ends at its next await. */
+  private loopGen = 0;
   private initAttempt = 0;
   private initTimer: ReturnType<typeof setTimeout> | null = null;
   private unsubLink: (() => void) | null = null;
@@ -66,6 +68,7 @@ export class VisionEngine {
 
   private halt(state: VisionRunState) {
     this.looping = false;
+    this.loopGen++;
     if (this.loopId) clearTimeout(this.loopId);
     this.loopId = null;
     this.setRun(state);
@@ -84,7 +87,7 @@ export class VisionEngine {
         this.tracker = new ObjectTracker();
         this.pipeline.reset();
         this.setRun('running');
-        void this.loop();
+        void this.loop(++this.loopGen);
       }
       return;
     }
@@ -115,14 +118,16 @@ export class VisionEngine {
     }
   }
 
-  private async loop() {
-    if (!this.looping) return;
+  private async loop(gen: number) {
+    const live = () => this.looping && gen === this.loopGen;
+    if (!live()) return;
     const started = performance.now();
     let wait = MIN_FRAME_INTERVAL_MS;
     try {
       const frame = await this.pipeline.fetchNextFrame();
-      if (!this.looping) return;
+      if (!live()) return;
       const observations = await this.detector.detect(frame.blob, frame.capturedAt);
+      if (!live()) return;
       trace('frame_decoded', { bytes: frame.blob.size });
       trace('detector_ran', { objects: observations.length, ms: Math.round(this.detector.actualInferenceLatencyMs) });
       const nowMs = Date.now();
@@ -151,6 +156,7 @@ export class VisionEngine {
       if (dbg.debugFrameUrl) URL.revokeObjectURL(dbg.debugFrameUrl);
       this.publish({ latestSnapshot: snapshot, debugFrameUrl: URL.createObjectURL(frame.blob), lastFrameError: null });
     } catch (e) {
+      if (!live()) return;
       const msg = (e as Error).message;
       this.consecutiveErrors++;
       if (useVisionDebug.getState().lastFrameError !== msg) this.publish({ lastFrameError: msg });
@@ -163,9 +169,9 @@ export class VisionEngine {
       // camera busy / offline / stale: back off gently (max 2 s), never spin.
       wait = Math.min(2000, MIN_FRAME_INTERVAL_MS * 2 ** Math.min(this.consecutiveErrors, 3));
     }
-    if (!this.looping) return;
+    if (!live()) return;
     const elapsed = performance.now() - started;
-    this.loopId = setTimeout(() => void this.loop(), Math.max(0, wait - elapsed));
+    this.loopId = setTimeout(() => void this.loop(gen), Math.max(0, wait - elapsed));
   }
 }
 

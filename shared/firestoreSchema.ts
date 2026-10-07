@@ -140,7 +140,7 @@ export interface SosDoc {
   onTheWayAt: number | null;
   resolvedAt: number | null;
   resolvedBy: string | null;
-  smsFallback: 'not_needed' | 'sent' | 'composer_opened' | 'failed' | 'unavailable';
+  smsFallback: 'not_needed' | 'sent' | 'queued' | 'composer_opened' | 'failed' | 'unavailable';
 }
 
 export interface NotificationDoc {

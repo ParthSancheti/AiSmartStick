@@ -11,7 +11,8 @@ export interface SetupNetwork {
 }
 
 export type CallResult = 'call_started' | 'dialer_opened';
-export type SmsResult = 'sent' | 'composer_opened';
+/** sent = accepted by the mobile network; queued = handed to Android, no answer yet; failed = radio refused it. */
+export type SmsResult = 'sent' | 'queued' | 'composer_opened' | 'failed';
 export type AudioRoute = 'speaker' | 'wired' | 'bluetooth' | 'unknown';
 
 export interface AissNativePlugin {
@@ -42,7 +43,7 @@ export interface AissNativePlugin {
   /** Direct call when CALL_PHONE is granted, else the dialer with the number filled in. */
   placeCall(opts: { number: string; direct: boolean }): Promise<{ result: CallResult }>;
   /** Direct SMS when SEND_SMS is granted (see ANDROID_SETUP.md policy note), else the composer. */
-  sendSms(opts: { number: string; body: string; direct: boolean }): Promise<{ result: SmsResult }>;
+  sendSms(opts: { number: string; body: string; direct: boolean }): Promise<{ result: SmsResult; error?: string }>;
   /** Android foreground service: keeps stick link, GPS, SOS and sync alive with the screen off. */
   startBackgroundService(opts: { title: string; body: string; promote?: boolean }): Promise<{ running: boolean; types?: number }>;
   stopBackgroundService(): Promise<{ running: boolean }>;

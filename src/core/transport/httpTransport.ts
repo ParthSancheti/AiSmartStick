@@ -205,9 +205,9 @@ export class HttpTransport implements StickTransport {
         trace('packet_received', { seq: packet.seq });
         const latency = performance.now() - started;
         this.misses = 0;
-        const errors = packet.health?.errors?.length ?? 0;
-        // Degraded: answering, but slow or reporting hardware errors. Safety still runs on the stick.
-        this.setState(latency > 1200 || errors > 0 ? 'degraded' : 'connected', errors ? `Stick reports: ${packet.health.errors!.join(', ')}` : latency > 1200 ? 'Slow link' : undefined);
+        // Degraded is about the LINK (slow answers). Hardware faults (e.g. a sensor not wired) are
+        // shown by the battery / health cards from the packet itself; the stick is still connected.
+        this.setState(latency > 1200 ? 'degraded' : 'connected', latency > 1200 ? 'Slow link' : undefined);
         this.em.emit('packet', packet, Date.now());
       } catch (e) {
         if (signal.aborted) return;
@@ -215,6 +215,11 @@ export class HttpTransport implements StickTransport {
           log.security('stick rejected request signature', { deviceId: this.dev.deviceId });
           trace('auth_failed', { error: 'telemetry 401' });
           this.setState('auth_failed', 'The stick rejected this phone’s key.');
+          return;
+        }
+        // The phone lost the stick's Wi-Fi (Android reports it at once): re-bind now, not after 6 misses.
+        if (/not bound/i.test((e as Error).message)) {
+          this.scheduleRetry(signal, 'Reconnecting to the stick’s Wi-Fi');
           return;
         }
         this.misses++;

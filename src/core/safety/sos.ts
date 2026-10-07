@@ -38,7 +38,11 @@ export function safetyContact(): { name: string; phone: string | null } {
   const s = useSession.getState();
   const c = s.contacts.find((x) => x.id === 'emergency');
   if (c?.phone) return { name: c.name || 'your safety contact', phone: c.phone };
-  return { name: s.guardian.heardAs || s.guardian.name || 'your guardian', phone: s.guardian.phone };
+  if (s.guardian.phone) return { name: s.guardian.heardAs || s.guardian.name || 'your guardian', phone: s.guardian.phone };
+  // Contacts added later in Settings (the onboarding entry may have been removed).
+  const any = s.contacts.find((x) => x.phone);
+  if (any) return { name: any.name || 'your safety contact', phone: any.phone };
+  return { name: s.guardian.heardAs || s.guardian.name || 'your safety contact', phone: null };
 }
 const alertNames = () => safetyContact().name;
 
@@ -123,14 +127,17 @@ async function activateReal(trigger: SosTrigger) {
   const body = `${getSettings().sosMessage}${where}`;
   try {
     const r = await sendSms(g.name, g.phone, body, { direct: true });
-    if (r === 'sent') {
+    if (r === 'sent' || r === 'queued') {
       useSafety.setState({ delivery: 'sms' });
       announce(P.sosSms, { high: true });
-      void updateSosEvent(sosId, { smsFallback: 'sent' });
+      void updateSosEvent(sosId, { smsFallback: r });
     } else if (r === 'composer_opened') {
       useSafety.setState({ delivery: 'sms' });
       announce({ en: `I opened a text message to ${g.name}. Press send to deliver it.`, hi: `${g.name} के लिए मैसेज खोला है, भेजने के लिए सेंड दबाइए।` }, { high: true });
       void updateSosEvent(sosId, { smsFallback: 'composer_opened' });
+    } else if (r === 'failed') {
+      announce({ en: 'The text message could not be sent. If you can, call someone for help.', hi: 'मैसेज नहीं भेजा जा सका। हो सके तो किसी को कॉल कीजिए।' }, { critical: true });
+      void updateSosEvent(sosId, { smsFallback: 'failed' });
     } else {
       announce({ en: 'No safety number is saved, so I could not text anyone. Add one in Settings. If you can, call someone for help.', hi: 'कोई सेफ़्टी नंबर सेव नहीं है, इसलिए मैसेज नहीं भेज सका। सेटिंग्स में नंबर जोड़िए।' }, { critical: true });
       void updateSosEvent(sosId, { smsFallback: 'unavailable' });

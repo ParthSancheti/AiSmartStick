@@ -48,6 +48,8 @@ vi.mock('../src/core/util', async (orig) => ({ ...(await orig<typeof import('../
 
 import { provisionStick, useProvisioning } from '../src/core/provisioning/provisioning';
 import { AissNative } from '../src/core/native/aissNative';
+import { setDoc } from 'firebase/firestore';
+import { attachPairedDevice } from '../src/core/device/realDevice';
 
 describe('Stick setup (dashcam firmware)', () => {
   beforeEach(() => {
@@ -72,5 +74,23 @@ describe('Stick setup (dashcam firmware)', () => {
     await provisionStick();
     expect(useProvisioning.getState().step).toBe('completed');
     expect(ecu.provisions).toBe(1);
+  });
+
+  it('completes and starts the link while the phone is offline (cloud write never settles)', async () => {
+    ecu.paired = false;
+    vi.mocked(setDoc).mockImplementation(() => new Promise(() => undefined));
+    vi.mocked(attachPairedDevice).mockClear();
+    await provisionStick();
+    expect(useProvisioning.getState().step).toBe('completed');
+    expect(attachPairedDevice).toHaveBeenCalledTimes(1);
+  });
+
+  it('a failure after the key is saved keeps the pairing and the stick network', async () => {
+    ecu.paired = false;
+    vi.mocked(attachPairedDevice).mockRejectedValueOnce(new Error('UDP port busy'));
+    vi.mocked(AissNative.releaseSetupNetwork).mockClear();
+    await provisionStick();
+    expect(useProvisioning.getState().step).toBe('completed');
+    expect(AissNative.releaseSetupNetwork).not.toHaveBeenCalled();
   });
 });
