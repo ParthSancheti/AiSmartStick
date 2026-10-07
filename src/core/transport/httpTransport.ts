@@ -165,7 +165,16 @@ export class HttpTransport implements StickTransport {
    */
   private async ensureStickNetwork() {
     if (!isNative()) return;
-    const n = await native();
+    const real = await native();
+    // Android's join call must never hang the link: after 20 s it counts as "not reached" and the
+    // normal retry/backoff takes over.
+    const n = {
+      connectToSetupNetwork: (o: Parameters<typeof real.connectToSetupNetwork>[0]) =>
+        Promise.race([
+          real.connectToSetupNetwork(o),
+          new Promise<{ connected: false; reason: 'TIMEOUT' }>((r) => setTimeout(() => r({ connected: false, reason: 'TIMEOUT' }), 20_000)),
+        ]),
+    };
     // Live binding / Wi-Fi joined by hand / stick seen in the last scan → (silent) connect.
     let res = await n.connectToSetupNetwork({ ssid: STICK_AP_SSID, passphrase: STICK_AP_PASSPHRASE, timeoutMs: 15_000, openWifiPanelIfOff: false, onlyIfVisible: true });
     // A stale or throttled Wi-Fi scan often misses the stick (NOT_IN_RANGE) even when it is right here
