@@ -15,3 +15,6 @@ jdk21.zip
 
 # Generated from node_modules/@mediapipe/tasks-vision by scripts/sync-vision-assets.mjs
 public/mediapipe/wasm/
+
+# Local report written by scripts/doctor.mjs (npm run doctor)
+doctor-report.txt
