@@ -183,18 +183,20 @@ export async function provisionStick() {
     if (info.protocolVersion !== PROTOCOL_VERSION) throw new Error(`This stick's firmware speaks protocol v${info.protocolVersion}. Update it to v${PROTOCOL_VERSION} first.`);
     set({ deviceId: info.deviceId, firmware: info.firmware });
 
-    let dev: PairedDevice;
+    let dev: PairedDevice | null = null;
     if (info.paired) {
-      // Set up before. Reuse the key only if THIS phone still holds it and the stick proves it.
+      // Set up before. If THIS phone still holds the key and the stick proves it, keep the pairing.
       const saved = await loadPairedDevice();
-      if (!saved || saved.deviceId !== info.deviceId || saved.ownerUid !== uid) {
-        set({ needsFactoryReset: true });
-        throw new Error('This SmartStick is still set up with another phone or an earlier install. Reset it: switch it off, then hold the button while switching it on for 5 seconds. Then try again.');
+      if (saved && saved.deviceId === info.deviceId && saved.ownerUid === uid) {
+        set({ step: 'authenticating' });
+        const ok = await verifyProof(info.deviceId, saved.keyB64).then(() => true, () => false);
+        if (ok) dev = { ...saved, firmware: info.firmware, model: info.model, protocolVersion: info.protocolVersion, host: SETUP_AP_HOST };
       }
-      set({ step: 'authenticating' });
-      await verifyProof(info.deviceId, saved.keyB64);
-      dev = { ...saved, firmware: info.firmware, model: info.model, protocolVersion: info.protocolVersion, host: SETUP_AP_HOST };
-    } else {
+      // Otherwise (earlier install, another phone, lost key) pair again below. The dashcam firmware
+      // accepts a new key on its own access point, and only someone who can join that AP gets here.
+      if (!dev) diag('stick was paired before; giving it a new key');
+    }
+    if (!dev) {
       set({ step: 'configuring_network' });
       const keyB64 = toB64(randomBytes(32));
       // Dashcam firmware never joins another network but still validates the credential fields (8–63 chars).

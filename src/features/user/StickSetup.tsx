@@ -32,6 +32,7 @@ export function StickSetup({ onDone, onBack, onSkip, skipLabel = 'Cancel', title
   const step = useProvisioning((s) => s.step);
   const error = useProvisioning((s) => s.error);
   const needsReset = useProvisioning((s) => s.needsFactoryReset);
+  const diagnostics = useProvisioning((s) => s.diagnostics);
   const link = useDevice((s) => s.link);
   const phase = provPhase(step);
   const finished = useRef(false);
@@ -110,6 +111,12 @@ export function StickSetup({ onDone, onBack, onSkip, skipLabel = 'Cancel', title
           <div className="mt-6 rounded-[20px] border border-[var(--sos)]/30 bg-[var(--sos)]/10 p-4 text-[15px] leading-snug" role="alert">
             {error}
             {needsReset && <p className="mt-2 text-[13px] text-ink-2">Resetting only clears the old pairing on the stick. Obstacle vibration keeps working.</p>}
+            {diagnostics.length > 0 && (
+              <details className="mt-3 text-[12px] text-ink-2">
+                <summary className="cursor-pointer font-bold">Show details</summary>
+                <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded-[12px] bg-ink/5 p-2 font-mono text-[11px] leading-snug">{diagnostics.join('\n')}</pre>
+              </details>
+            )}
           </div>
         )}
 

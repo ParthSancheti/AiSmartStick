@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { BatteryFull, Settings, Smartphone, Unlink, Moon, Sun, Footprints, MessageSquare, Map, ChevronLeft, Activity, ShieldAlert, Heart, Flame, Phone, Zap, LogOut, Wand2, Link2, Headphones, Mic, StopCircle, Send, Plus, Bluetooth, Speaker } from 'lucide-react';
 
-import { usePressPatterns } from '../../hooks/usePressPatterns';
 import { useVoiceAssistant } from '../../hooks/useVoiceAssistant';
 import { useDevice, batteryHours, isLinked } from '../../core/store/device';
 import { useSession } from '../../core/store/session';
@@ -19,6 +18,7 @@ import { EventRow } from '../guardian/parts';
 import { StickVisual } from '../../components/StickVisual';
 import { Atmosphere } from '../../components/Atmosphere';
 import { LiveVisionPanel } from '../../components/LiveVisionPanel';
+import { LocationStatus } from '../../components/LocationStatus';
 import { useBackHandler } from '../../core/backStack';
 import { toggleThemeWithTransition } from '../../util/theme';
 import { HomeCarousel } from './home/HomeCarousel';
@@ -452,7 +452,10 @@ function WalkingSubpage({ open, onClose }: { open: boolean; onClose: () => void 
                     End route
                   </button>
                 ) : (
-                  <DestinationSearch />
+                  <>
+                    <DestinationSearch />
+                    <LocationStatus className="mt-3" />
+                  </>
                 )}
              </div>
 
@@ -924,7 +927,6 @@ function SafetyCenterSubpage({ open, onClose }: { open: boolean; onClose: () => 
 export function UserHome() {
   const linkState = useDevice((s) => s.link);
   const battery = useDevice((s) => s.battery);
-  const { bind } = usePressPatterns(handleButton);
   const safety = useSafetyEval((s) => s.state);
   const internet = useDevice((s) => s.internet);
   const aiUnavailable = useAssistant((s) => s.unavailable);
@@ -960,7 +962,7 @@ export function UserHome() {
 
   return (
     <AppScreen>
-      <SafeAreaContent className="px-5 pb-4" {...bind}>
+      <SafeAreaContent className="px-5 pb-4">
           <TopNav />
 
         {/* Hero carousel: Stick · Walk · Assistant (home/HomeCarousel.tsx) */}

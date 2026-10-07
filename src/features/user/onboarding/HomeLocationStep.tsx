@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Check, Loader2, MapPin, Search, X } from 'lucide-react';
+import { Check, Loader2, LocateFixed, MapPin, Search, X } from 'lucide-react';
+import { LocationStatus } from '../../../components/LocationStatus';
 import { MapView } from '../../../components/MapView';
 import { GlassButton, cx } from '../../../components/glass';
 import { useBackHandler } from '../../../core/backStack';
@@ -179,10 +180,16 @@ export function HomeLocationStep({ onSaved }: { onSaved: () => void }) {
       </AnimatePresence>
 
       {!picked && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-[calc(var(--sab)+20px)] z-10 flex flex-col items-center gap-3 px-6">
-          <p className="glass rounded-full px-4 py-2 text-center text-[13.5px] font-semibold text-ink-2">{demo ? 'Demo mode: the map is simulated.' : 'Search, or tap the map to drop a pin.'}</p>
+        <div className="absolute inset-x-0 bottom-[calc(var(--sab)+20px)] z-10 flex flex-col items-stretch gap-3 px-5">
+          {!demo && <LocationStatus />}
+          {!demo && fix && (
+            <GlassButton variant="teal" className="h-14 w-full rounded-[20px] text-[16px] font-bold" disabled={resolving} onClick={() => void pickPoint({ lat: fix.lat, lng: fix.lng })}>
+              <LocateFixed size={20} className="mr-2" /> Use my current location
+            </GlassButton>
+          )}
+          <p className="glass self-center rounded-full px-4 py-2 text-center text-[13.5px] font-semibold text-ink-2">{demo ? 'Demo mode: the map is simulated.' : 'Or search above, or tap the map to drop a pin.'}</p>
           {demo && (
-            <GlassButton variant="teal" className="pointer-events-auto h-12 rounded-[18px] px-6 font-bold" onClick={onSaved}>
+            <GlassButton variant="teal" className="h-12 self-center rounded-[18px] px-6 font-bold" onClick={onSaved}>
               Continue
             </GlassButton>
           )}

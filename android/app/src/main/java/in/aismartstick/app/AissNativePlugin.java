@@ -671,6 +671,20 @@ public class AissNativePlugin extends Plugin {
         call.resolve();
     }
 
+    /** Android's location switch (GPS off is the most common reason the map shows no position). */
+    @PluginMethod
+    public void openLocationSettings(PluginCall call) {
+        getContext().startActivity(new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        call.resolve();
+    }
+
+    /** This app's settings page: where a permanently denied permission can be turned back on. */
+    @PluginMethod
+    public void openAppSettings(PluginCall call) {
+        getContext().startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getContext().getPackageName())).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        call.resolve();
+    }
+
     @PluginMethod
     public void openWifiSettings(PluginCall call) {
         Intent intent = new Intent(Settings.Panel.ACTION_WIFI);

@@ -30,6 +30,12 @@ export class AissNativeWeb extends WebPlugin implements AissNativePlugin {
   async openWifiSettings(): Promise<void> {
     return this.no();
   }
+  async openLocationSettings(): Promise<void> {
+    return this.no();
+  }
+  async openAppSettings(): Promise<void> {
+    return this.no();
+  }
   async checkPermissions() {
     return { location: 'prompt', nearbyWifi: 'denied', phone: 'denied', sms: 'denied' } as const;
   }

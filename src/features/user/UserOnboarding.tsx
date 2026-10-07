@@ -14,6 +14,7 @@ import { firebaseConfigured } from '../../core/runtime/env';
 import { useRuntime } from '../../core/runtime/mode';
 import { useBackHandler } from '../../core/backStack';
 import { cacheProfilePhoto } from '../../core/profile/photoCache';
+import { ensureLocation } from '../../core/location/locationService';
 import { requestSetupPermissions, type PermState, type SetupPermission } from '../../core/setup/permissions';
 import { IntroStory } from './onboarding/IntroStory';
 import { HomeLocationStep } from './onboarding/HomeLocationStep';
@@ -189,6 +190,8 @@ function SetUpStick({ onNext }: { onNext: () => void }) {
     setBusy(true);
     try {
       setRes(await requestSetupPermissions());
+      // GPS was first started right after sign-in; pick up the permission granted just now.
+      void ensureLocation();
     } finally {
       setBusy(false);
     }

@@ -107,6 +107,17 @@ export function hookLocationRecovery() {
   }).catch(() => undefined);
 }
 
+/**
+ * (Re)starts GPS when it is not delivering: permission granted later in setup, location switched
+ * on, or the first start failed. Safe to call often; a healthy watch is left alone.
+ */
+export async function ensureLocation() {
+  const s = useLocation.getState();
+  if (watchId && (s.status === 'ok' || s.status === 'poor' || s.status === 'acquiring')) return;
+  await stopLocation();
+  await startLocation();
+}
+
 export async function stopLocation() {
   if (watchId) await Geolocation.clearWatch({ id: watchId }).catch(() => undefined);
   watchId = null;
