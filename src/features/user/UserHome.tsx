@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from 'react';
+import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { BatteryFull, Settings, Smartphone, Unlink, Moon, Sun, Footprints, MessageSquare, Map, ChevronLeft, Activity, ShieldAlert, Heart, Flame, Phone, Zap, LogOut, Wand2, Link2, Headphones, Mic, StopCircle, Send, Plus, Bluetooth, Speaker } from 'lucide-react';
+import { BatteryFull, BatteryLow, BatteryCharging, Settings, Smartphone, Unlink, Moon, Sun, Footprints, MessageSquare, Map, ChevronRight, Activity, ShieldAlert, Heart, Flame, Phone, Zap, LogOut, Wand2, Link2, Headphones, Mic, StopCircle, Send, Plus, Bluetooth, Speaker, X } from 'lucide-react';
 
 import { useVoiceAssistant } from '../../hooks/useVoiceAssistant';
 import { useDevice, batteryHours, isLinked } from '../../core/store/device';
@@ -16,14 +16,13 @@ import { useNow } from '../../hooks/useNow';
 import { useActivity } from '../../core/store/activity';
 import { EventRow } from '../guardian/parts';
 import { StickVisual } from '../../components/StickVisual';
-import { Atmosphere } from '../../components/Atmosphere';
 import { LiveVisionPanel } from '../../components/LiveVisionPanel';
 import { LocationStatus } from '../../components/LocationStatus';
 import { useBackHandler } from '../../core/backStack';
 import { toggleThemeWithTransition } from '../../util/theme';
 import { HomeCarousel } from './home/HomeCarousel';
-import { WalkCard, AssistantCard } from './home/HomeCards';
-import { AppScreen, SafeAreaContent, FloatingHeader } from '../../components/Layout';
+import { WalkCard, AssistantCard, HOME_CARD } from './home/HomeCards';
+import { AppScreen, SafeAreaContent, SubPage, SubPageView, BackButton } from '../../components/Layout';
 import { AiOrb, orbPhaseFor } from '../../components/AiOrb';
 import { useSafety } from '../../core/store/safety';
 import { AccountAvatar } from '../../components/Avatar';
@@ -41,7 +40,7 @@ import { useAuth } from '../../core/auth/authStore';
 import { useSafetyEval } from '../../core/safety/safetyRuntime';
 import { useNavView } from '../../core/navigation/navView';
 import { useLocation, freshnessLabel } from '../../core/location/locationService';
-import { useWalking, startWalk, pauseWalk, resumeWalk, endWalk } from '../../core/walking/walkTracker';
+import { useWalking } from '../../core/walking/walkTracker';
 import { autocomplete, placeDetails, type Suggestion } from '../../core/maps/mapsService';
 import { startRealNavigation, stopRealNavigation } from '../../core/navigation/realNavigator';
 import { startNavigation as startDemoNavigation, stopNavigation as stopDemoNavigation } from '../../core/nav/navigation';
@@ -49,68 +48,73 @@ import { PLACES } from '../../core/sim/geo';
 import { usePhoneInfo, phoneLabel } from '../../core/native/deviceInfo';
 import { useBatteryHistory } from '../../core/telemetry/batteryHistory';
 import { useAudioRoute } from '../../core/audio/audioRoute';
-import { linkLabel, batteryLabel, safetyLabel, TONE_TEXT, km, mins } from '../shared/labels';
+import { linkLabel, batteryLabel, safetyLabel, TONE_TEXT, km, mins, type Tone } from '../shared/labels';
 import { meters, timeAgo } from '../../core/util';
 import { friendlyError } from '../../core/errors';
 
+/*
+ * Home and its sub-pages.
+ *
+ * Layout: the Home header is fixed (outside the one scroll container); every sub-page is a
+ * SubPage (components/Layout.tsx) with a fixed header and one scroll container. Sub-pages that
+ * show the shared animated background are transparent and Home hides itself underneath them, so
+ * only ONE ambient background is ever animated and the content behind is out of TalkBack.
+ *
+ * Performance (Android WebView): every live-data subscription lives in the smallest component
+ * that shows it, with primitive selectors, so a telemetry packet re-renders a few small nodes,
+ * not the whole Home; sub-page content mounts only while the page is open.
+ */
+
 const openSetup = () => useUI.setState({ stickSetup: true });
+
+/* ───────────────────────────── Header + profile menu ───────────────────────────── */
 
 function ProfileMenu({ open, onClose }: { open: boolean; onClose: () => void }) {
   const theme = useSession((s) => s.settings.theme);
-  const updateSettings = useSession((s) => s.updateSettings);
   const isDark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
   const link = useDevice((s) => s.link);
   const mode = useRuntime((s) => s.mode);
   const user = useAuth((s) => s.user);
+  const personName = useSession((s) => s.person.name);
   const l = linkLabel(link);
-  const canSwitchRole = true;
+  const item = 'flex min-h-12 w-full items-center gap-3 rounded-[18px] px-4 py-3 text-left text-[15px] font-semibold text-ink active:bg-ink/[0.06]';
 
   return (
     <AnimatePresence>
       {open && (
         <>
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }} onClick={onClose} className="fixed inset-0 z-[100] bg-black/10" aria-hidden="true" />
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={onClose}
-            className="fixed inset-0 z-[100] bg-ink/5 backdrop-blur-[2px]"
-            aria-hidden="true"
-          />
-          <motion.div
-            initial={{ opacity: 0, scale: 0.8, y: -20, x: 20 }}
-            animate={{ opacity: 1, scale: 1, y: 0, x: 0 }}
-            exit={{ opacity: 0, scale: 0.8, y: -20, x: 20 }}
-            transition={{ type: 'spring', stiffness: 500, damping: 25 }}
-            className="absolute top-20 right-4 z-[101] glass w-64 rounded-[28px] p-2 flex flex-col gap-1 shadow-2xl origin-top-right"
+            role="menu"
+            aria-label="Profile menu"
+            initial={{ opacity: 0, transform: 'translate3d(0,-8px,0) scale(0.96)' }}
+            animate={{ opacity: 1, transform: 'translate3d(0,0,0) scale(1)' }}
+            exit={{ opacity: 0, transform: 'translate3d(0,-8px,0) scale(0.96)' }}
+            transition={{ duration: 0.16, ease: [0.2, 0.8, 0.2, 1] }}
+            className="glass absolute right-5 top-full z-[101] mt-2 flex w-[min(17rem,calc(100vw-40px))] origin-top-right flex-col gap-0.5 rounded-[26px] p-2 shadow-2xl"
           >
-            {user && (
-              <div className="px-4 pb-2 pt-2">
-                <p className="truncate text-[15px] font-bold text-ink">{user.displayName ?? 'Signed in'}</p>
-                <p className="truncate text-[13px] text-ink-3">{mode === 'demo' ? 'Demo mode · simulated data' : (user.email ?? '')}</p>
+            {(user || personName) && (
+              <div className="min-w-0 px-4 pb-2 pt-2">
+                <p className="truncate text-[15px] font-bold text-ink">{personName || user?.displayName || 'Signed in'}</p>
+                <p className="truncate text-[13px] text-ink-3">{mode === 'demo' ? 'Demo mode · simulated data' : (user?.email ?? '')}</p>
               </div>
             )}
-            <button type="button" className="glass interactive flex items-center gap-3 px-4 py-3 rounded-[20px] text-[15px] font-semibold text-ink w-full" onClick={() => { onClose(); useUI.setState({ userSettings: true }); }}>
+            <button type="button" role="menuitem" className={item} onClick={() => { onClose(); useUI.setState({ userSettings: true }); }}>
               <Settings size={18} /> Settings
             </button>
-            <button type="button" className="glass interactive flex items-center gap-3 px-4 py-3 rounded-[20px] text-[15px] font-semibold text-ink w-full" onClick={(e) => toggleThemeWithTransition(e)}>
-              {isDark ? <Sun size={18} /> : <Moon size={18} />} Toggle Theme
+            <button type="button" role="menuitem" className={item} onClick={(e) => toggleThemeWithTransition(e)}>
+              {isDark ? <Sun size={18} /> : <Moon size={18} />} {isDark ? 'Light theme' : 'Dark theme'}
             </button>
-            <button type="button" className="glass interactive flex items-center gap-3 px-4 py-3 rounded-[20px] text-[15px] font-semibold text-ink w-full" onClick={() => { onClose(); if (link === 'unpaired' || link === 'auth_failed') openSetup(); else useUI.setState({ stickPage: true }); }}>
-              {link === 'connected' ? <Link2 size={18} /> : <Unlink size={18} />} {link === 'unpaired' ? 'Set up stick' : `Stick ${l.text.replace('…', '')}`}
+            <button type="button" role="menuitem" className={item} onClick={() => { onClose(); if (link === 'unpaired' || link === 'auth_failed') openSetup(); else useUI.setState({ stickPage: true }); }}>
+              {link === 'connected' ? <Link2 size={18} /> : <Unlink size={18} />} <span className="min-w-0 truncate">{link === 'unpaired' ? 'Set up stick' : `Stick ${l.text.replace('…', '')}`}</span>
             </button>
-            <button type="button" className="glass interactive flex items-center gap-3 px-4 py-3 rounded-[20px] text-[15px] font-semibold text-ink w-full" onClick={() => { onClose(); useUI.setState({ pocket: true }); announce(P.pocketOn); }}>
-              <Smartphone size={18} /> Pocket Mode
+            <button type="button" role="menuitem" className={item} onClick={() => { onClose(); useUI.setState({ pocket: true }); announce(P.pocketOn); }}>
+              <Smartphone size={18} /> Pocket mode
             </button>
-            {false && canSwitchRole && (
-              <button type="button" className="glass interactive flex items-center gap-3 px-4 py-3 rounded-[20px] text-[15px] font-semibold text-ink w-full" onClick={() => { onClose(); useSession.setState({ entryRole: 'guardian' }); }}>
-                <ShieldAlert size={18} /> Switch to Guardian
-              </button>
-            )}
             {mode === 'real' && (
               <>
-                <div className="h-px bg-ink/10 my-1 mx-2" />
-                <button type="button" className="glass interactive flex items-center gap-3 px-4 py-3 rounded-[20px] text-[15px] font-semibold text-sos w-full" onClick={() => { onClose(); void signOut(); }}>
+                <div className="mx-2 my-1 h-px bg-line" />
+                <button type="button" role="menuitem" className={`${item} !text-sos`} onClick={() => { onClose(); void signOut(); }}>
                   <LogOut size={18} /> Log out
                 </button>
               </>
@@ -122,47 +126,204 @@ function ProfileMenu({ open, onClose }: { open: boolean; onClose: () => void }) 
   );
 }
 
-function TopNav() {
+/** Fixed Home header: round logo, name, demo badge, profile. Never scrolls. */
+function HomeHeader({ headerRef }: { headerRef: React.Ref<HTMLElement> }) {
   const [menuOpen, setMenuOpen] = useState(false);
   useBackHandler(menuOpen, () => setMenuOpen(false));
-
   return (
-    <div className="relative z-50 mb-5 pt-5">
-      <motion.div
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-        className="glass flex items-center justify-between h-[68px] rounded-[34px] px-2 shadow-2xl pointer-events-auto"
-      >
-        <div className="flex items-center gap-3 pl-2">
-          <BrandLogo variant="icon" size={44} className="rounded-full overflow-hidden" />
-          <span className="text-[17px] font-bold text-ink tracking-tight">{BRAND.name}</span>
-          <ModeBadge />
-        </div>
+    <header ref={headerRef} className="page-header relative z-30 shrink-0 px-5 pb-3" style={{ paddingTop: 'calc(var(--island, var(--sat)) + 10px)' }}>
+      <div className="home-header-bar glass flex h-16 items-center gap-3 rounded-full pl-2.5 pr-2 shadow-[0_10px_30px_-14px_rgba(0,0,0,.25)]">
+        <BrandLogo variant="round" size={44} />
+        <span className="home-brand-name min-w-0 flex-1 truncate text-[17px] font-bold tracking-tight text-ink">{BRAND.name}</span>
+        <span className="home-brand-spacer hidden flex-1" aria-hidden />
+        <ModeBadge className="shrink-0" />
+        <button type="button" className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-full active:scale-95" aria-label="Open profile menu" aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}>
+          <AccountAvatar size={44} />
+        </button>
+      </div>
+      <ProfileMenu open={menuOpen} onClose={() => setMenuOpen(false)} />
+    </header>
+  );
+}
+
+/* ───────────────────────────── Home cards ───────────────────────────── */
+
+const tileCls = 'stat-tile flex min-h-[58px] w-full min-w-0 items-center gap-2.5 rounded-[20px] bg-surface/55 px-3 py-2 text-left ring-1 ring-line';
+
+function StatTile({ icon, label, value, tone, onClick, ariaLabel }: { icon: ReactNode; label: string; value: string; tone: Tone | 'ink'; onClick?: () => void; ariaLabel: string }) {
+  const color = tone === 'ink' ? 'text-ink' : TONE_TEXT[tone];
+  const inner = (
+    <>
+      <span className={`stat-tile-icon grid h-9 w-9 shrink-0 place-items-center rounded-full bg-ink/[0.06] ${color}`}>{icon}</span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[11.5px] font-bold uppercase tracking-wider text-ink-3">{label}</span>
+        <span className={`block text-[15px] font-bold leading-tight ${color} line-clamp-2 break-words`}>{value}</span>
+      </span>
+    </>
+  );
+  if (!onClick)
+    return (
+      <div className={tileCls} aria-label={ariaLabel} role="group">
+        {inner}
+      </div>
+    );
+  return (
+    <button type="button" onClick={onClick} aria-label={ariaLabel} className={`${tileCls} interactive active:scale-[0.98]`}>
+      {inner}
+    </button>
+  );
+}
+
+/** Stick card: the stick, link, battery and phone. Own primitive selectors: re-renders only when a shown value changes. */
+const StickCard = memo(function StickCard() {
+  const linkState = useDevice((s) => s.link);
+  const bStatus = useDevice((s) => s.battery.status);
+  const bPercent = useDevice((s) => s.battery.percent);
+  const bCharging = useDevice((s) => s.battery.charging);
+  const mode = useRuntime((s) => s.mode);
+  const phone = usePhoneInfo();
+  const link = linkLabel(linkState);
+  const bat = batteryLabel({ status: bStatus, percent: bPercent, charging: bCharging });
+  const phoneName = mode === 'demo' ? 'Demo phone' : phoneLabel(phone);
+  const stickAction = () => (linkState === 'unpaired' || linkState === 'auth_failed' ? openSetup() : useUI.setState({ stickPage: true }));
+  const BatIcon = bCharging ? BatteryCharging : bPercent != null && bPercent <= 20 ? BatteryLow : BatteryFull;
+  return (
+    <div className={`${HOME_CARD} flex-row items-stretch gap-3`}>
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-teal/5 to-info/10" />
+      <button type="button" onClick={stickAction} aria-label="Stick diagnostics" className="relative flex w-[32%] min-w-[80px] max-w-[140px] shrink-0 flex-col items-center justify-center rounded-[24px] active:scale-[0.98]">
+        <StickVisual height={168} />
+        <span className="mt-1 max-w-full truncate text-[12px] font-bold uppercase tracking-[0.1em] text-ink-2">Stick</span>
+      </button>
+      <div className="relative flex min-w-0 flex-1 flex-col justify-center gap-2">
+        <StatTile
+          icon={linkState === 'connected' ? <Link2 size={18} /> : <Unlink size={18} />}
+          label="Stick"
+          value={link.text}
+          tone={link.tone}
+          onClick={stickAction}
+          ariaLabel={`Stick: ${link.text}`}
+        />
+        <StatTile icon={<BatIcon size={18} />} label="Battery" value={bat.text} tone={bat.tone} onClick={() => useUI.setState({ batteryPage: true })} ariaLabel={`Stick battery ${bat.text}, ${bat.sub}`} />
+        <StatTile icon={<Smartphone size={18} />} label="Phone" value={phoneName} tone="ink" ariaLabel={`Phone: ${phoneName}`} />
+      </div>
+    </div>
+  );
+});
+
+function ActionRow({ icon, iconTone, label, value, valueTone = 'text-ink', onClick }: { icon: ReactNode; iconTone: string; label: string; value: ReactNode; valueTone?: string; onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} className="glass interactive flex min-h-[76px] w-full min-w-0 items-center gap-3.5 rounded-[26px] px-4 py-3 text-left">
+      <span className={`grid h-12 w-12 shrink-0 place-items-center rounded-full ${iconTone}`}>{icon}</span>
+      <span className="min-w-0 flex-1">
+        <span className="block break-words text-[12px] font-bold uppercase tracking-wider text-ink-3">{label}</span>
+        <span className={`mt-0.5 block text-[15.5px] font-bold leading-snug ${valueTone} break-words`}>{value}</span>
+      </span>
+      <ChevronRight size={20} className="shrink-0 text-ink-3" aria-hidden />
+    </button>
+  );
+}
+
+const QuickActions = memo(function QuickActions({ onSafety, onChat }: { onSafety: () => void; onChat: () => void }) {
+  const safety = useSafetyEval((s) => s.state);
+  const internet = useDevice((s) => s.internet);
+  const aiUnavailable = useAssistant((s) => s.unavailable);
+  const mode = useRuntime((s) => s.mode);
+  const route = useAudioRoute();
+  const walking = useWalking((s) => s.today);
+  const safe = safetyLabel(safety);
+  const aiState: { text: string; tone: Tone | 'ink' } =
+    mode === 'demo' ? { text: 'Ready', tone: 'ink' } : internet === false ? { text: 'Offline', tone: 'muted' } : !firebaseConfigured() ? { text: 'Not set up', tone: 'muted' } : aiUnavailable ? { text: 'Retry', tone: 'warn' } : { text: 'Ready', tone: 'ink' };
+  const square = 'glass interactive flex min-h-[124px] min-w-0 flex-col items-center justify-center gap-2 rounded-[26px] px-3 py-4 text-center';
+  return (
+    <div className="mb-5 grid grid-cols-2 gap-3">
+      <button type="button" onClick={onSafety} className={square}>
+        <span className="grid h-12 w-12 place-items-center rounded-full bg-info/10 text-info"><ShieldAlert size={26} /></span>
+        <span className="max-w-full">
+          <span className="block break-words text-[12px] font-bold uppercase tracking-wider text-ink-3">Safety</span>
+          <span className={`mt-0.5 block break-words text-[15px] font-bold ${TONE_TEXT[safe.tone]}`}>{safe.text}</span>
+        </span>
+      </button>
+      <button type="button" onClick={() => useUI.setState({ liveAiOpen: true })} className={square}>
+        <span className="grid h-12 w-12 place-items-center rounded-full bg-teal/10 text-teal"><Wand2 size={26} /></span>
+        <span className="max-w-full">
+          <span className="block break-words text-[12px] font-bold uppercase tracking-wider text-ink-3">Assistant</span>
+          <span className={`mt-0.5 block break-words text-[15px] font-bold ${aiState.tone === 'ink' ? 'text-ink' : TONE_TEXT[aiState.tone]}`}>{aiState.text}</span>
+        </span>
+      </button>
+      <div className="col-span-2 flex flex-col gap-3">
+        <ActionRow
+          onClick={() => useUI.setState({ audioOpen: true })}
+          icon={route.route === 'bluetooth' ? <Bluetooth size={24} /> : route.route === 'speaker' ? <Speaker size={24} /> : <Headphones size={24} />}
+          iconTone="bg-info/10 text-info"
+          label="Audio output"
+          value={route.route === 'bluetooth' ? (route.name ?? 'Bluetooth') : route.route === 'wired' ? 'Wired headphones' : route.route === 'speaker' ? 'Phone speaker' : 'System default'}
+          valueTone={route.route === 'unknown' ? 'text-ink-3' : 'text-ink'}
+        />
+        <ActionRow
+          onClick={() => useUI.setState({ healthOpen: true })}
+          icon={<Footprints size={24} />}
+          iconTone="bg-teal/10 text-teal"
+          label="Distance walked today"
+          value={
+            <>
+              {walking.distanceM > 0 ? km(walking.distanceM) : 'No walk yet'}
+              {walking.durationS > 0 && <span className="ml-1 text-[13px] font-medium text-ink-3">({mins(walking.durationS)})</span>}
+            </>
+          }
+        />
+        <ActionRow onClick={onChat} icon={<MessageSquare size={24} />} iconTone="bg-info/10 text-info" label="Assistant chat" value="Type or review conversations" />
+      </div>
+    </div>
+  );
+});
+
+function BottomControls() {
+  return (
+    <div className="mt-auto flex shrink-0 flex-col pt-1">
+      <div className="glass flex flex-col gap-2 rounded-[30px] p-2">
         <button
           type="button"
-          className="h-11 w-11 rounded-full p-[2px] overflow-hidden interactive mr-2 shrink-0"
-          aria-label="Open profile menu"
-          onClick={() => setMenuOpen(true)}
+          className="flex h-[68px] w-full min-w-0 items-center justify-center gap-3 rounded-[24px] bg-sos px-4 text-[19px] font-bold text-white shadow-[0_10px_24px_-10px_var(--sos)] transition-transform active:scale-[0.98]"
+          onClick={(e) => {
+            e.stopPropagation();
+            startSos('button');
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+          onPointerUp={(e) => e.stopPropagation()}
+          aria-label="Trigger Emergency SOS"
         >
-          <AccountAvatar size={40} />
+          <Phone size={26} className="shrink-0" /> <span className="truncate">Emergency SOS</span>
         </button>
-      </motion.div>
-      <div className="pointer-events-auto">
-        <ProfileMenu open={menuOpen} onClose={() => setMenuOpen(false)} />
+        <div className="flex h-[60px] items-center rounded-[24px] bg-ink/5">
+          <button type="button" className="flex h-full min-w-0 flex-1 items-center justify-center gap-2.5 rounded-[24px] text-[16px] font-bold text-ink active:bg-ink/10" onClick={() => useUI.setState({ pocket: true })}>
+            <Smartphone size={20} className="shrink-0 text-ink-2" /> <span className="truncate">Pocket</span>
+          </button>
+          <div className="h-8 w-px shrink-0 bg-ink/10" />
+          <button type="button" className="flex h-full min-w-0 flex-1 items-center justify-center gap-2.5 rounded-[24px] text-[16px] font-bold text-ink active:bg-ink/10" onClick={() => useUI.setState({ mapOpen: true })}>
+            <Map size={20} className="shrink-0 text-ink-2" /> <span className="truncate">Map</span>
+          </button>
+        </div>
       </div>
     </div>
   );
 }
 
+/* ───────────────────────────── AI chat ───────────────────────────── */
+
 function AiChatSubpage({ open, onClose }: { open: boolean; onClose: () => void }) {
+  return <AnimatePresence>{open && <AiChatPage key="chat" onClose={onClose} />}</AnimatePresence>;
+}
+
+function AiChatPage({ onClose }: { onClose: () => void }) {
   const [historyOpen, setHistoryOpen] = useState(false);
-  const userName = useSession((s) => s.person.name) || useAuth.getState().user?.displayName?.split(' ')[0] || '';
+  const personName = useSession((s) => s.person.name);
+  const userName = personName || useAuth.getState().user?.displayName?.split(' ')[0] || '';
   const thread = useAssistant((s) => s.thread);
   const phase = useAssistant((s) => s.phase);
   const [text, setText] = useState('');
   const [convs, setConvs] = useState<ConversationSummary[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const end = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!historyOpen) return;
@@ -172,6 +333,10 @@ function AiChatSubpage({ open, onClose }: { open: boolean; onClose: () => void }
       .then(setConvs)
       .catch(() => setErr('History is unavailable right now.'));
   }, [historyOpen]);
+
+  useEffect(() => {
+    end.current?.scrollIntoView({ block: 'end' });
+  }, [thread.length, phase]);
 
   const send = () => {
     const t = text.trim();
@@ -186,110 +351,103 @@ function AiChatSubpage({ open, onClose }: { open: boolean; onClose: () => void }
     setHistoryOpen(false);
   };
 
-  return (
-    <AnimatePresence>
-      {open && (
-        <motion.div
-          initial={{ clipPath: 'circle(0% at 50% 60%)' }}
-          animate={{ clipPath: 'circle(150% at 50% 60%)' }}
-          exit={{ clipPath: 'circle(0% at 50% 60%)' }}
-          transition={{ duration: 0.35, ease: 'linear' }}
-          className="absolute inset-0 z-50 flex flex-col bg-bg"
+  if (historyOpen)
+    return (
+      <SubPageView key="history" onClose={() => setHistoryOpen(false)} title="History" background="none" z={50}>
+        <button
+          type="button"
+          className="glass interactive flex h-12 items-center gap-2 self-start rounded-full px-5 text-[15px] font-semibold text-ink"
+          onClick={() => {
+            useAssistant.setState({ conversationId: null, thread: [] });
+            setHistoryOpen(false);
+          }}
         >
-          <Atmosphere variant="user" />
-          {historyOpen ? (
-            <div className="px-4 pb-8 flex-1 flex flex-col overflow-y-auto no-scrollbar" style={{ paddingTop: 'calc(var(--island, var(--sat)) + 14px)' }}>
-              <div className="mb-5 mt-8 flex items-center justify-between gap-4 z-10 shrink-0">
-                <h1 className="text-[28px] font-bold tracking-[-0.02em] text-ink pl-2">History</h1>
-                <button onClick={() => setHistoryOpen(false)} aria-label="Close history" className="h-12 w-12 glass interactive rounded-full flex items-center justify-center text-ink shrink-0">
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
-                </button>
-              </div>
-              <button
-                className="glass interactive self-start h-12 px-6 rounded-full flex items-center gap-2 text-[15px] font-medium text-ink mb-8 mt-2 ml-2"
-                onClick={() => {
-                  useAssistant.setState({ conversationId: null, thread: [] });
-                  setHistoryOpen(false);
-                }}
-              >
-                <Plus size={20} />
-                New chat
+          <Plus size={20} /> New chat
+        </button>
+        <section>
+          <h2 className="mb-2 px-1 text-[13px] font-bold uppercase tracking-wider text-ink-3">Recent</h2>
+          <div className="glass overflow-hidden rounded-[24px] [&>*+*]:border-t [&>*+*]:border-line">
+            {err && <p className="px-4 py-5 text-[15px] text-ink-3">{err}</p>}
+            {!err && convs === null && <p className="px-4 py-5 text-[15px] text-ink-3">Loading…</p>}
+            {convs?.length === 0 && <p className="px-4 py-5 text-[15px] text-ink-3">No conversations yet.</p>}
+            {convs?.map((c) => (
+              <button key={c.id} type="button" onClick={() => void openConversation(c)} className="flex min-h-[56px] w-full min-w-0 items-center gap-3 px-4 py-3 text-left text-ink-2 active:bg-ink/5">
+                <MessageSquare size={20} className="shrink-0" />
+                <span className="min-w-0 flex-1 truncate text-[16px] font-medium text-ink">{c.title}</span>
+                <span className="shrink-0 text-[12px] text-ink-3">{timeAgo(c.updatedAt, Date.now())}</span>
               </button>
-              <h2 className="text-[14px] font-bold text-ink mb-4 ml-2">Recent</h2>
-              <div className="flex flex-col gap-4 pb-8 ml-2">
-                {err && <p className="text-[15px] text-ink-3">{err}</p>}
-                {!err && convs === null && <p className="text-[15px] text-ink-3">Loading…</p>}
-                {convs?.length === 0 && <p className="text-[15px] text-ink-3">No conversations yet.</p>}
-                {convs?.map((c) => (
-                  <button key={c.id} type="button" onClick={() => void openConversation(c)} className="flex items-center gap-4 text-ink-2 text-left">
-                    <MessageSquare size={20} />
-                    <span className="text-[16px] font-medium text-ink truncate flex-1">{c.title}</span>
-                    <span className="text-[12px] text-ink-3 shrink-0">{timeAgo(c.updatedAt, Date.now())}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <div className="px-4 pb-8 flex-1 flex flex-col overflow-y-auto no-scrollbar" style={{ paddingTop: 'calc(var(--island, var(--sat)) + 14px)' }}>
-              <div className="mb-5 mt-8 flex items-center justify-between gap-4 z-10 shrink-0">
-                <div className="flex items-center gap-4">
-                  <button onClick={onClose} aria-label="Back" className="h-12 w-12 glass interactive rounded-full flex items-center justify-center text-ink shrink-0">
-                    <ChevronLeft size={24} />
-                  </button>
-                  <h1 className="text-[28px] font-bold tracking-[-0.02em] text-ink">Assistant</h1>
-                </div>
-                <button onClick={() => setHistoryOpen(true)} className="glass px-5 h-12 interactive rounded-full flex items-center justify-center text-[15px] font-semibold text-ink gap-2">
-                  <MessageSquare size={18} /> History
-                </button>
-              </div>
+            ))}
+          </div>
+        </section>
+      </SubPageView>
+    );
 
-              {thread.length === 0 ? (
-                <div className="flex-1 flex flex-col items-center justify-center pb-20">
-                  <div className="text-info mb-6">
-                    <Wand2 size={64} />
-                  </div>
-                  <h1 className="text-[36px] font-bold text-ink text-center leading-tight">
-                    What's the vibe{userName ? ',' : '?'}<br />{userName ? `${userName}?` : ''}
-                  </h1>
-                </div>
-              ) : (
-                <div className="flex-1 flex flex-col gap-3 pb-28" aria-live="polite">
-                  {thread.map((m) => (
-                    <div key={m.id} className={`max-w-[85%] rounded-[22px] px-4 py-3 text-[16px] leading-snug ${m.role === 'user' ? 'self-end bg-teal text-on-teal' : m.role === 'system' ? 'self-center bg-amber-soft text-amber-ink text-[14px]' : 'self-start glass text-ink'}`}>
-                      {m.text}
-                    </div>
-                  ))}
-                  {phase === 'thinking' && <div className="self-start glass rounded-[22px] px-4 py-3 text-[15px] text-ink-3">Thinking…</div>}
-                </div>
-              )}
-
-              <div className="absolute bottom-6 left-4 right-4 z-10">
-                <form
-                  className="glass w-full rounded-full p-2 flex items-center gap-2 shadow-lg h-16"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    send();
-                  }}
-                >
-                  <button type="button" aria-label="Speak instead" onClick={() => handleButton('single')} className="h-12 w-12 rounded-full flex items-center justify-center shrink-0 text-ink">
-                    <Mic size={22} />
-                  </button>
-                  <input type="text" value={text} onChange={(e) => setText(e.target.value)} placeholder={`Ask ${BRAND.name}...`} aria-label="Message to the assistant" className="flex-1 bg-transparent outline-none text-ink text-[16px] px-2 font-medium" />
-                  <button type="submit" disabled={!text.trim() || phase === 'thinking'} className="h-12 w-12 bg-teal/20 interactive rounded-full flex items-center justify-center text-teal shrink-0 disabled:opacity-40" aria-label="Send">
-                    <Send size={20} />
-                  </button>
-                </form>
-                <div className="mt-4 flex justify-center">
-                  <div className="w-1/3 h-1 bg-ink/20 rounded-full" />
-                </div>
-              </div>
+  return (
+    <SubPageView
+      key="chat"
+      onClose={onClose}
+      title="Assistant"
+      background="none"
+      z={50}
+      trailing={
+        <button type="button" onClick={() => setHistoryOpen(true)} aria-label="Conversation history" className="glass interactive grid h-12 w-12 place-items-center rounded-full text-ink">
+          <MessageSquare size={20} />
+        </button>
+      }
+      contentClassName="flex min-h-full flex-col gap-3 px-4 pt-2"
+      footer={
+        <form
+          className="glass flex h-16 w-full items-center gap-1.5 rounded-full p-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            send();
+          }}
+        >
+          <button type="button" aria-label="Speak instead" onClick={() => handleButton('single')} className="grid h-12 w-12 shrink-0 place-items-center rounded-full text-ink active:bg-ink/5">
+            <Mic size={22} />
+          </button>
+          <input type="text" value={text} onChange={(e) => setText(e.target.value)} placeholder={`Ask ${BRAND.name}…`} aria-label="Message to the assistant" className="min-w-0 flex-1 bg-transparent px-1 text-[16px] font-medium text-ink outline-none placeholder:text-ink-3" />
+          <button type="submit" disabled={!text.trim() || phase === 'thinking'} className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-teal text-on-teal disabled:opacity-40" aria-label="Send">
+            <Send size={20} />
+          </button>
+        </form>
+      }
+    >
+      {thread.length === 0 ? (
+        <div className="flex flex-1 flex-col items-center justify-center py-16 text-center">
+          <div className="mb-5 text-info">
+            <Wand2 size={56} />
+          </div>
+          <h2 className="break-words text-[30px] font-bold leading-tight text-ink">
+            {userName ? (
+              <>
+                Hi {userName},<br />what can I do?
+              </>
+            ) : (
+              'What can I do for you?'
+            )}
+          </h2>
+          <p className="mt-3 max-w-[18rem] text-[15px] text-ink-3">Type below, tap the mic, or press the stick button.</p>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-3 pb-2" aria-live="polite">
+          {thread.map((m) => (
+            <div
+              key={m.id}
+              className={`max-w-[85%] break-words rounded-[22px] px-4 py-3 text-[16px] leading-snug ${m.role === 'user' ? 'self-end bg-teal text-on-teal' : m.role === 'system' ? 'self-center bg-amber-soft text-[14px] text-amber-ink' : 'glass self-start text-ink'}`}
+            >
+              {m.text}
             </div>
-          )}
-        </motion.div>
+          ))}
+          {phase === 'thinking' && <div className="glass self-start rounded-[22px] px-4 py-3 text-[15px] text-ink-3">Thinking…</div>}
+        </div>
       )}
-    </AnimatePresence>
+      <div ref={end} />
+    </SubPageView>
   );
 }
+
+/* ───────────────────────────── Map / walking ───────────────────────────── */
 
 function DestinationSearch() {
   const demo = useRuntime((s) => s.mode) === 'demo';
@@ -362,16 +520,16 @@ function DestinationSearch() {
         onChange={(e) => setQ(e.target.value)}
         placeholder="Search a destination"
         aria-label="Search a destination"
-        className="h-12 w-full rounded-full border border-line bg-surface/80 px-5 text-[16px] font-medium text-ink outline-none"
+        className="h-12 w-full min-w-0 rounded-full border border-line bg-surface px-5 text-[16px] font-medium text-ink outline-none placeholder:text-ink-3"
       />
       {err && <p className="mt-2 px-2 text-[13.5px] font-semibold text-amber-ink" role="status">{err}</p>}
       {items.length > 0 && (
-        <ul className="mt-2 max-h-48 overflow-y-auto rounded-[20px] border border-line bg-surface/95" role="listbox" aria-label="Suggestions">
+        <ul className="page-scroll mt-2 max-h-48 rounded-[20px] border border-line bg-surface" role="listbox" aria-label="Suggestions">
           {items.map((it) => (
             <li key={it.placeId}>
-              <button type="button" disabled={busy} onClick={() => void pick(it)} className="w-full px-4 py-3 text-left disabled:opacity-50">
-                <span className="block text-[15.5px] font-semibold text-ink">{it.main}</span>
-                {it.secondary && <span className="block text-[13px] text-ink-3">{it.secondary}</span>}
+              <button type="button" disabled={busy} onClick={() => void pick(it)} className="min-h-12 w-full px-4 py-3 text-left disabled:opacity-50">
+                <span className="block break-words text-[15.5px] font-semibold text-ink">{it.main}</span>
+                {it.secondary && <span className="block break-words text-[13px] text-ink-3">{it.secondary}</span>}
               </button>
             </li>
           ))}
@@ -382,258 +540,237 @@ function DestinationSearch() {
 }
 
 function WalkingSubpage({ open, onClose }: { open: boolean; onClose: () => void }) {
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          key="map"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2, ease: 'easeOut' }}
+          className="absolute inset-0 z-[80] flex flex-col overflow-hidden bg-map-bg"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Map"
+        >
+          <WalkingPage onClose={onClose} />
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+function WalkingPage({ onClose }: { onClose: () => void }) {
   const nav = useNavView();
   const fix = useLocation((s) => s.fix);
   const locStatus = useLocation((s) => s.status);
+  const demo = useRuntime((s) => s.mode) === 'demo';
   const now = useNow(1000);
   const fresh = freshnessLabel(fix?.ts, now);
   const live = fresh === 'Live';
 
   return (
-    <AnimatePresence>
-      {open && (
-        <motion.div
-          initial={{ clipPath: 'circle(0% at 50% 75%)' }}
-          animate={{ clipPath: 'circle(150% at 50% 75%)' }}
-          exit={{ clipPath: 'circle(0% at 50% 75%)' }}
-          transition={{ duration: 0.4, ease: 'easeInOut' }}
-          className="absolute inset-0 z-[80] bg-map-bg flex flex-col overflow-hidden"
+    <>
+      {/* Map layer: Google Maps in real mode, the simulated street grid in demo mode */}
+      <div className="absolute inset-0 z-0">
+        <MapView
+          className="absolute inset-0 h-full w-full"
+          position={fix ? { lat: fix.lat, lng: fix.lng, accuracyM: fix.accuracyM } : null}
+          stale={!live}
+          path={nav.path}
+          destination={nav.destination?.lat != null && nav.destination.lng != null ? { lat: nav.destination.lat, lng: nav.destination.lng } : null}
+        />
+      </div>
+
+      {/* Fixed top bar */}
+      <div className="pointer-events-none relative z-10 shrink-0 px-4" style={{ paddingTop: 'calc(var(--island, var(--sat)) + 10px)' }}>
+        <div className="pointer-events-auto flex items-center gap-2 rounded-[28px] bg-surface/95 p-2 shadow-[0_10px_30px_rgba(0,0,0,0.12)] ring-1 ring-line">
+          <BackButton onClick={onClose} className="!bg-transparent !shadow-none" />
+          <div className="flex min-w-0 flex-1 items-center justify-center gap-2 px-1">
+            <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${live ? 'bg-ok' : 'bg-ink-3'}`} />
+            <span className="truncate text-[14px] font-bold uppercase tracking-wider text-ink">{demo ? 'Demo walk' : fix ? (live ? 'Live location' : fresh) : locStatus === 'error' ? 'Location off' : 'Finding location'}</span>
+          </div>
+          <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-ink/5 text-ink-3" aria-hidden>
+            <Map size={20} />
+          </span>
+        </div>
+      </div>
+
+      <div className="pointer-events-none relative z-10 flex flex-1 flex-col justify-end px-4" style={{ paddingBottom: 'calc(var(--sab) + 16px)' }}>
+        {/* Directions card */}
+        <div className="pointer-events-auto relative mb-3 overflow-hidden rounded-[30px] bg-surface/95 p-5 shadow-[0_20px_40px_rgba(0,0,0,0.14)] ring-1 ring-line">
+          <div className="flex items-start gap-3.5">
+            <div className="grid h-14 w-14 shrink-0 place-items-center rounded-[20px] bg-info text-white shadow-lg">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ transform: nav.next?.maneuver === 'left' ? 'rotate(180deg)' : nav.next?.maneuver === 'straight' ? 'rotate(-90deg)' : undefined }}>
+                <path d="m9 18 6-6-6-6" />
+              </svg>
+            </div>
+            <div className="min-w-0 flex-1 pt-0.5">
+              <p className="break-words text-[22px] font-extrabold leading-tight tracking-tight text-ink">
+                {nav.active ? (nav.arrived ? `Arrived near ${nav.destination?.name}` : nav.next?.text ?? `Walking to ${nav.destination?.name}`) : 'No active route'}
+              </p>
+              <p className="mt-1 break-words text-[14.5px] font-bold text-info">
+                {nav.active && nav.remainingM != null ? `${meters(nav.remainingM)} remaining${nav.offRoute ? ' · off route' : ''}${nav.rerouting ? ' · rerouting' : ''}` : 'Ask the assistant: “Take me to the nearest pharmacy”'}
+              </p>
+              {nav.error && <p className="mt-1 text-[14px] font-semibold text-amber-ink">{nav.error}</p>}
+            </div>
+          </div>
+          {nav.active ? (
+            <button type="button" onClick={() => (nav.source === 'demo' ? stopDemoNavigation() : stopRealNavigation('user'))} className="mt-4 h-12 w-full rounded-full bg-ink/5 text-[15px] font-bold text-ink active:bg-ink/10">
+              End route
+            </button>
+          ) : (
+            <>
+              <DestinationSearch />
+              <LocationStatus className="mt-3" />
+            </>
+          )}
+        </div>
+
+        <button
+          type="button"
+          className="pointer-events-auto flex h-[68px] w-full items-center justify-center gap-3 rounded-[26px] bg-sos text-[19px] font-bold text-white shadow-[0_10px_24px_-10px_var(--sos)] transition-transform active:scale-[0.98]"
+          onClick={(e) => {
+            e.stopPropagation();
+            startSos('button');
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+          onPointerUp={(e) => e.stopPropagation()}
+          aria-label="Trigger Emergency SOS"
         >
-          {/* Map layer: Google Maps in real mode, the simulated street grid in demo mode */}
-          <div className="absolute inset-0 z-0">
-            <MapView
-              className="absolute inset-0 h-full w-full"
-              position={fix ? { lat: fix.lat, lng: fix.lng, accuracyM: fix.accuracyM } : null}
-              stale={!live}
-              path={nav.path}
-              destination={nav.destination?.lat != null && nav.destination.lng != null ? { lat: nav.destination.lat, lng: nav.destination.lng } : null}
-            />
-          </div>
-
-          {/* Top Bar Floating */}
-          <div className="pt-12 px-4 z-10 shrink-0 pointer-events-none">
-             <div className="glass bg-surface/90 backdrop-blur-md rounded-[28px] p-2 flex items-center justify-between shadow-[0_10px_30px_rgba(0,0,0,0.08)] pointer-events-auto border border-glass-border">
-               <button onClick={onClose} aria-label="Back" className="h-12 w-12 rounded-full flex items-center justify-center text-ink hover:bg-black/5 transition-colors shrink-0 interactive">
-                 <ChevronLeft size={24} />
-               </button>
-               <div className="flex-1 px-2">
-                  <div className="flex items-center justify-center gap-2">
-                    <div className={`w-2.5 h-2.5 rounded-full ${live ? 'bg-ok animate-pulse' : 'bg-ink-3'}`} />
-                    <span className="text-[14px] font-bold tracking-widest text-ink uppercase">
-                      {useRuntime.getState().mode === 'demo' ? 'Demo walk' : fix ? (live ? 'Live location' : fresh) : locStatus === 'error' ? 'Location off' : 'Finding location'}
-                    </span>
-                  </div>
-               </div>
-               <div className="h-12 w-12 rounded-full bg-ink/5 flex items-center justify-center text-ink-3">
-                 <Map size={20} />
-               </div>
-             </div>
-          </div>
-
-          <div className="flex-1 flex flex-col justify-end px-4 pb-6 z-10 pointer-events-none">
-
-             {/* Directions Floating Card */}
-             <div className="glass bg-surface/95 backdrop-blur-md rounded-[32px] p-6 shadow-[0_20px_40px_rgba(0,0,0,0.12)] pointer-events-auto border border-glass-border mb-4 relative overflow-hidden">
-                <div className="absolute top-0 right-0 p-6 opacity-[0.03] text-info pointer-events-none">
-                   <Footprints size={120} />
-                </div>
-                <div className="flex items-start gap-4">
-                   <div className="w-14 h-14 bg-info text-white rounded-[20px] flex items-center justify-center shadow-lg shrink-0">
-                      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ transform: nav.next?.maneuver === 'left' ? 'rotate(180deg)' : nav.next?.maneuver === 'straight' ? 'rotate(-90deg)' : undefined }}><path d="m9 18 6-6-6-6"/></svg>
-                   </div>
-                   <div className="flex-1 pt-0.5">
-                     <p className="text-[26px] font-extrabold text-ink leading-tight tracking-tight pr-4">
-                       {nav.active ? (nav.arrived ? `Arrived near ${nav.destination?.name}` : nav.next?.text ?? `Walking to ${nav.destination?.name}`) : 'No active route'}
-                     </p>
-                     <p className="text-[15px] font-bold text-info/80 mt-1 flex items-center gap-2">
-                       {nav.active && nav.remainingM != null ? `${meters(nav.remainingM)} remaining${nav.offRoute ? ' · off route' : ''}${nav.rerouting ? ' · rerouting' : ''}` : 'Ask the assistant: “Take me to the nearest pharmacy”'}
-                     </p>
-                     {nav.error && <p className="mt-1 text-[14px] font-semibold text-amber-ink">{nav.error}</p>}
-                   </div>
-                </div>
-                {nav.active ? (
-                  <button type="button" onClick={() => (nav.source === 'demo' ? stopDemoNavigation() : stopRealNavigation('user'))} className="mt-4 h-11 w-full rounded-full bg-ink/5 text-[15px] font-bold text-ink interactive">
-                    End route
-                  </button>
-                ) : (
-                  <>
-                    <DestinationSearch />
-                    <LocationStatus className="mt-3" />
-                  </>
-                )}
-             </div>
-
-             {/* SOS Bottom Button */}
-             <button
-                className="w-full bg-sos text-white rounded-[28px] h-[72px] flex items-center justify-center gap-3 font-bold text-[20px] shadow-[0_10px_30px_-8px_var(--sos)] active:scale-95 transition-transform pointer-events-auto interactive"
-                onClick={(e) => {
-                   e.stopPropagation();
-                   startSos('button');
-                }}
-                onPointerDown={(e) => e.stopPropagation()}
-                onPointerUp={(e) => e.stopPropagation()}
-                aria-label="Trigger Emergency SOS"
-             >
-                <Phone size={24} fill="currentColor" /> Emergency SOS
-             </button>
-          </div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+          <Phone size={24} fill="currentColor" /> Emergency SOS
+        </button>
+      </div>
+    </>
   );
 }
 
-function StickDetailsSubpage({ open, onClose }: { open: boolean; onClose: () => void }) {
+/* ───────────────────────────── Stick details ───────────────────────────── */
+
+function KV({ k, v }: { k: string; v: string }) {
+  return (
+    <div className="flex min-h-12 items-center justify-between gap-3 px-4 py-3">
+      <span className="shrink-0 text-[15px] text-ink-2">{k}</span>
+      <span className="tabular min-w-0 break-words text-right text-[15px] font-semibold text-ink">{v}</span>
+    </div>
+  );
+}
+
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="flex flex-col gap-2.5">
+      <h2 className="px-1 text-[13px] font-bold uppercase tracking-wider text-ink-3">{title}</h2>
+      {children}
+    </section>
+  );
+}
+
+const listCls = 'glass overflow-hidden rounded-[24px] [&>*+*]:border-t [&>*+*]:border-line';
+
+function StickDetailsContent() {
   const events = useActivity((s) => s.events);
   const now = useNow(5000);
   const d = useDevice();
   const obstacles = events.filter((e) => e.kind === 'safety' && e.title.startsWith('Obstacle')).slice(0, 5);
-  const row = (k: string, v: string) => (
-    <div className="flex items-center justify-between gap-3 px-4 py-3">
-      <span className="text-[15px] text-ink-2">{k}</span>
-      <span className="text-right text-[15px] font-semibold text-ink tabular">{v}</span>
-    </div>
-  );
-
   return (
-    <AnimatePresence>
-      {open && (
-        <motion.div
-          initial={{ clipPath: 'circle(0% at 50% 30%)' }}
-          animate={{ clipPath: 'circle(150% at 50% 30%)' }}
-          exit={{ clipPath: 'circle(0% at 50% 30%)' }}
-          transition={{ duration: 0.35, ease: 'linear' }}
-          className="absolute inset-0 z-50 bg-bg flex flex-col overflow-hidden"
-        >
-          <Atmosphere variant="user" />
-          <div className="pt-[calc(var(--island,var(--sat))+14px)] px-4 flex items-center gap-4 z-10 shrink-0">
-            <button onClick={onClose} aria-label="Back" className="h-12 w-12 glass interactive rounded-full flex items-center justify-center text-ink shrink-0">
-              <ChevronLeft size={24} />
-            </button>
-            <span className="text-[20px] font-bold text-ink">Stick Diagnostics</span>
-          </div>
-
-          <div className="flex-1 overflow-y-auto no-scrollbar p-4 flex flex-col gap-6 z-10 pb-20">
-            <div className="glass rounded-[28px] p-5 shadow-lg relative border border-glass-border">
-              <p className="text-[14px] font-bold text-ink-3 uppercase tracking-widest mb-4 w-full text-left">Obstacle sensor (ahead)</p>
-              <ObstacleView us={d.ultrasonic} live={isLinked(d.link)} />
-            </div>
-
-            <div className="flex flex-col gap-3">
-              <h3 className="text-[18px] font-bold text-ink px-1">Camera &amp; detection</h3>
-              <LiveVisionPanel />
-              <h3 className="text-[18px] font-bold text-ink px-1 mt-2">Sensors</h3>
-              <div className="glass rounded-[24px] overflow-hidden border border-glass-border [&>*+*]:border-t [&>*+*]:border-line">
-                {row('Link', `${linkLabel(d.link).text}${d.linkDetail ? ` · ${d.linkDetail}` : ''}`)}
-                {row('Stick', d.identity ? `${d.identity.deviceId} · fw ${d.identity.firmware}` : 'Not paired')}
-                {row('Battery', d.battery.voltage != null ? `${d.battery.voltage.toFixed(2)} V · ${d.battery.currentMa == null ? '— mA' : `${Math.round(d.battery.currentMa)} mA`}` : batteryLabel(d.battery).sub)}
-                {row('Motion sensor', d.imu.status === 'ok' ? `pitch ${d.imu.pitch}° · roll ${d.imu.roll}°${d.imu.calibrated ? '' : ' · not calibrated'}` : d.imu.status)}
-                {row('Obstacle sensor', d.ultrasonic.status === 'ok' ? `${d.ultrasonic.distanceCm} cm` : d.ultrasonic.status.replace('_', ' '))}
-                {row('Camera', d.camera.status)}
-                {row('Wi-Fi signal', d.rssi == null ? 'Unavailable' : `${d.rssi} dBm`)}
-                {row('Last packet', d.lastPacketAt ? timeAgo(d.lastPacketAt, now) : 'Never')}
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-3">
-              <h3 className="text-[18px] font-bold text-ink px-1">Obstacles logged</h3>
-              <div className="glass rounded-[24px] overflow-hidden border border-glass-border [&>*+*]:border-t [&>*+*]:border-line">
-                {obstacles.length ? obstacles.map((e) => <EventRow key={e.id} e={e} now={now} />) : <p className="px-4 py-6 text-center text-[15px] text-ink-3">No obstacles under 60 cm recorded.</p>}
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-3">
-              <h3 className="text-[18px] font-bold text-ink px-1">Activity log</h3>
-              <div className="glass rounded-[24px] overflow-hidden border border-glass-border [&>*+*]:border-t [&>*+*]:border-line bg-glass-bg/50 backdrop-blur-md">
-                {events.length ? (
-                  events.slice(0, 10).map((e) => <EventRow key={e.id} e={e} now={now} />)
-                ) : (
-                  <p className="px-4 py-6 text-center text-[15px] text-ink-3">Nothing here yet today.</p>
-                )}
-              </div>
-            </div>
-          </div>
-        </motion.div>
-      )}
-    </AnimatePresence>
-  );
-}
-
-function Unavailable({ icon, label, reason }: { icon: React.ReactNode; label: string; reason: string }) {
-  return (
-    <div className="glass rounded-[24px] p-5 flex flex-col gap-3 border border-glass-border shadow-sm">
-      <div className="p-3 bg-ink/5 text-ink-3 rounded-full w-max">{icon}</div>
-      <div>
-        <p className="text-[14px] font-bold text-ink-2">{label}</p>
-        <p className="text-[17px] font-bold text-ink-3 leading-tight">Unavailable</p>
-        <p className="mt-1 text-[12.5px] leading-snug text-ink-3">{reason}</p>
+    <>
+      <div className="glass rounded-[28px] p-4">
+        <p className="mb-3 text-[13px] font-bold uppercase tracking-wider text-ink-3">Obstacle sensor (ahead)</p>
+        <ObstacleView us={d.ultrasonic} live={isLinked(d.link)} />
       </div>
+      <Section title="Camera & detection">
+        <LiveVisionPanel />
+      </Section>
+      <Section title="Sensors">
+        <div className={listCls}>
+          <KV k="Link" v={`${linkLabel(d.link).text}${d.linkDetail ? ` · ${d.linkDetail}` : ''}`} />
+          <KV k="Stick" v={d.identity ? `${d.identity.deviceId} · fw ${d.identity.firmware}` : 'Not paired'} />
+          <KV k="Battery" v={d.battery.voltage != null ? `${d.battery.voltage.toFixed(2)} V · ${d.battery.currentMa == null ? '— mA' : `${Math.round(d.battery.currentMa)} mA`}` : batteryLabel(d.battery).sub} />
+          <KV k="Motion" v={d.imu.status === 'ok' ? `pitch ${d.imu.pitch}° · roll ${d.imu.roll}°${d.imu.calibrated ? '' : ' · not calibrated'}` : d.imu.status} />
+          <KV k="Obstacle" v={d.ultrasonic.status === 'ok' ? `${d.ultrasonic.distanceCm} cm` : d.ultrasonic.status.replace('_', ' ')} />
+          <KV k="Camera" v={d.camera.status} />
+          <KV k="Wi-Fi signal" v={d.rssi == null ? 'Unavailable' : `${d.rssi} dBm`} />
+          <KV k="Last packet" v={d.lastPacketAt ? timeAgo(d.lastPacketAt, now) : 'Never'} />
+        </div>
+      </Section>
+      <Section title="Obstacles logged">
+        <div className={listCls}>{obstacles.length ? obstacles.map((e) => <EventRow key={e.id} e={e} now={now} />) : <p className="px-4 py-6 text-center text-[15px] text-ink-3">No obstacles under 60 cm recorded.</p>}</div>
+      </Section>
+      <Section title="Activity log">
+        <div className={listCls}>{events.length ? events.slice(0, 10).map((e) => <EventRow key={e.id} e={e} now={now} />) : <p className="px-4 py-6 text-center text-[15px] text-ink-3">Nothing here yet today.</p>}</div>
+      </Section>
+    </>
+  );
+}
+
+/* ───────────────────────────── Health ───────────────────────────── */
+
+function Unavailable({ icon, label, reason }: { icon: ReactNode; label: string; reason: string }) {
+  return (
+    <div className="flex min-h-[64px] items-center gap-3 px-4 py-3">
+      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-ink/5 text-ink-3">{icon}</span>
+      <span className="min-w-0 flex-1">
+        <span className="flex flex-wrap items-baseline justify-between gap-x-2">
+          <span className="text-[15.5px] font-bold text-ink-2">{label}</span>
+          <span className="text-[13px] font-bold uppercase tracking-wide text-ink-3">Unavailable</span>
+        </span>
+        <span className="mt-0.5 block text-[13px] leading-snug text-ink-3">{reason}</span>
+      </span>
     </div>
   );
 }
 
-function HealthSubpage({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const w = useWalking();
-  const cur = w.current;
-  const pace = w.today.distanceM > 50 && w.today.durationS > 0 ? (w.today.distanceM / w.today.durationS) * 3.6 : null;
+function HealthContent() {
+  const today = useWalking((s) => s.today);
+  const cur = useWalking((s) => s.current);
+  const paused = useWalking((s) => s.paused);
+  const source = useWalking((s) => s.source);
+  const pace = today.distanceM > 50 && today.durationS > 0 ? (today.distanceM / today.durationS) * 3.6 : null;
   return (
-    <AnimatePresence>
-      {open && (
-        <motion.div
-          initial={{ clipPath: 'circle(0% at 50% 50%)' }}
-          animate={{ clipPath: 'circle(150% at 50% 50%)' }}
-          exit={{ clipPath: 'circle(0% at 50% 50%)' }}
-          transition={{ duration: 0.35, ease: 'linear' }}
-          className="absolute inset-0 z-50 bg-bg flex flex-col overflow-hidden"
-        >
-          <Atmosphere variant="user" />
-          <div className="pt-[calc(var(--island,var(--sat))+14px)] px-4 flex items-center gap-4 z-10 shrink-0">
-            <button onClick={onClose} aria-label="Back" className="h-12 w-12 glass interactive rounded-full flex items-center justify-center text-ink shrink-0">
-              <ChevronLeft size={24} />
-            </button>
-            <span className="text-[20px] font-bold text-ink">Activity & Health</span>
+    <>
+      <div className="glass rounded-[28px] p-5">
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[13px] font-bold uppercase tracking-wider text-ink-3">Walked today</p>
+            <p className="mt-1 break-words text-[34px] font-bold leading-none text-ink">{km(today.distanceM)}</p>
           </div>
-
-          <div className="flex-1 overflow-y-auto no-scrollbar p-4 flex flex-col gap-6 z-10 pb-20">
-            <div className="glass rounded-[28px] p-6 shadow-lg border border-glass-border">
-              <div className="flex justify-between items-start mb-4">
-                <div>
-                  <p className="text-[14px] font-bold text-ink-3 uppercase tracking-widest">Walked today</p>
-                  <p className="text-[32px] font-bold text-ink flex items-baseline gap-1 mt-1 leading-none">{km(w.today.distanceM)}</p>
-                </div>
-                <div className="p-3 bg-info/10 text-info rounded-full"><Activity size={24} /></div>
-              </div>
-              <div className="grid grid-cols-2 gap-3 text-[15px]">
-                <div className="rounded-[16px] bg-ink/5 p-3"><p className="text-ink-3 text-[13px] font-bold">Time walking</p><p className="font-bold text-ink">{mins(w.today.durationS)}</p></div>
-                <div className="rounded-[16px] bg-ink/5 p-3"><p className="text-ink-3 text-[13px] font-bold">Average speed</p><p className="font-bold text-ink">{pace == null ? '—' : `${pace.toFixed(1)} km/h`}</p></div>
-              </div>
-              
-              <p className="mt-4 text-[13px] leading-snug text-ink-3">
-                Source: {w.source === 'demo' ? 'simulated demo walk' : 'phone GPS'} · readings worse than 25 m accuracy and jumps faster than walking are ignored
-                {cur ? ` · walk ${w.paused ? 'paused' : 'in progress'} (${km(cur.distanceM)})` : ''}.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <Unavailable icon={<Heart size={24} />} label="Heart Rate" reason="No heart-rate sensor is connected." />
-              <Unavailable icon={<Flame size={24} />} label="Energy" reason="Not estimated without a health sensor." />
-              <Unavailable icon={<Footprints size={24} />} label="Steps" reason="The stick has no step counter; distance comes from GPS." />
-              <div className="glass rounded-[24px] p-5 flex flex-col gap-3 border border-glass-border shadow-sm">
-                <div className="p-3 bg-teal/10 text-teal rounded-full w-max"><Activity size={24} /></div>
-                <div>
-                  <p className="text-[14px] font-bold text-ink-2">Walks today</p>
-                  <p className="text-[24px] font-bold text-ink leading-tight">{w.today.sessions + (cur ? 1 : 0)}</p>
-                </div>
-              </div>
-            </div>
+          <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-info/10 text-info"><Activity size={24} /></span>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="min-w-0 rounded-[18px] bg-ink/5 p-3">
+            <p className="text-[12.5px] font-bold text-ink-3">Time walking</p>
+            <p className="break-words text-[16px] font-bold text-ink">{mins(today.durationS)}</p>
           </div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+          <div className="min-w-0 rounded-[18px] bg-ink/5 p-3">
+            <p className="text-[12.5px] font-bold text-ink-3">Average speed</p>
+            <p className="break-words text-[16px] font-bold text-ink">{pace == null ? '—' : `${pace.toFixed(1)} km/h`}</p>
+          </div>
+        </div>
+        <p className="mt-4 text-[13px] leading-snug text-ink-3">
+          Source: {source === 'demo' ? 'simulated demo walk' : 'phone GPS'} · readings worse than 25 m accuracy and jumps faster than walking are ignored
+          {cur ? ` · walk ${paused ? 'paused' : 'in progress'} (${km(cur.distanceM)})` : ''}.
+        </p>
+      </div>
+      <div className="glass flex items-center gap-3 rounded-[24px] px-4 py-3">
+        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-teal/10 text-teal"><Activity size={22} /></span>
+        <span className="min-w-0 flex-1 text-[15.5px] font-bold text-ink-2">Walks today</span>
+        <span className="tabular shrink-0 text-[26px] font-bold leading-none text-ink">{today.sessions + (cur ? 1 : 0)}</span>
+      </div>
+      <Section title="Not measured">
+        <div className={listCls}>
+          <Unavailable icon={<Footprints size={20} />} label="Steps" reason="The stick has no step counter; distance comes from GPS." />
+          <Unavailable icon={<Heart size={20} />} label="Heart rate" reason="No heart-rate sensor is connected." />
+          <Unavailable icon={<Flame size={20} />} label="Energy" reason="Not estimated without a health sensor." />
+        </div>
+      </Section>
+    </>
   );
 }
 
-function BatterySubpage({ open, onClose }: { open: boolean; onClose: () => void }) {
+/* ───────────────────────────── Battery ───────────────────────────── */
+
+function BatteryContent() {
   const b = useDevice((s) => s.battery);
   const samples = useBatteryHistory((s) => s.samples);
   const now = useNow(5000);
@@ -641,227 +778,197 @@ function BatterySubpage({ open, onClose }: { open: boolean; onClose: () => void 
   const pct = b.percent ?? 0;
   const bars = samples.filter((_, i, a) => i % Math.max(1, Math.floor(a.length / 12)) === 0).slice(-12);
   const eta = b.status === 'ok' && !b.charging ? batteryHours(samples) : null;
+  const fill = lbl.tone === 'sos' ? 'from-sos to-sos/70' : lbl.tone === 'warn' ? 'from-amber to-amber/70' : 'from-teal to-mint';
   return (
-    <AnimatePresence>
-      {open && (
-        <motion.div
-          initial={{ clipPath: 'circle(0% at 85% 35%)' }}
-          animate={{ clipPath: 'circle(150% at 85% 35%)' }}
-          exit={{ clipPath: 'circle(0% at 85% 35%)' }}
-          transition={{ duration: 0.35, ease: 'linear' }}
-          className="absolute inset-0 z-[60] bg-bg flex flex-col overflow-hidden"
-        >
-          <Atmosphere variant="user" />
-          <div className="pt-[calc(var(--island,var(--sat))+14px)] px-4 flex items-center gap-4 z-10 shrink-0">
-            <button onClick={onClose} aria-label="Back" className="h-12 w-12 glass interactive rounded-full flex items-center justify-center text-ink shrink-0">
-              <ChevronLeft size={24} />
-            </button>
-            <span className="text-[20px] font-bold text-ink">Power & Battery</span>
-          </div>
-
-          <div className="flex-1 overflow-y-auto no-scrollbar p-4 flex flex-col gap-6 z-10 pb-20">
-            <div className="glass rounded-[32px] py-10 px-6 shadow-xl border border-glass-border flex gap-6 items-center overflow-hidden relative min-h-[220px]">
-              <div className="absolute inset-0 bg-gradient-to-br from-ok/5 to-teal/5 pointer-events-none" />
-
-              <div className="flex-1 flex flex-col justify-center z-10">
-                <p className="text-[42px] xs:text-[54px] font-extrabold text-ink leading-none tracking-tight overflow-visible">{b.percent == null ? '—' : pct}<span className="text-[24px] text-ink-3">{b.percent == null ? '' : '%'}</span></p>
-                <div className={`mt-4 flex items-center gap-2 w-max px-3 py-1.5 rounded-full shadow-sm ${b.charging ? 'text-ok bg-ok/10' : 'text-ink-2 bg-ink/5'}`}>
-                  <Zap size={16} className={b.charging ? 'animate-pulse' : ''} />
-                  <span className="text-[13px] font-bold">
-                    {b.charging == null ? 'Charging state unknown' : b.charging ? `Charging${b.chargingSource === 'inferred' ? ' (inferred from current)' : ''}` : 'On battery'}
-                  </span>
-                </div>
-                <p className="text-[15px] font-bold text-ink-2 mt-4">
-                  {eta ? <>Time left: <span className="text-ink">{eta}</span></> : lbl.sub}
-                </p>
-                <p className="text-[12.5px] text-ink-3 mt-1">{b.measuredAt ? `Measured ${timeAgo(b.measuredAt, now)} · estimate from voltage and current` : 'No measurement yet'}</p>
-                {b.issue && <p className="mt-2 rounded-[14px] bg-amber/15 px-3 py-2 text-[13px] font-semibold text-amber-ink" role="status">{b.issue}</p>}
-              </div>
-
-              <div className="relative shrink-0 z-10 mr-2" aria-hidden>
-                <div className="absolute -top-3 left-1/2 -translate-x-1/2 w-8 h-3 bg-ink/10 rounded-t-lg" />
-                <div className="w-[100px] h-[160px] rounded-[24px] border-4 border-ink/10 relative overflow-hidden bg-bg shadow-inner">
-                  <motion.div
-                    className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t ${lbl.tone === 'sos' ? 'from-sos to-sos/70' : lbl.tone === 'warn' ? 'from-amber to-amber/70' : 'from-teal to-mint'}`}
-                    initial={{ height: '0%' }}
-                    animate={{ height: `${b.percent == null ? 0 : pct}%` }}
-                    transition={{ duration: 1.5, type: 'spring' }}
-                  >
-                    <motion.div
-                      animate={{ x: ['0%', '-50%'] }}
-                      transition={{ repeat: Infinity, duration: 2, ease: 'linear' }}
-                      className="absolute -top-4 left-0 w-[200%] h-8 bg-mint/30 rounded-[100%] blur-sm"
-                    />
-                  </motion.div>
-                </div>
-              </div>
-            </div>
-
-            <div className="glass rounded-[28px] p-6 border border-glass-border">
-              <p className="text-[16px] font-bold text-ink mb-4">Battery over the last hours</p>
-              {bars.length < 2 ? (
-                <p className="text-[14px] text-ink-3">Not enough readings yet. One estimate is recorded every minute while the stick is connected.</p>
-              ) : (
-                <>
-                  <div className="h-32 w-full flex items-end gap-1 px-1" role="img" aria-label="Battery estimate history">
-                    {bars.map((s, i) => (
-                      <div key={s.t} className="flex-1 h-full bg-ink/5 rounded-[4px] relative flex flex-col justify-end overflow-hidden">
-                        <motion.div initial={{ height: 0 }} animate={{ height: `${s.pct}%` }} transition={{ duration: 1, delay: i * 0.05 }} className={`w-full rounded-[4px] ${i === bars.length - 1 ? 'bg-ok' : 'bg-ink-3'}`} />
-                      </div>
-                    ))}
-                  </div>
-                  <div className="flex justify-between text-[12px] font-bold text-ink-3 mt-3 px-1">
-                    <span>{new Date(bars[0].t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                    <span className="text-ok">Now</span>
-                  </div>
-                </>
-              )}
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="glass rounded-[20px] p-5 border border-glass-border shadow-sm">
-                <p className="text-[13px] font-bold text-ink-2">Voltage</p>
-                <p className="text-[24px] font-bold text-ink mt-1">{b.voltage == null ? '—' : `${b.voltage.toFixed(2)} V`}</p>
-              </div>
-              <div className="glass rounded-[20px] p-5 border border-glass-border shadow-sm">
-                <p className="text-[13px] font-bold text-ink-2">Current</p>
-                <p className="text-[24px] font-bold text-ink mt-1">{b.currentMa == null ? '—' : `${Math.round(b.currentMa)} mA`}</p>
-              </div>
+    <>
+      <div className="glass relative flex items-center gap-4 overflow-hidden rounded-[30px] p-5">
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-ok/5 to-teal/5" />
+        <div className="relative flex min-w-0 flex-1 flex-col">
+          <p className="text-[13px] font-bold uppercase tracking-wider text-ink-3">Stick battery</p>
+          <p className="mt-1 text-[52px] font-extrabold leading-none tracking-tight text-ink tabular">
+            {b.percent == null ? '—' : pct}
+            <span className="text-[24px] text-ink-3">{b.percent == null ? '' : '%'}</span>
+          </p>
+          <span className={`mt-3 inline-flex max-w-full items-center gap-1.5 self-start rounded-full px-3 py-1.5 ${b.charging ? 'bg-ok/10 text-ok' : 'bg-ink/5 text-ink-2'}`}>
+            <Zap size={15} className="shrink-0" />
+            <span className="min-w-0 break-words text-[13px] font-bold leading-tight">
+              {b.charging == null ? 'Charging state unknown' : b.charging ? `Charging${b.chargingSource === 'inferred' ? ' (inferred)' : ''}` : 'On battery'}
+            </span>
+          </span>
+          <p className="mt-3 break-words text-[15px] font-bold text-ink-2">{eta ? <>Time left: <span className="text-ink">{eta}</span></> : lbl.sub}</p>
+          <p className="mt-1 break-words text-[12.5px] leading-snug text-ink-3">{b.measuredAt ? `Measured ${timeAgo(b.measuredAt, now)} · from voltage and current` : 'No measurement yet'}</p>
+        </div>
+        <div className="relative shrink-0 pt-3" aria-hidden>
+          <div className="absolute left-1/2 top-0 h-3 w-7 -translate-x-1/2 rounded-t-lg bg-ink/10" />
+          <div className="relative h-[136px] w-[76px] overflow-hidden rounded-[20px] border-4 border-ink/10 bg-bg">
+            <div className={`absolute inset-x-0 bottom-0 bg-gradient-to-t ${fill} transition-[height] duration-700 ease-out`} style={{ height: `${b.percent == null ? 0 : pct}%` }}>
+              <div className="battery-wave absolute -top-2 left-0 h-4 w-[200%] rounded-[100%] bg-mint/40" />
             </div>
           </div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+        </div>
+      </div>
+
+      {b.issue && <p className="rounded-[18px] bg-amber/15 px-4 py-3 text-[14px] font-semibold text-amber-ink" role="status">{b.issue}</p>}
+
+      <div className="glass rounded-[28px] p-5">
+        <p className="mb-4 text-[16px] font-bold text-ink">Battery over the last hours</p>
+        {bars.length < 2 ? (
+          <p className="text-[14px] text-ink-3">Not enough readings yet. One estimate is recorded every minute while the stick is connected.</p>
+        ) : (
+          <>
+            <div className="flex h-32 w-full items-end gap-1" role="img" aria-label="Battery estimate history">
+              {bars.map((s, i) => (
+                <div key={s.t} className="relative h-full min-w-0 flex-1 overflow-hidden rounded-[4px] bg-ink/5">
+                  <div className={`absolute inset-x-0 bottom-0 rounded-[4px] ${i === bars.length - 1 ? 'bg-ok' : 'bg-ink-3'}`} style={{ height: `${s.pct}%` }} />
+                </div>
+              ))}
+            </div>
+            <div className="mt-3 flex justify-between text-[12px] font-bold text-ink-3">
+              <span>{new Date(bars[0].t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+              <span className="text-ok">Now</span>
+            </div>
+          </>
+        )}
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="glass min-w-0 rounded-[22px] p-4">
+          <p className="text-[13px] font-bold text-ink-2">Voltage</p>
+          <p className="mt-1 break-words text-[22px] font-bold text-ink tabular">{b.voltage == null ? '—' : `${b.voltage.toFixed(2)} V`}</p>
+        </div>
+        <div className="glass min-w-0 rounded-[22px] p-4">
+          <p className="text-[13px] font-bold text-ink-2">Current</p>
+          <p className="mt-1 break-words text-[22px] font-bold text-ink tabular">{b.currentMa == null ? '—' : `${Math.round(b.currentMa)} mA`}</p>
+        </div>
+      </div>
+    </>
   );
 }
 
+/* ───────────────────────────── Live assistant ───────────────────────────── */
+
 function LiveAiSubpage({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const ai = useVoiceAssistant();
-  const sosPhase = useSafety((x) => x.phase);
-  const netState = useDevice((x) => x.internet);
-  const navActive = useNavView((x) => x.active);
-  
+  const cancel = useVoiceAssistant().cancel;
   // Closing the panel ends the conversation. Only a real open → closed change: on mount (open is
   // false) this must not cancel a session started from the stick button.
   const wasOpen = useRef(open);
   useEffect(() => {
-    if (wasOpen.current && !open) ai.cancel();
+    if (wasOpen.current && !open) cancel();
     wasOpen.current = open;
-  }, [open]);
+  }, [open, cancel]);
 
   return (
     <AnimatePresence>
       {open && (
         <motion.div
-          initial={{ opacity: 0, y: 50, scale: 0.95 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: 50, scale: 0.95 }}
-          transition={{ duration: 0.4, type: 'spring', damping: 25 }}
-          className="absolute inset-0 z-[100] bg-[#09090b] flex flex-col justify-end overflow-hidden"
+          key="live"
+          initial={{ opacity: 0, transform: 'translate3d(0,32px,0)' }}
+          animate={{ opacity: 1, transform: 'translate3d(0,0,0)' }}
+          exit={{ opacity: 0, transform: 'translate3d(0,24px,0)' }}
+          transition={{ duration: 0.24, ease: [0.2, 0.8, 0.2, 1] }}
+          className="absolute inset-0 z-[100] flex flex-col overflow-hidden bg-[#09090b]"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Live assistant"
         >
-          {/* Top text */}
-          <div className="absolute top-16 left-0 right-0 flex flex-col items-center z-10 text-white px-6 text-center">
-            <div className="bg-white/10 backdrop-blur-md px-4 py-1.5 rounded-full flex items-center gap-2 mb-6">
-              <span className="text-[14px] font-semibold text-white/90">{BRAND.name}</span>
-            </div>
-            <motion.div
-              animate={{ opacity: [0.7, 1, 0.7] }}
-              transition={{ duration: 3, repeat: Infinity }}
-              className="text-[48px] font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-sos via-info to-teal tracking-tight leading-none pb-2"
-            >
-              Assistant
-            </motion.div>
-            <p className="text-[22px] font-medium text-white/80 mt-2 leading-tight max-w-[280px]">
-              {ai.phase === 'listening' ? (ai.heard || 'Listening...') :
-               ai.phase === 'thinking' ? 'Thinking...' :
-               ai.phase === 'vision' ? 'Looking through the stick camera...' :
-               ai.phase === 'error' ? (ai.unavailable ? `Didn't work: ${ai.unavailable}` : 'That did not work. Try again.') :
-               ai.phase === 'interrupted' ? 'Paused for an important message' :
-               ai.phase === 'speaking' ? (ai.reply || 'Speaking...') :
-               ai.unavailable ? `Assistant unavailable: ${ai.unavailable}` : `How can I help you?`}
-            </p>
-          </div>
-
-          {/* Gemini-like Aurora Background */}
-          <div className="absolute inset-0 z-0 flex items-end justify-center pointer-events-none">
-            {/* Bottom glow */}
-            <div className="w-[150%] h-[60%] absolute bottom-0 bg-gradient-to-t from-[#0d1b2a] via-[#1b263b] to-transparent" />
-
-            {/* Animated waves */}
-            <motion.div
-              animate={{
-                x: ['-20%', '20%', '-20%'],
-                scaleY: [1, 1.2, 1],
-                rotate: [0, 5, 0]
-              }}
-              transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut' }}
-              className="w-[120%] h-[400px] absolute -bottom-[150px] bg-info/40 blur-[80px] rounded-[100%]"
-            />
-            <motion.div
-              animate={{
-                x: ['20%', '-20%', '20%'],
-                scaleY: [1, 1.5, 1],
-                rotate: [0, -5, 0]
-              }}
-              transition={{ duration: 12, repeat: Infinity, ease: 'easeInOut' }}
-              className="w-[100%] h-[350px] absolute -bottom-[100px] bg-teal/50 blur-[90px] rounded-[100%]"
-            />
-            <motion.div
-              animate={{
-                y: ['0%', '-10%', '0%'],
-                scaleX: [1, 1.2, 1]
-              }}
-              transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
-              className="w-[80%] h-[300px] absolute -bottom-[50px] bg-mint/30 blur-[70px] rounded-[100%]"
-            />
-          </div>
-          
-          <div className="absolute inset-0 flex flex-col items-center justify-center z-20 pointer-events-none mt-16">
-             <button 
-               className="pointer-events-auto rounded-full active:scale-95 transition-transform interactive"
-               onClick={() => ai.phase === 'listening' ? ai.cancel() : ai.start()}
-             >
-                <AiOrb size={260} phase={orbPhaseFor({ assistant: ai.phase, sosActive: sosPhase === 'active' || sosPhase === 'countdown', internet: netState, navigating: navActive, unavailable: ai.unavailable })} />
-             </button>
-          </div>
-
-          {/* Controls */}
-          <div className="relative z-10 w-full pb-16 pt-10 flex justify-between items-center px-12 bg-gradient-to-t from-black via-black/80 to-transparent">
-             <button onClick={onClose} className="w-[52px] h-[52px] rounded-full bg-white/10 text-white flex items-center justify-center hover:bg-white/20 transition-colors backdrop-blur-md interactive">
-               <ChevronLeft size={24} />
-             </button>
-             <div className="flex flex-col items-center gap-2 -mt-4">
-               <button 
-                  onClick={() => ai.phase === 'listening' ? ai.cancel() : ai.start()}
-                  className={`w-[72px] h-[72px] rounded-full flex items-center justify-center transition-colors shadow-lg interactive ${ai.phase === 'listening' ? 'bg-sos text-white hover:bg-sos' : 'bg-white text-black hover:bg-white/90'}`}
-               >
-                 {ai.phase === 'listening' ? <StopCircle size={32} /> : <Mic size={32} />}
-               </button>
-               <span className="text-[14px] font-medium text-white/60">{ai.phase === 'listening' ? 'Stop' : 'Tap to talk'}</span>
-             </div>
-             <div className="w-[52px]" />
-          </div>
+          <LiveAiPage onClose={onClose} />
         </motion.div>
       )}
     </AnimatePresence>
   );
 }
 
+function LiveAiPage({ onClose }: { onClose: () => void }) {
+  const ai = useVoiceAssistant();
+  const sosPhase = useSafety((x) => x.phase);
+  const netState = useDevice((x) => x.internet);
+  const navActive = useNavView((x) => x.active);
+  const listening = ai.phase === 'listening';
+  const toggle = () => (listening ? ai.cancel() : ai.start());
+  const status =
+    ai.phase === 'listening' ? ai.heard || 'Listening…'
+    : ai.phase === 'thinking' ? 'Thinking…'
+    : ai.phase === 'vision' ? 'Looking through the stick camera…'
+    : ai.phase === 'error' ? (ai.unavailable ? `Didn't work: ${ai.unavailable}` : 'That did not work. Try again.')
+    : ai.phase === 'interrupted' ? 'Paused for an important message'
+    : ai.phase === 'speaking' ? ai.reply || 'Speaking…'
+    : ai.unavailable ? `Assistant unavailable: ${ai.unavailable}`
+    : 'How can I help you?';
 
+  return (
+    <>
+      {/* Aurora: soft radial fields, transform-only CSS animation (no blur filters). */}
+      <div className="live-aurora pointer-events-none absolute inset-0 z-0" aria-hidden>
+        <span className="live-aurora-a" />
+        <span className="live-aurora-b" />
+        <span className="live-aurora-c" />
+      </div>
 
+      <div className="relative z-10 flex shrink-0 items-center gap-3 px-4" style={{ paddingTop: 'calc(var(--island, var(--sat)) + 10px)' }}>
+        <button type="button" onClick={onClose} aria-label="Close assistant" className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-white/10 text-white active:bg-white/20">
+          <X size={24} />
+        </button>
+        <span className="min-w-0 flex-1 truncate text-center text-[15px] font-semibold text-white/80">{BRAND.name}</span>
+        <span className="h-12 w-12 shrink-0" aria-hidden />
+      </div>
 
-function SafetyCenterSubpage({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const d = useDevice();
+      <div className="page-scroll relative z-10 flex min-h-0 flex-1 flex-col items-center px-6 text-center text-white">
+        <p className="mt-6 bg-gradient-to-r from-sos via-info to-teal bg-clip-text pb-1 text-[44px] font-extrabold leading-none tracking-tight text-transparent">Assistant</p>
+        <p className="mt-3 max-w-[300px] break-words text-[20px] font-medium leading-snug text-white/85" aria-live="polite">
+          {status}
+        </p>
+        <div className="flex flex-1 items-center justify-center py-6">
+          <button type="button" className="rounded-full active:scale-[0.97]" aria-label={listening ? 'Stop listening' : 'Start talking'} onClick={toggle}>
+            <AiOrb size={220} phase={orbPhaseFor({ assistant: ai.phase, sosActive: sosPhase === 'active' || sosPhase === 'countdown', internet: netState, navigating: navActive, unavailable: ai.unavailable })} />
+          </button>
+        </div>
+      </div>
+
+      <div className="relative z-10 flex shrink-0 flex-col items-center gap-2 px-6 pt-4" style={{ paddingBottom: 'calc(var(--sab) + 24px)' }}>
+        <button type="button" onClick={toggle} className={`grid h-[72px] w-[72px] place-items-center rounded-full shadow-lg ${listening ? 'bg-sos text-white' : 'bg-white text-black'}`} aria-label={listening ? 'Stop' : 'Tap to talk'}>
+          {listening ? <StopCircle size={32} /> : <Mic size={32} />}
+        </button>
+        <span className="text-[14px] font-medium text-white/60">{listening ? 'Stop' : 'Tap to talk'}</span>
+      </div>
+    </>
+  );
+}
+
+/* ───────────────────────────── Safety center ───────────────────────────── */
+
+function Check({ ok, label, value }: { ok: boolean | null; label: string; value: string }) {
+  return (
+    <div className="flex min-h-12 items-center gap-3 px-4 py-2.5">
+      <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-full text-[14px] font-bold ${ok == null ? 'bg-ink/5 text-ink-3' : ok ? 'bg-ok/15 text-ok' : 'bg-amber/15 text-amber-ink'}`} aria-hidden>
+        {ok == null ? '–' : ok ? '✓' : '!'}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block break-words text-[15px] font-semibold text-ink">{label}</span>
+        <span className="block break-words text-[13.5px] text-ink-3">{value}</span>
+      </span>
+    </div>
+  );
+}
+
+function SafetyCenterContent() {
+  const link = useDevice((s) => s.link);
+  const usStatus = useDevice((s) => s.ultrasonic.status);
+  const imuStatus = useDevice((s) => s.imu.status);
+  const bStatus = useDevice((s) => s.battery.status);
+  const bPercent = useDevice((s) => s.battery.percent);
+  const bCharging = useDevice((s) => s.battery.charging);
+  const internet = useDevice((s) => s.internet);
   const ev = useSafetyEval();
-  const loc = useLocation();
+  const locStatus = useLocation((s) => s.status);
+  const fix = useLocation((s) => s.fix);
   const linked = useSession((s) => s.linked);
   // Re-render when contacts change; the number itself comes from the same lookup SOS uses.
   useSession((s) => s.contacts);
   const guardianPhone = safetyContact().phone;
   const mode = useRuntime((s) => s.mode);
   const [checked, setChecked] = useState<string | null>(null);
-  const good = (ok: boolean | null) => (ok == null ? <div className="w-5 flex justify-center text-ink-3">–</div> : <div className={`w-5 flex justify-center ${ok ? 'text-ok' : 'text-amber'}`}>{ok ? '✓' : '⚠'}</div>);
-  const usOk = d.ultrasonic.status === 'ok' || d.ultrasonic.status === 'no_echo' || d.ultrasonic.status === 'out_of_range';
+  const on = isLinked(link);
+  const usOk = usStatus === 'ok' || usStatus === 'no_echo' || usStatus === 'out_of_range';
 
   const runCheck = () => {
     const issues = ev.reasons;
@@ -870,254 +977,114 @@ function SafetyCenterSubpage({ open, onClose }: { open: boolean; onClose: () => 
     announce(text, { high: true });
   };
 
+  const dot = ev.state === 'healthy' ? 'bg-ok' : ev.state === 'warning' || ev.state === 'initializing' ? 'bg-amber' : ev.state === 'unknown' ? 'bg-ink-3' : 'bg-sos';
   return (
-    <AnimatePresence>
-      {open && (
-        <motion.div
-          initial={{ clipPath: 'circle(0% at 50% 50%)' }}
-          animate={{ clipPath: 'circle(150% at 50% 50%)' }}
-          exit={{ clipPath: 'circle(0% at 50% 50%)' }}
-          transition={{ duration: 0.35, ease: 'linear' }}
-          className="absolute inset-0 z-50 bg-bg flex flex-col"
-        >
-          <Atmosphere variant="user" />
-          <div className="pt-10 px-4 flex items-center gap-4 z-10 shrink-0 mb-4">
-            <button onClick={onClose} className="h-12 w-12 glass interactive rounded-full flex items-center justify-center text-ink shrink-0" aria-label="Back">
-              <ChevronLeft size={24} />
-            </button>
-            <h1 className="text-[20px] font-bold text-ink">Safety Center</h1>
-          </div>
+    <>
+      <div className="glass rounded-[28px] p-5">
+        <div className="flex items-center gap-3">
+          <span className={`h-4 w-4 shrink-0 rounded-full ${dot}`} />
+          <h2 className="min-w-0 break-words text-[18px] font-bold text-ink">{ev.state === 'healthy' ? 'All safety systems working' : ev.state === 'unknown' ? 'Safety status unknown' : ev.state === 'initializing' ? 'Starting up' : 'Needs attention'}</h2>
+        </div>
+        {ev.reasons.length > 0 && <ul className="ml-7 mt-3 list-disc text-[14px] text-ink-2">{ev.reasons.map((r) => <li key={r} className="break-words">{r}</li>)}</ul>}
+      </div>
 
-          <div className="flex-1 overflow-y-auto no-scrollbar px-4 pb-20">
-             <div className="glass rounded-[28px] p-6 mb-6">
-                <div className="flex items-center gap-3 mb-2">
-                   <div className={`w-4 h-4 rounded-full ${ev.state === 'healthy' ? 'bg-ok' : ev.state === 'warning' || ev.state === 'initializing' ? 'bg-amber' : ev.state === 'unknown' ? 'bg-ink-3' : 'bg-sos'}`} />
-                   <h2 className="text-[18px] font-bold text-ink">{ev.state === 'healthy' ? 'All safety systems working' : ev.state === 'unknown' ? 'Safety status unknown' : ev.state === 'initializing' ? 'Starting up' : 'Needs attention'}</h2>
-                </div>
-                {ev.reasons.length > 0 && <ul className="mb-5 ml-7 list-disc text-[14px] text-ink-2">{ev.reasons.map((r) => <li key={r}>{r}</li>)}</ul>}
+      <Section title="Stick hardware">
+        <div className={listCls}>
+          <Check ok={on} label="Link" value={linkLabel(link).text} />
+          <Check ok={on ? usOk : null} label="Obstacle sensor" value={on ? usStatus.replace('_', ' ') : 'no data'} />
+          <Check ok={on ? imuStatus === 'ok' : null} label="Motion sensor (fall detection)" value={on ? imuStatus : 'no data'} />
+          <Check ok={on ? bStatus === 'ok' : null} label="Battery sensor" value={batteryLabel({ status: bStatus, percent: bPercent, charging: bCharging }).sub} />
+        </div>
+      </Section>
 
-                <h3 className="text-[14px] font-bold text-ink-3 uppercase mb-3 mt-4">Stick Hardware</h3>
-                <div className="flex flex-col gap-2 mb-6 text-ink font-medium">
-                   <div className="flex items-center gap-2">{good(isLinked(d.link))} Link: {linkLabel(d.link).text}</div>
-                   <div className="flex items-center gap-2">{good(isLinked(d.link) ? usOk : null)} Obstacle sensor: {isLinked(d.link) ? d.ultrasonic.status.replace('_', ' ') : 'no data'}</div>
-                   <div className="flex items-center gap-2">{good(isLinked(d.link) ? d.imu.status === 'ok' : null)} Motion sensor (fall detection): {isLinked(d.link) ? d.imu.status : 'no data'}</div>
-                   <div className="flex items-center gap-2">{good(isLinked(d.link) ? d.battery.status === 'ok' : null)} Battery sensor: {batteryLabel(d.battery).sub}</div>
-                </div>
+      <Section title="Phone">
+        <div className={listCls}>
+          <Check
+            ok={mode === 'demo' ? null : locStatus === 'ok' ? true : locStatus === 'idle' ? null : false}
+            label="GPS"
+            value={mode === 'demo' ? 'simulated in demo' : fix ? `±${Math.round(fix.accuracyM)} m · ${freshnessLabel(fix.ts)}` : locStatus === 'error' ? 'permission denied' : 'no position yet'}
+          />
+          <Check ok={internet} label="Internet" value={internet == null ? 'checking' : internet ? 'online' : 'offline'} />
+        </div>
+      </Section>
 
-                <h3 className="text-[14px] font-bold text-ink-3 uppercase mb-3">Phone</h3>
-                <div className="flex flex-col gap-2 mb-6 text-ink font-medium">
-                   <div className="flex items-center gap-2">{good(mode === 'demo' ? null : loc.status === 'ok' ? true : loc.status === 'idle' ? null : false)} GPS: {mode === 'demo' ? 'simulated in demo' : loc.fix ? `±${Math.round(loc.fix.accuracyM)} m · ${freshnessLabel(loc.fix.ts)}` : loc.status === 'error' ? 'permission denied' : 'no position yet'}</div>
-                   <div className="flex items-center gap-2">{good(d.internet)} Internet: {d.internet == null ? 'checking' : d.internet ? 'online' : 'offline'}</div>
-                </div>
+      <Section title="Emergency">
+        <div className={listCls}>
+          <Check ok={linked} label="Safety contact linked" value={linked ? 'yes' : 'not yet'} />
+          <Check ok={!!guardianPhone} label="Safety phone number for SMS / call" value={guardianPhone ? 'saved' : 'missing'} />
+        </div>
+      </Section>
 
-                <h3 className="text-[14px] font-bold text-ink-3 uppercase mb-3">Emergency</h3>
-                <div className="flex flex-col gap-2 text-ink font-medium">
-                   <div className="flex items-center gap-2">{good(linked)} Safety contact linked: {linked ? 'yes' : 'not yet'}</div>
-                   <div className="flex items-center gap-2">{good(!!guardianPhone)} Safety phone number for SMS/call: {guardianPhone ? 'saved' : 'missing'}</div>
-                </div>
-             </div>
-
-             <div className="glass rounded-[28px] p-6">
-                <h3 className="text-[18px] font-bold text-ink mb-2">Pre-Walk Check</h3>
-                <p className="text-[14px] text-ink-2 mb-4">Checks the stick link, battery, obstacle sensor, GPS and internet, and reads the result aloud.</p>
-                <button type="button" onClick={runCheck} className="w-full bg-teal text-on-teal rounded-full h-12 font-bold interactive">
-                  Run check
-                </button>
-                {checked && <p className="mt-3 text-[14px] leading-snug text-ink-2" aria-live="polite">{checked}</p>}
-             </div>
-          </div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+      <div className="glass rounded-[28px] p-5">
+        <h3 className="mb-1.5 text-[18px] font-bold text-ink">Pre-walk check</h3>
+        <p className="mb-4 text-[14px] text-ink-2">Checks the stick link, battery, obstacle sensor, GPS and internet, and reads the result aloud.</p>
+        <button type="button" onClick={runCheck} className="h-12 w-full rounded-full bg-teal font-bold text-on-teal active:scale-[0.98]">
+          Run check
+        </button>
+        {checked && <p className="mt-3 break-words text-[14px] leading-snug text-ink-2" aria-live="polite">{checked}</p>}
+      </div>
+    </>
   );
 }
 
+/* ───────────────────────────── Home ───────────────────────────── */
+
 export function UserHome() {
-  const linkState = useDevice((s) => s.link);
-  const battery = useDevice((s) => s.battery);
-  const safety = useSafetyEval((s) => s.state);
-  const internet = useDevice((s) => s.internet);
-  const aiUnavailable = useAssistant((s) => s.unavailable);
-  const mode = useRuntime((s) => s.mode);
-  const phone = usePhoneInfo();
-  const walking = useWalking((s) => s.today);
-  const route = useAudioRoute();
-
   const [safetyCenterOpen, setSafetyCenterOpen] = useState(false);
-  // Local-state screens join the one back model (core/backStack.ts).
-  useBackHandler(safetyCenterOpen, () => setSafetyCenterOpen(false));
-  const batteryOpen = useUI((s) => s.batteryPage);
-  const setBatteryOpen = (v: boolean) => useUI.setState({ batteryPage: v });
-
   const [chatOpen, setChatOpen] = useState(false);
-  useBackHandler(chatOpen, () => setChatOpen(false));
+  const batteryOpen = useUI((s) => s.batteryPage);
   const mapOpen = useUI((s) => s.mapOpen);
-    const setMapOpen = (v: boolean) => useUI.setState({ mapOpen: v });
   const stickDetailsOpen = useUI((s) => s.stickPage);
-  const setStickDetailsOpen = (v: boolean) => useUI.setState({ stickPage: v });
   const liveAiOpen = useUI((s) => s.liveAiOpen);
-    const setLiveAiOpen = (v: boolean) => useUI.setState({ liveAiOpen: v });
   const healthOpen = useUI((s) => s.healthOpen);
-    const setHealthOpen = (v: boolean) => useUI.setState({ healthOpen: v });
   const audioOpen = useUI((s) => s.audioOpen);
-    const setAudioOpen = (v: boolean) => useUI.setState({ audioOpen: v });
+  const otherScreen = useUI((s) => s.userSettings || s.stickSetup);
+  // Home hides under full-screen pages: one animated background, nothing behind for TalkBack.
+  const covered = safetyCenterOpen || chatOpen || batteryOpen || mapOpen || stickDetailsOpen || liveAiOpen || healthOpen || audioOpen || otherScreen;
 
-  const link = linkLabel(linkState);
-  const bat = batteryLabel(battery);
-  const safe = safetyLabel(safety);
-  const aiState = mode === 'demo' ? { text: 'READY', tone: 'ink' } : internet === false ? { text: 'OFFLINE', tone: 'muted' } : !firebaseConfigured() ? { text: 'NOT SET UP', tone: 'muted' } : aiUnavailable ? { text: 'RETRY', tone: 'warn' } : { text: 'READY', tone: 'ink' };
-  const phoneName = mode === 'demo' ? 'Demo phone' : phoneLabel(phone);
+  const header = useRef<HTMLElement>(null);
+  const scrolled = useRef(false);
+  const onScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    const s = e.currentTarget.scrollTop > 4;
+    if (s === scrolled.current) return;
+    scrolled.current = s;
+    header.current?.setAttribute('data-scrolled', String(s));
+  }, []);
+  const openSafety = useCallback(() => setSafetyCenterOpen(true), []);
+  const openChat = useCallback(() => setChatOpen(true), []);
 
   return (
     <AppScreen>
-      <SafeAreaContent className="px-5 pb-4">
-          <TopNav />
+      <div className="home-layer absolute inset-0 flex flex-col" data-covered={covered ? 'true' : 'false'} aria-hidden={covered || undefined} inert={covered}>
+        <HomeHeader headerRef={header} />
+        <SafeAreaContent topInset={false} className="px-5 pt-1" onScroll={onScroll}>
+          {/* Hero carousel: Stick · Walk · Assistant (home/HomeCarousel.tsx) */}
+          <HomeCarousel label="Your stick, walk and assistant">
+            <StickCard />
+            <WalkCard />
+            <AssistantCard />
+          </HomeCarousel>
+          <QuickActions onSafety={openSafety} onChat={openChat} />
+          <BottomControls />
+        </SafeAreaContent>
+      </div>
 
-        {/* Hero carousel: Stick · Walk · Assistant (home/HomeCarousel.tsx) */}
-        <HomeCarousel label="Your stick, walk and assistant">
-        <div className="glass rounded-[36px] p-5 flex border border-glass-border shadow-2xl relative overflow-hidden h-full min-h-[260px]">
-          <div className="absolute inset-0 bg-gradient-to-br from-teal/5 to-info/10 pointer-events-none" />
-
-          <button onClick={() => (linkState === 'unpaired' ? openSetup() : setStickDetailsOpen(true))} aria-label="Stick diagnostics" className="w-[160px] shrink-0 flex flex-col items-center justify-center relative interactive rounded-[20px] p-2 hover:bg-glass-bg transition-colors">
-             <span data-parallax="18"><StickVisual height={200} /></span>
-             <p className="absolute bottom-1 font-bold text-[14px] tracking-widest text-ink uppercase opacity-90 drop-shadow-md">{BRAND.name}</p>
-          </button>
-
-          <div className="flex-1 flex flex-col justify-center gap-3 pl-2 pr-1">
-             <button
-               onClick={() => (linkState === 'unpaired' || linkState === 'auth_failed' ? openSetup() : setStickDetailsOpen(true))}
-               aria-label={`Stick: ${link.text}`}
-               className="glass rounded-[20px] px-4 py-3 flex flex-col items-center justify-center border border-glass-border interactive text-center"
-             >
-               {linkState === 'connected' ? <Link2 size={22} className={`${TONE_TEXT[link.tone]} mb-1.5`} /> : <Unlink size={22} className={`${TONE_TEXT[link.tone]} mb-1.5`} />}
-               <span className={`${TONE_TEXT[link.tone]} font-bold text-[13px]`}>{link.text}</span>
-             </button>
-             <button onClick={() => setBatteryOpen(true)} aria-label={`Stick battery ${bat.text}, ${bat.sub}`} className="glass rounded-[20px] px-4 py-3 flex flex-col items-center justify-center border border-glass-border interactive text-center">
-               <BatteryFull size={22} className={`${TONE_TEXT[bat.tone]} mb-1.5`} />
-               <span className="text-ink font-bold text-[14px]">{bat.text}</span>
-             </button>
-             <div className="glass rounded-[20px] px-4 py-3 flex flex-col items-center justify-center border border-glass-border" aria-label={`Phone: ${phoneName}`}>
-               <Smartphone size={22} className="text-ink-3 mb-1.5" />
-               <span className="text-ink font-bold text-[13px] truncate max-w-full">{phoneName}</span>
-             </div>
-          </div>
-        </div>
-        <WalkCard />
-        <AssistantCard />
-        </HomeCarousel>
-
-        {/* Quick Actions Row */}
-        <div className="grid grid-cols-2 gap-4 mb-6">
-             <button onClick={() => setSafetyCenterOpen(true)} className="flex flex-col items-center justify-center gap-2 glass p-5 rounded-[28px] interactive text-center border border-glass-border h-[130px]">
-               <div className="p-3 bg-info/10 rounded-full text-info shrink-0"><ShieldAlert size={28}/></div>
-               <div>
-                 <p className="text-[13px] text-ink-2 font-bold uppercase tracking-wider">Safety</p>
-                 <p className={`text-[15px] font-bold mt-0.5 ${TONE_TEXT[safe.tone]}`}>{safe.text}</p>
-               </div>
-             </button>
-
-             <button onClick={() => setLiveAiOpen(true)} className="flex flex-col items-center justify-center gap-2 glass p-5 rounded-[28px] interactive text-center border border-glass-border h-[130px]">
-               <div className="p-3 bg-teal/10 rounded-full text-teal shrink-0"><Wand2 size={28}/></div>
-               <div>
-                 <p className="text-[13px] text-ink-2 font-bold uppercase tracking-wider">AI Assistant</p>
-                 <p className={`text-[15px] font-bold mt-0.5 ${aiState.tone === 'ink' ? 'text-ink' : TONE_TEXT[aiState.tone as 'muted' | 'warn']}`}>{aiState.text}</p>
-               </div>
-             </button>
-
-             <button onClick={() => setAudioOpen(true)} className="col-span-2 flex items-center justify-between gap-4 glass p-5 rounded-[28px] interactive border border-glass-border hover:bg-glass-bg transition-colors">
-               <div className="flex items-center gap-4">
-                 <div className="p-3 bg-info/10 rounded-full text-info shrink-0">
-                   {route.route === 'bluetooth' ? <Bluetooth size={28} /> : route.route === 'speaker' ? <Speaker size={28} /> : <Headphones size={28}/>}
-                 </div>
-                 <div className="text-left">
-                   <p className="text-[13px] text-ink-2 font-bold uppercase tracking-wider">Audio Output</p>
-                   <p className={`${route.route === 'unknown' ? 'text-ink-3' : 'text-ink'} text-[15px] font-bold mt-0.5`}>
-                     {route.route === 'bluetooth' ? (route.name ?? 'BLUETOOTH').toUpperCase() : route.route === 'wired' ? 'WIRED HEADPHONES' : route.route === 'speaker' ? 'PHONE SPEAKER' : 'SYSTEM DEFAULT'}
-                   </p>
-                 </div>
-               </div>
-               <div className="w-10 h-10 rounded-full bg-ink/5 flex items-center justify-center text-ink-3">
-                 <ChevronLeft size={20} className="rotate-180" />
-               </div>
-             </button>
-
-             <button onClick={() => setHealthOpen(true)} className="col-span-2 flex items-center justify-between gap-4 glass p-5 rounded-[28px] interactive border border-glass-border hover:bg-glass-bg transition-colors mt-2">
-               <div className="flex items-center gap-4">
-                 <div className="p-3 bg-teal/10 rounded-full text-teal shrink-0">
-                   <Footprints size={28}/>
-                 </div>
-                 <div className="text-left">
-                   <p className="text-[13px] text-ink-2 font-bold uppercase tracking-wider">Distance Walked</p>
-                   <p className="text-[15px] font-bold text-ink mt-0.5">{walking.distanceM > 0 ? km(walking.distanceM) : 'No walk yet today'} {walking.durationS > 0 && <span className="text-ink-3 font-normal text-[13px] ml-1">({mins(walking.durationS)})</span>}</p>
-                 </div>
-               </div>
-               <div className="w-10 h-10 rounded-full bg-ink/5 flex items-center justify-center text-ink-3">
-                 <ChevronLeft size={20} className="rotate-180" />
-               </div>
-             </button>
-             <button onClick={() => setChatOpen(true)} className="col-span-2 flex items-center justify-between gap-4 glass p-5 rounded-[28px] interactive border border-glass-border hover:bg-glass-bg transition-colors mt-2">
-               <div className="flex items-center gap-4">
-                 <div className="p-3 bg-info/10 rounded-full text-info shrink-0">
-                   <MessageSquare size={28}/>
-                 </div>
-                 <div className="text-left">
-                   <p className="text-[13px] text-ink-2 font-bold uppercase tracking-wider">AI History</p>
-                   <p className="text-[15px] font-bold text-ink mt-0.5">OPEN CONVERSATIONS</p>
-                 </div>
-               </div>
-               <div className="w-10 h-10 rounded-full bg-ink/5 flex items-center justify-center text-ink-3">
-                 <ChevronLeft size={20} className="rotate-180" />
-               </div>
-             </button>
-        </div>
-
-        {/* Unified Bottom Control Card */}
-        <div className="mt-auto shrink-0 pt-2 pb-6 flex flex-col">
-          <div className="glass rounded-[32px] p-2 border border-glass-border flex flex-col gap-2 shadow-lg bg-bg/40 backdrop-blur-md">
-             <button
-                className={`w-full bg-sos text-white rounded-[24px] h-[72px] flex items-center justify-center gap-3 font-bold text-[20px] shadow-[0_10px_30px_-8px_var(--sos)] active:scale-95 transition-all interactive`}
-                onClick={(e) => {
-                   e.stopPropagation();
-                   startSos('button');
-                }}
-                onPointerDown={(e) => e.stopPropagation()}
-                onPointerUp={(e) => e.stopPropagation()}
-                aria-label="Trigger Emergency SOS"
-             >
-                <>
-                  <Phone size={28} /> Trigger Emergency SOS
-                </>
-             </button>
-
-             <div className="flex items-center justify-between h-[64px] bg-ink/5 rounded-[24px] shadow-inner">
-                <button
-                  className="flex-1 h-full flex items-center justify-center gap-3 font-bold text-[16px] text-ink interactive rounded-[24px] hover:bg-ink/10 transition-colors"
-                  onClick={() => useUI.setState({ pocket: true })}
-                >
-                  <Smartphone size={20} className="text-ink-2" />
-                  <span className="tracking-wide">Pocket</span>
-                </button>
-                <div className="w-[1px] h-8 bg-ink/10 shrink-0" />
-                <button
-                  className="flex-1 h-full flex items-center justify-center gap-3 font-bold text-[16px] text-ink interactive rounded-[24px] hover:bg-ink/10 transition-colors"
-                  onClick={() => setMapOpen(true)}
-                >
-                  <Map size={20} className="text-ink-2" />
-                  <span className="tracking-wide">Map</span>
-                </button>
-             </div>
-          </div>
-        </div>
-      </SafeAreaContent>
-
-      <SafetyCenterSubpage open={safetyCenterOpen} onClose={() => setSafetyCenterOpen(false)} />
+      <SubPage open={safetyCenterOpen} onClose={() => setSafetyCenterOpen(false)} title="Safety Center" background="none">
+        <SafetyCenterContent />
+      </SubPage>
       <AiChatSubpage open={chatOpen} onClose={() => setChatOpen(false)} />
-      <WalkingSubpage open={mapOpen} onClose={() => setMapOpen(false)} />
-      <StickDetailsSubpage open={stickDetailsOpen} onClose={() => setStickDetailsOpen(false)} />
-      <BatterySubpage open={batteryOpen} onClose={() => setBatteryOpen(false)} />
-      <HealthSubpage open={healthOpen} onClose={() => setHealthOpen(false)} />
-      <LiveAiSubpage open={liveAiOpen} onClose={() => setLiveAiOpen(false)} />
-      <AudioSubpage open={audioOpen} onClose={() => setAudioOpen(false)} />
+      <WalkingSubpage open={mapOpen} onClose={() => useUI.setState({ mapOpen: false })} />
+      <SubPage open={stickDetailsOpen} onClose={() => useUI.setState({ stickPage: false })} title="Stick diagnostics" background="none">
+        <StickDetailsContent />
+      </SubPage>
+      <SubPage open={batteryOpen} onClose={() => useUI.setState({ batteryPage: false })} title="Power & battery" background="none" z={60}>
+        <BatteryContent />
+      </SubPage>
+      <SubPage open={healthOpen} onClose={() => useUI.setState({ healthOpen: false })} title="Activity & health" background="none">
+        <HealthContent />
+      </SubPage>
+      <LiveAiSubpage open={liveAiOpen} onClose={() => useUI.setState({ liveAiOpen: false })} />
+      <AudioSubpage open={audioOpen} onClose={() => useUI.setState({ audioOpen: false })} />
     </AppScreen>
   );
 }

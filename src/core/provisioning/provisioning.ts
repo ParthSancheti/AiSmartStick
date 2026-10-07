@@ -1,10 +1,8 @@
 import { create } from 'zustand';
-import type { PluginListenerHandle } from '@capacitor/core';
-import { DASHCAM_STATION_SSID, DEVICE_API, PROTOCOL_VERSION, SETUP_AP_HOST, STICK_AP_PASSPHRASE, STICK_AP_SSID, type DeviceInfoPacket, type ProvisioningPacket, type ProvisioningResult } from '../../../shared/deviceProtocol';
+import { DEVICE_API, MIN_STICK_FIRMWARE, PROTOCOL_VERSION, SETUP_AP_HOST, STICK_AP_PASSPHRASE, STICK_AP_SSID, type DeviceInfoPacket, type TelemetryPacket } from '../../../shared/deviceProtocol';
 import { AissNative } from '../native/aissNative';
-import { randomBytes, sha256Hex, toB64, toHex, hmacHex, safeEqual } from '../device/crypto';
-import { loadPairedDevice, savePairedDevice, type PairedDevice } from '../device/pairedDevice';
-import { attachPairedDevice } from '../device/realDevice';
+import { savePairedDevice, type PairedDevice } from '../device/pairedDevice';
+import { attachPairedDevice, startRealDevice } from '../device/realDevice';
 import { disconnectStick } from '../device/bridge';
 import { stopDiscovery } from '../device/discovery';
 import { currentUid } from '../auth/authStore';
@@ -17,44 +15,45 @@ import { paths } from '../../../shared/firestoreSchema';
 import { wait } from '../util';
 
 /**
- * Stick setup (dashcam topology): find the stick's own AP → bind it (one system "Connect to device?"
- * sheet) → read identity → hand it a fresh 32-byte HMAC key → verify the key proof → save the
- * pairing in the Keystore → start the authenticated transport.
+ * Stick setup, v1 SIMPLE LINK (firmware 1.2+): no keys, no provisioning.
  *
- * Without this, every telemetry / capture / command request is rejected by the stick (401).
+ *   1. SCANNING   ask for Wi-Fi permissions (best effort); if the phone is already on the stick's
+ *                 Wi-Fi (joined by hand in Android settings) use it, otherwise Android's own
+ *                 "Connect to device" sheet joins SmartStick_AI (it scans by itself).
+ *   2. FOUND      the phone is on the stick's Wi-Fi.
+ *   3. CONNECTING GET /api/v1/device (retried: the access point needs a moment after joining),
+ *                 then one real telemetry packet.
+ *   4. CONNECTED  the stick record is saved (no secret) and the live link starts.
+ *
+ * A 401 means the stick still runs the old secure firmware: the user is told to flash 1.2
+ * (never silently paired some other way). Every failure has a plain-language message and the
+ * step log stays available under "Details".
  */
-export type ProvStep =
-  | 'idle'
-  | 'searching'
-  | 'stick_found'
-  | 'connecting_to_stick'
-  | 'stick_connected'
-  | 'reading_device_info'
-  | 'configuring_network'
-  | 'waiting_for_stick_network'
-  | 'verifying_stick'
-  | 'authenticating'
-  | 'completed'
-  | 'error';
+export type ProvStep = 'idle' | 'searching' | 'joining' | 'stick_found' | 'reading_device_info' | 'waiting_for_data' | 'completed' | 'error';
 
 /** The four phases the setup screen shows. */
 export type ProvPhase = 'scanning' | 'found' | 'connecting' | 'connected' | 'error' | 'idle';
 export function provPhase(step: ProvStep): ProvPhase {
   switch (step) {
     case 'searching':
+    case 'joining':
       return 'scanning';
     case 'stick_found':
       return 'found';
+    case 'reading_device_info':
+    case 'waiting_for_data':
+      return 'connecting';
     case 'completed':
       return 'connected';
     case 'error':
       return 'error';
-    case 'idle':
-      return 'idle';
     default:
-      return 'connecting';
+      return 'idle';
   }
 }
+
+/** What went wrong, so the screen can offer the right button. */
+export type ProvErrorKind = 'signin' | 'wifi_off' | 'not_found' | 'permission' | 'unsupported' | 'no_answer' | 'not_a_stick' | 'old_firmware' | 'protocol' | 'other';
 
 interface ProvState {
   step: ProvStep;
@@ -62,8 +61,7 @@ interface ProvState {
   deviceId: string | null;
   firmware: string | null;
   error: string | null;
-  /** The stick already holds a key from an earlier setup this phone no longer has. */
-  needsFactoryReset: boolean;
+  errorKind: ProvErrorKind | null;
   diagnostics: string[];
 }
 
@@ -73,87 +71,67 @@ export const useProvisioning = create<ProvState>(() => ({
   deviceId: null,
   firmware: null,
   error: null,
-  needsFactoryReset: false,
+  errorKind: null,
   diagnostics: [],
 }));
 
 const set = (p: Partial<ProvState>) => useProvisioning.setState(p);
 const diag = (line: string) =>
   useProvisioning.setState((s) => ({
-    diagnostics: [...s.diagnostics, `${new Date().toLocaleTimeString()}  ${line}`].slice(-40),
+    diagnostics: [...s.diagnostics, `${new Date().toLocaleTimeString()}  ${line}`].slice(-60),
   }));
 
-/** Each search/provision run gets a number; cancelling or restarting invalidates older runs. */
-let run = 0;
+export const OLD_FIRMWARE_SETUP_MESSAGE = `This stick still runs the old secure firmware. Flash firmware ${MIN_STICK_FIRMWARE} on the stick (Arduino IDE, firmware/ai_smart_stick_v1), switch it on again, then tap Try again.`;
 
-export function cancelProvisioning() {
-  run++;
-  if (!isDemo()) void AissNative.releaseSetupNetwork().catch(() => undefined);
-  set({ step: 'idle', error: null });
+class SetupError extends Error {
+  constructor(
+    readonly kind: ProvErrorKind,
+    message: string,
+  ) {
+    super(message);
+  }
 }
-
 class Abort extends Error {}
 
+/** Each setup run gets a number; cancelling or restarting invalidates older runs. */
+let run = 0;
+
 /**
- * SCANNING: looks for the stick's access point for up to ~30 s, then provisions automatically.
- * "Found" is only shown when the AP really appeared in a Wi-Fi scan.
+ * Leaves setup without finishing (Back / "Connect later" / screen closed): stops an Android
+ * "Connect to device" request still in flight and restarts the saved stick's link, which setup
+ * had paused.
  */
-export async function searchForStick() {
-  const me = ++run;
-  const alive = () => me === run;
-  set({ step: 'searching', error: null, ssid: null, needsFactoryReset: false, diagnostics: [] });
-  if (isDemo()) {
-    await wait(1600);
-    if (!alive()) return;
-    set({ step: 'stick_found', ssid: STICK_AP_SSID });
-    await wait(600);
-    if (alive()) await provisionStick();
-    return;
-  }
-
-  try {
-    diag('requesting Wi-Fi permissions');
-    await AissNative.requestPermissions({ permissions: ['location', 'nearbyWifi'] });
-  } catch (e) {
-    diag(`permission request failed: ${(e as Error).message}`);
-  }
-
-  const deadline = Date.now() + 30_000;
-  let lastError: string | null = null;
-  while (alive() && Date.now() < deadline) {
-    try {
-      const { networks } = await AissNative.scanForSetupNetworks({ prefix: STICK_AP_SSID });
-      const hit = networks.find((n) => n.ssid === STICK_AP_SSID);
-      if (hit) {
-        diag(`found ${hit.ssid} (${hit.rssi} dBm)`);
-        if (!alive()) return;
-        set({ step: 'stick_found', ssid: hit.ssid });
-        await wait(600); // let FOUND register before the system "Connect to device?" sheet
-        if (alive()) await provisionStick();
-        return;
-      }
-      lastError = null;
-    } catch (e) {
-      lastError = (e as Error).message;
-      diag(`scan failed: ${lastError}`);
-      if (/wi-?fi is off|permission/i.test(lastError)) break;
-    }
-    await wait(3000);
-  }
-  if (!alive()) return;
-  set({
-    step: 'error',
-    error: lastError
-      ? /wi-?fi is off/i.test(lastError)
-        ? 'Wi-Fi is off. Turn on Wi-Fi, then try again.'
-        : /permission/i.test(lastError)
-          ? 'Allow location and nearby devices so the phone can find your SmartStick.'
-          : lastError
-      : `${STICK_AP_SSID} was not found. Switch the stick on, keep it close to the phone, then try again.`,
-  });
+export function cancelProvisioning() {
+  run++;
+  const { step } = useProvisioning.getState();
+  set({ step: 'idle', error: null, errorKind: null });
+  if (isDemo() || step === 'idle' || step === 'completed') return;
+  if (step === 'joining') void AissNative.releaseSetupNetwork().catch(() => undefined);
+  void startRealDevice().catch(() => undefined);
 }
 
-/** FOUND → CONNECTING → CONNECTED. */
+/** Starts (or restarts, e.g. "Try again") the whole setup. */
+export async function searchForStick() {
+  const me = ++run;
+  set({ step: 'searching', error: null, errorKind: null, ssid: null, deviceId: null, firmware: null, diagnostics: [] });
+  if (isDemo()) {
+    await wait(1600);
+    if (me !== run) return;
+    set({ step: 'stick_found', ssid: STICK_AP_SSID });
+    await wait(600);
+    if (me === run) await demoProvision(me);
+    return;
+  }
+  await provisionStick();
+}
+
+function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
+  let t: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, rej) => (t = setTimeout(() => rej(new Error(`${what} timed out`)), ms)));
+  return Promise.race([p, timeout]).finally(() => clearTimeout(t));
+}
+
+/** SCANNING → FOUND → CONNECTING → CONNECTED for the current run. */
 export async function provisionStick() {
   const me = run;
   const check = () => {
@@ -161,116 +139,194 @@ export async function provisionStick() {
   };
   if (isDemo()) return demoProvision(me);
   const uid = currentUid();
-  if (!uid) return set({ step: 'error', error: 'Sign in first.' });
+  if (!uid) return set({ step: 'error', errorKind: 'signin', error: 'Sign in first, then set up the stick.' });
 
-  let handle: PluginListenerHandle | null = null;
   let saved = false;
   try {
-    // An earlier pairing's transport keeps retrying in the background and would compete for the
-    // stick network (and the stick's few sockets) during setup: stop it first.
+    // An earlier link keeps retrying in the background and would compete for the stick's few sockets.
     disconnectStick();
     await stopDiscovery().catch(() => undefined);
-    set({ step: 'connecting_to_stick', error: null, needsFactoryReset: false });
-    diag(`joining ${STICK_AP_SSID}`);
-    handle = await AissNative.addListener('WIFI_STATE', (ev) => {
-      if (ev.event === 'WIFI_CONNECTED' && useProvisioning.getState().step === 'connecting_to_stick') set({ step: 'stick_connected' });
-    });
-    const { connected, reason } = await AissNative.connectToSetupNetwork({ ssid: STICK_AP_SSID, passphrase: STICK_AP_PASSPHRASE, timeoutMs: 30_000 });
-    check();
-    if (!connected) {
-      if (reason === 'WIFI_DISABLED') throw new Error('Wi-Fi is off. Turn it on and try again.');
-      throw new Error('The phone could not join the SmartStick. Make sure it is switched on and close by, then try again.');
+    set({ step: 'searching', error: null, errorKind: null });
+
+    diag('asking for Location / Nearby devices permission (helps Android find the stick)');
+    try {
+      const p = await withTimeout(AissNative.requestPermissions({ permissions: ['location', 'nearbyWifi'] }), 60_000, 'permission request');
+      diag(`permissions: location ${p.location}, nearby ${p.nearbyWifi}`);
+    } catch (e) {
+      diag(`permission request skipped: ${(e as Error).message}`);
     }
-    set({ step: 'stick_connected' });
+    check();
+
+    // Already on the stick's Wi-Fi (joined by hand, or still bound)? Then no system sheet at all.
+    let info = await probeOnce();
+    check();
+    if (info) {
+      diag(`the phone is already on ${STICK_AP_SSID}: no Wi-Fi dialog needed`);
+    } else {
+      const w = await withTimeout(AissNative.getCurrentWifiSsid(), 3000, 'Wi-Fi status').catch(() => null);
+      if (w) diag(`Wi-Fi ${w.wifiEnabled ? 'on' : 'OFF'}${w.ssid ? `, connected to "${w.ssid}"` : ''}${w.stickNetwork ? ', stick network present' : ''}`);
+      if (w && !w.wifiEnabled) {
+        void AissNative.openWifiSettings().catch(() => undefined);
+        throw new SetupError('wifi_off', 'Wi-Fi is off. Turn on Wi-Fi, then tap Try again.');
+      }
+      set({ step: 'joining' });
+      diag(`asking Android to join ${STICK_AP_SSID} (approve "Connect" if Android asks)`);
+      let res: Awaited<ReturnType<typeof AissNative.connectToSetupNetwork>>;
+      try {
+        res = await AissNative.connectToSetupNetwork({ ssid: STICK_AP_SSID, passphrase: STICK_AP_PASSPHRASE, timeoutMs: 45_000 });
+      } catch (e) {
+        throw new SetupError('other', `Android could not start the Wi-Fi connection: ${(e as Error).message}`);
+      }
+      check();
+      if (!res.connected) throw await joinError(res.reason);
+      diag(`joined ${STICK_AP_SSID}${res.via ? ` (${res.via})` : ''}`);
+    }
+    set({ step: 'stick_found', ssid: STICK_AP_SSID });
+    await wait(300); // let FOUND register on screen
+    check();
 
     set({ step: 'reading_device_info' });
-    const info = await setupJson<DeviceInfoPacket>('GET', DEVICE_API.device);
-    check();
-    diag(`stick ${info.deviceId} firmware ${info.firmware} protocol v${info.protocolVersion} paired ${info.paired}`);
-    if (info.protocolVersion !== PROTOCOL_VERSION) throw new Error(`This stick's firmware speaks protocol v${info.protocolVersion}. Update it to v${PROTOCOL_VERSION} first.`);
+    if (!info) info = await readDevice(check);
+    diag(`stick ${info.deviceId}, firmware ${info.firmware}, protocol v${info.protocolVersion}, auth ${info.auth === false ? 'off' : info.auth === true ? 'ON' : 'unknown (old firmware?)'}`);
+    if (info.protocolVersion !== PROTOCOL_VERSION) throw new SetupError('protocol', `This stick's firmware speaks protocol v${info.protocolVersion}; the app needs v${PROTOCOL_VERSION}. Flash firmware ${MIN_STICK_FIRMWARE}.`);
+    if (info.auth === true) throw new SetupError('old_firmware', OLD_FIRMWARE_SETUP_MESSAGE);
     set({ deviceId: info.deviceId, firmware: info.firmware });
 
-    let dev: PairedDevice | null = null;
-    if (info.paired) {
-      // Set up before. If THIS phone still holds the key and the stick proves it, keep the pairing.
-      const saved = await loadPairedDevice();
-      if (saved && saved.deviceId === info.deviceId && saved.ownerUid === uid) {
-        set({ step: 'authenticating' });
-        const ok = await verifyProof(info.deviceId, saved.keyB64).then(() => true, () => false);
-        if (ok) dev = { ...saved, firmware: info.firmware, model: info.model, protocolVersion: info.protocolVersion, host: SETUP_AP_HOST };
-      }
-      // Otherwise (earlier install, another phone, lost key) pair again below. The dashcam firmware
-      // accepts a new key on its own access point, and only someone who can join that AP gets here.
-      if (!dev) diag('stick was paired before; giving it a new key');
-    }
-    if (!dev) {
-      set({ step: 'configuring_network' });
-      const keyB64 = toB64(randomBytes(32));
-      // Dashcam firmware never joins another network but still validates the credential fields (8–63 chars).
-      const packet: ProvisioningPacket = { v: 1, ssid: DASHCAM_STATION_SSID, password: toHex(randomBytes(8)), deviceKey: keyB64, ownerHash: await sha256Hex(uid), nonce: toHex(randomBytes(12)) };
-      const result = await setupJson<ProvisioningResult>('POST', DEVICE_API.provision, packet);
-      check();
-      if (!result.ok) throw new Error(`The stick refused the configuration (${result.error ?? 'unknown'}).`);
-      set({ step: 'verifying_stick' });
-      await wait(400);
-      set({ step: 'authenticating' });
-      await verifyProof(info.deviceId, keyB64);
-      dev = { deviceId: info.deviceId, model: info.model, firmware: info.firmware, protocolVersion: info.protocolVersion, keyB64, host: SETUP_AP_HOST, ownerUid: uid, pairedAt: Date.now() };
-    }
+    set({ step: 'waiting_for_data' });
+    const packet = await readTelemetry(check);
+    diag(`first telemetry packet #${packet.seq} received`);
+
+    const dev: PairedDevice = { deviceId: info.deviceId, model: info.model, firmware: info.firmware, protocolVersion: info.protocolVersion, host: SETUP_AP_HOST, ownerUid: uid, pairedAt: Date.now() };
     check();
     await savePairedDevice(dev);
     saved = true;
+    diag('stick saved on this phone');
 
-    // The stick network stays bound: the authenticated transport keeps using it.
+    // The stick network stays bound: the live link keeps using it.
     await attachPairedDevice(dev);
 
-    // Cloud record in the background. The stick network often has no internet (and Firestore writes
-    // only resolve once the server acknowledges them), so pairing never waits for it.
-    const meta = { deviceId: dev.deviceId, model: dev.model, firmware: dev.firmware, protocolVersion: dev.protocolVersion, pairedAt: dev.pairedAt, authState: 'verified', revokedAt: null };
+    // Cloud record in the background. The stick network has no internet (and Firestore writes only
+    // resolve once the server acknowledges them), so setup never waits for it.
+    const meta = { deviceId: dev.deviceId, model: dev.model, firmware: dev.firmware, protocolVersion: dev.protocolVersion, pairedAt: dev.pairedAt, authState: 'none', revokedAt: null };
     void Promise.all([setDoc(doc(fb().db, paths.devices(uid), dev.deviceId), meta), setDoc(doc(fb().db, paths.deviceRegistry(dev.deviceId)), { ownerUid: uid, ...meta })]).catch((e) =>
       diag(`cloud save deferred: ${(e as Error).message}`),
     );
-    logEvent({ kind: 'device', severity: 'success', title: 'AI SmartStick paired', detail: `${dev.deviceId}, firmware ${dev.firmware}` });
+    logEvent({ kind: 'device', severity: 'success', title: 'AI SmartStick set up', detail: `${dev.deviceId}, firmware ${dev.firmware}` });
     set({ step: 'completed' });
   } catch (e) {
     if (e instanceof Abort) return;
     if (saved) {
-      // Phone and stick already share the key: this is paired. Keep the network and the link.
-      diag(`after pairing: ${(e as Error).message}`);
+      // The stick answered with real data and is saved: this is set up. Keep the network and the link.
+      diag(`after setup: ${(e as Error).message}`);
       set({ step: 'completed' });
       return;
     }
-    await AissNative.releaseSetupNetwork().catch(() => undefined);
-    diag(`error: ${(e as Error).message}`);
-    set({ step: 'error', error: (e as Error).message });
-  } finally {
-    await handle?.remove().catch(() => undefined);
+    const kind = e instanceof SetupError ? e.kind : 'other';
+    diag(`error (${kind}): ${(e as Error).message}`);
+    set({ step: 'error', errorKind: kind, error: (e as Error).message });
   }
 }
 
-async function setupJson<T>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<T> {
-  const r = await AissNative.setupRequest({ method, path, body: body ? JSON.stringify(body) : undefined, timeoutMs: 8000 });
-  if (r.status < 200 || r.status >= 300) {
-    let msg = '';
+/** Sends GET over whatever reaches the stick (binding, Wi-Fi joined by hand, or default route). */
+async function get(path: string, timeoutMs: number) {
+  return AissNative.setupRequest({ method: 'GET', path, timeoutMs });
+}
+
+function parseDevice(status: number, body: string): DeviceInfoPacket {
+  if (status === 401 || status === 403) throw new SetupError('old_firmware', OLD_FIRMWARE_SETUP_MESSAGE);
+  if (status !== 200) throw new SetupError('not_a_stick', `Something at ${SETUP_AP_HOST} answered HTTP ${status}, but it is not a SmartStick.`);
+  let info: DeviceInfoPacket;
+  try {
+    info = JSON.parse(body) as DeviceInfoPacket;
+  } catch {
+    throw new SetupError('not_a_stick', `Something at ${SETUP_AP_HOST} answered, but it is not a SmartStick. Make sure the phone is on ${STICK_AP_SSID}.`);
+  }
+  if (!info || typeof info.deviceId !== 'string' || !info.deviceId) throw new SetupError('not_a_stick', `Something at ${SETUP_AP_HOST} answered, but it is not a SmartStick.`);
+  return info;
+}
+
+/** Quick check whether the stick is already reachable. Network errors → null (not reachable). */
+async function probeOnce(): Promise<DeviceInfoPacket | null> {
+  try {
+    const r = await get(DEVICE_API.device, 2500);
+    const info = parseDevice(r.status, r.body);
+    return info;
+  } catch (e) {
+    if (e instanceof SetupError && e.kind === 'old_firmware') throw e;
+    diag(`not on the stick's Wi-Fi yet (${(e as Error).message.slice(0, 80)})`);
+    return null;
+  }
+}
+
+/** GET /device, retried for ~10 s: right after joining, the stick's access point needs a moment. */
+async function readDevice(check: () => void): Promise<DeviceInfoPacket> {
+  let last = '';
+  for (let i = 1; i <= 8; i++) {
+    check();
     try {
-      msg = (JSON.parse(r.body) as { message?: string }).message ?? '';
-    } catch {
-      /* not JSON */
+      const r = await get(DEVICE_API.device, 3000);
+      return parseDevice(r.status, r.body);
+    } catch (e) {
+      if (e instanceof SetupError && (e.kind === 'old_firmware' || e.kind === 'not_a_stick')) throw e;
+      last = (e as Error).message;
+      diag(`stick not answering yet (try ${i}/8): ${last.slice(0, 100)}`);
     }
-    throw new Error(`Stick answered HTTP ${r.status}${msg ? `: ${msg}` : ''}`);
+    await wait(1200);
   }
-  return JSON.parse(r.body) as T;
+  throw new SetupError('no_answer', `The phone joined ${STICK_AP_SSID} but the stick did not answer. Switch the stick off and on, wait 10 seconds, then tap Try again.`);
 }
 
-async function verifyProof(deviceId: string, keyB64: string) {
-  const challenge = toHex(randomBytes(16));
-  const info = await setupJson<DeviceInfoPacket>('GET', `${DEVICE_API.device}?challenge=${challenge}`);
-  const expect = await hmacHex(keyB64, challenge + deviceId);
-  if (info.deviceId !== deviceId || !info.proof || !safeEqual(info.proof, expect)) throw new Error('The stick could not prove it received the key. Reset it (hold its button and switch it on, and keep holding about 10 seconds until it buzzes), then set up again.');
+/** One real telemetry packet proves data flows (and catches the old firmware's 401). */
+async function readTelemetry(check: () => void): Promise<TelemetryPacket> {
+  let last = '';
+  for (let i = 1; i <= 4; i++) {
+    check();
+    try {
+      const r = await get(DEVICE_API.telemetry, 3000);
+      if (r.status === 401 || r.status === 403) throw new SetupError('old_firmware', OLD_FIRMWARE_SETUP_MESSAGE);
+      if (r.status === 200) {
+        const p = JSON.parse(r.body) as TelemetryPacket;
+        if (p && typeof p.seq === 'number') return p;
+        last = 'malformed telemetry';
+      } else last = `HTTP ${r.status}`;
+    } catch (e) {
+      if (e instanceof SetupError) throw e;
+      last = (e as Error).message;
+    }
+    diag(`no telemetry yet (try ${i}/4): ${last.slice(0, 100)}`);
+    await wait(1000);
+  }
+  throw new SetupError('no_answer', `The stick answered but sent no sensor data (${last}). Switch it off and on, then tap Try again.`);
+}
+
+/** Plain-language reason why Android did not join the stick's Wi-Fi (with an optional scan hint). */
+async function joinError(reason?: string): Promise<SetupError> {
+  diag(`Android did not join ${STICK_AP_SSID} (${reason ?? 'no reason'})`);
+  switch (reason) {
+    case 'WIFI_DISABLED':
+      return new SetupError('wifi_off', 'Wi-Fi is off. Turn on Wi-Fi, then tap Try again.');
+    case 'UNSUPPORTED':
+      return new SetupError('unsupported', `On this phone, join the stick by hand: open Wi-Fi settings, choose ${STICK_AP_SSID} (password ${STICK_AP_PASSPHRASE}), come back and tap Try again.`);
+    case 'PERMISSION_DENIED':
+      return new SetupError('permission', 'Android did not let the app join the stick’s Wi-Fi. Allow Location and Nearby devices for AI SmartStick in App settings, then tap Try again.');
+  }
+  // UNAVAILABLE / CANCELLED: not found, declined, or timed out. A scan (never required) tells which.
+  let seen: boolean | null = null;
+  try {
+    const { networks } = await withTimeout(AissNative.scanForSetupNetworks({ prefix: STICK_AP_SSID }), 8000, 'Wi-Fi scan');
+    const hit = networks.find((n) => n.ssid === STICK_AP_SSID);
+    seen = !!hit;
+    diag(hit ? `scan: ${STICK_AP_SSID} is visible (${hit.rssi} dBm)` : `scan: ${STICK_AP_SSID} is not visible`);
+  } catch (e) {
+    diag(`scan unavailable: ${(e as Error).message}`);
+  }
+  if (seen)
+    return new SetupError('not_found', `The phone can see ${STICK_AP_SSID} but did not join it. Tap Try again and choose ${STICK_AP_SSID} → Connect in the Android box.`);
+  return new SetupError('not_found', `${STICK_AP_SSID} was not found. Switch the stick on, wait 10 seconds, keep it next to the phone, then tap Try again.`);
 }
 
 async function demoProvision(me: number) {
-  const steps: ProvStep[] = ['connecting_to_stick', 'stick_connected', 'reading_device_info', 'configuring_network', 'verifying_stick', 'authenticating'];
+  const steps: ProvStep[] = ['joining', 'stick_found', 'reading_device_info', 'waiting_for_data'];
   for (const s of steps) {
     if (me !== run) return;
     set({ step: s });
@@ -278,5 +334,5 @@ async function demoProvision(me: number) {
   }
   if (me !== run) return;
   getMock()?.setLinked(true);
-  set({ step: 'completed', deviceId: 'DEMO-4F2A', firmware: '1.0.0-demo' });
+  set({ step: 'completed', deviceId: 'DEMO-4F2A', firmware: '1.2.0-demo' });
 }

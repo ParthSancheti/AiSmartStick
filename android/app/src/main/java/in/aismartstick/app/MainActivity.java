@@ -10,6 +10,8 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         registerPlugin(AissNativePlugin.class);
+        // Phone GPS via android.location.LocationManager (no Google Play Services needed).
+        registerPlugin(AissLocationPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

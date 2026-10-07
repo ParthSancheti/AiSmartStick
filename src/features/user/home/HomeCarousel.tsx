@@ -1,62 +1,39 @@
-import { Children, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Children, useEffect, useRef, useState, type ReactNode } from 'react';
 import { cx } from '../../../components/glass';
 
 /**
- * Home hero carousel. Native scroll-snap (smooth, momentum, and every card stays in the DOM for
- * TalkBack), with per-frame depth written straight to the elements — no React render per frame:
- *   one full-size card at a time (neighbours sit just off-screen and slide in with the swipe)
- *   the outgoing / incoming card shrinks and dims slightly while it moves
- *   [data-parallax] layers inside a card trail the swipe for depth.
+ * Home hero carousel: one full-width card at a time, dots below.
+ *
+ * Native horizontal scroll-snap does all the motion (momentum, snapping, 60 fps on the compositor);
+ * there is NO scroll-linked JavaScript: the active slide is tracked with an IntersectionObserver
+ * (fires once per slide change, not per frame). Every card stays in the DOM for TalkBack.
+ *
+ * Geometry: the track spans the full screen width (it cancels the page's 20 px gutter with -mx-5)
+ * and pads itself by the same 20 px, so every card is exactly screen - 40 px wide, centred, and
+ * the next card starts 20 px off-screen. Cards are `min-w-0` boxes with `w-full`: nothing inside
+ * can widen them beyond the screen.
  */
 export function HomeCarousel({ children, label = 'Highlights' }: { children: ReactNode; label?: string }) {
   const track = useRef<HTMLDivElement>(null);
   const items = Children.toArray(children);
   const [active, setActive] = useState(0);
-  const raf = useRef(0);
-
-  const paint = useCallback(() => {
-    const el = track.current;
-    if (!el) return;
-    const mid = el.scrollLeft + el.clientWidth / 2;
-    let best = 0;
-    let bestD = Infinity;
-    Array.from(el.children).forEach((child, i) => {
-      const c = child as HTMLElement;
-      const center = c.offsetLeft + c.offsetWidth / 2;
-      const d = Math.max(-1, Math.min(1, (center - mid) / c.offsetWidth));
-      const a = Math.abs(d);
-      c.style.transform = `scale(${1 - 0.06 * a}) translateZ(0)`;
-      c.style.opacity = String(1 - 0.45 * a);
-      c.style.setProperty('--lift', String(1 - a));
-      c.querySelectorAll<HTMLElement>('[data-parallax]').forEach((p) => {
-        const k = Number(p.dataset.parallax) || 28;
-        p.style.transform = `translateX(${d * -k}px)`;
-      });
-      if (a < bestD) {
-        bestD = a;
-        best = i;
-      }
-    });
-    setActive((prev) => (prev === best ? prev : best));
-  }, []);
 
   useEffect(() => {
     const el = track.current;
-    if (!el) return;
-    const onScroll = () => {
-      cancelAnimationFrame(raf.current);
-      raf.current = requestAnimationFrame(paint);
-    };
-    paint();
-    el.addEventListener('scroll', onScroll, { passive: true });
-    const ro = new ResizeObserver(paint);
-    ro.observe(el);
-    return () => {
-      el.removeEventListener('scroll', onScroll);
-      ro.disconnect();
-      cancelAnimationFrame(raf.current);
-    };
-  }, [paint, items.length]);
+    if (!el || typeof IntersectionObserver === 'undefined') return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (!e.isIntersecting) continue;
+          const i = Number((e.target as HTMLElement).dataset.index);
+          if (Number.isFinite(i)) setActive(i);
+        }
+      },
+      { root: el, threshold: 0.6 },
+    );
+    Array.from(el.children).forEach((c) => io.observe(c));
+    return () => io.disconnect();
+  }, [items.length]);
 
   const goTo = (i: number) => {
     const el = track.current;
@@ -66,12 +43,13 @@ export function HomeCarousel({ children, label = 'Highlights' }: { children: Rea
   };
 
   return (
-    <section className="-mx-5 mb-6 shrink-0" aria-roledescription="carousel" aria-label={label}>
-      <div ref={track} className="home-carousel no-scrollbar flex snap-x snap-mandatory gap-5 overflow-x-auto overscroll-x-contain px-5 pb-3 pt-1">
+    <section className="-mx-5 mb-5 shrink-0" aria-roledescription="carousel" aria-label={label}>
+      <div ref={track} className="home-carousel no-scrollbar flex snap-x snap-mandatory gap-5 overflow-x-auto overflow-y-hidden overscroll-x-contain scroll-px-5 px-5 pb-6 pt-1">
         {items.map((child, i) => (
           <div
             key={i}
-            className="home-card relative w-full shrink-0 snap-center snap-always will-change-transform"
+            data-index={i}
+            className="home-card relative flex w-full min-w-0 shrink-0 snap-center snap-always"
             aria-roledescription="slide"
             aria-label={`${i + 1} of ${items.length}`}
             aria-current={i === active ? 'true' : undefined}
@@ -80,10 +58,10 @@ export function HomeCarousel({ children, label = 'Highlights' }: { children: Rea
           </div>
         ))}
       </div>
-      <div className="mt-1 flex justify-center gap-2">
+      <div className="-mt-2 flex justify-center gap-1">
         {items.map((_, i) => (
-          <button key={i} type="button" aria-label={`Show card ${i + 1}`} onClick={() => goTo(i)} className="grid h-6 place-items-center px-0.5">
-            <span className={cx('block h-1.5 rounded-full transition-all duration-300', i === active ? 'w-6 bg-teal' : 'w-1.5 bg-ink/25')} />
+          <button key={i} type="button" aria-label={`Show card ${i + 1}`} aria-pressed={i === active} onClick={() => goTo(i)} className="grid h-8 min-w-8 place-items-center px-1">
+            <span className={cx('block h-2 rounded-full transition-[width,background-color] duration-200', i === active ? 'w-6 bg-teal' : 'w-2 bg-ink/25')} />
           </button>
         ))}
       </div>

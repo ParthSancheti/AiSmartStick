@@ -42,6 +42,9 @@ static esp_err_t send(httpd_req_t *r, int status, JsonDocument &d) {
   httpd_resp_set_status(r, status == 200 ? "200 OK" : status == 401 ? "401 Unauthorized" : status == 400 ? "400 Bad Request" : status == 409 ? "409 Conflict" : status == 413 ? "413 Payload Too Large" : "503 Service Unavailable");
   httpd_resp_set_type(r, "application/json");
   httpd_resp_set_hdr(r, "Cache-Control", "no-store");
+  // Lets a browser page (dev server on a laptop joined to the stick) read the API too. The Android app
+  // uses native HTTP and does not need it.
+  httpd_resp_set_hdr(r, "Access-Control-Allow-Origin", "*");
   return httpd_resp_send(r, buf, n);
 }
 static esp_err_t error(httpd_req_t *r, int status, const char *code, const char *msg = nullptr) {
@@ -85,7 +88,13 @@ static void fillHealth(JsonObject h, const ecu::Sensors &s) {
   for (int i = 0; i < 9; i++) if (bits & (1 << i)) e.add(names[i]);
 }
 
-// GET /api/v1/device[?challenge=]  (identity + key proof; no secrets)
+static void putRssi(JsonDocument &d) {
+  int v = net::rssi();
+  if (v == 0) d["rssi"] = nullptr;   // unknown: never a made-up value
+  else d["rssi"] = v;
+}
+
+// GET /api/v1/device[?challenge=]  (identity; no secrets). "auth": false = v1 simple link, no keys needed.
 static esp_err_t hDevice(httpd_req_t *r) {
   char q[96] = "", challenge[40] = "";
   httpd_req_get_url_query_str(r, q, sizeof q);
@@ -96,8 +105,9 @@ static esp_err_t hDevice(httpd_req_t *r) {
   d["firmware"] = FW_VERSION;
   d["protocolVersion"] = PROTOCOL_VERSION;
   d["paired"] = identity::provisioned();
+  d["auth"] = REQUIRE_AUTH != 0;
   d["uptimeMs"] = millis();
-  if (identity::provisioned() && challenge[0]) {
+  if (REQUIRE_AUTH != 0 && identity::provisioned() && challenge[0]) {
     char msg[64], proof[65];
     int l = snprintf(msg, sizeof msg, "%s%s", challenge, identity::deviceId());
     identity::hmacHex(msg, l, proof);
@@ -153,7 +163,7 @@ static esp_err_t hTelemetry(httpd_req_t *r) {
     num(e, "value", sr[k].value, 2);
     num(e, "confidence", sr[k].confidence, 2);
   }
-  d["rssi"] = net::rssi();
+  putRssi(d);
   fillHealth(d["health"].to<JsonObject>(), s);
   return send(r, 200, d);
 }
@@ -165,7 +175,7 @@ static esp_err_t hStatus(httpd_req_t *r) {
   d["deviceId"] = identity::deviceId();
   d["protocolVersion"] = PROTOCOL_VERSION;
   d["uptimeMs"] = millis();
-  d["rssi"] = net::rssi();
+  putRssi(d);
   fillHealth(d["health"].to<JsonObject>(), ecu::snapshot());
   return send(r, 200, d);
 }
@@ -362,13 +372,29 @@ static esp_err_t hOta(httpd_req_t *r) {
   return ESP_OK;
 }
 
+// GET /  — a quick "is the stick alive?" check from any browser joined to SmartStick_AI.
+static esp_err_t hRoot(httpd_req_t *r) {
+  static char page[320];
+  int n = snprintf(page, sizeof page,
+                   "AI SmartStick %s\nfirmware %s, protocol v%d, auth %s, uptime %lu s\n"
+                   "Telemetry: http://192.168.4.1/api/v1/telemetry\n",
+                   identity::deviceId(), FW_VERSION, PROTOCOL_VERSION, REQUIRE_AUTH ? "on" : "off", (unsigned long)(millis() / 1000));
+  if (n < 0) n = 0;
+  if (n >= (int)sizeof page) n = sizeof page - 1;
+  httpd_resp_set_type(r, "text/plain");
+  httpd_resp_set_hdr(r, "Cache-Control", "no-store");
+  return httpd_resp_send(r, page, n);
+}
+
 void start() {
   if (server) return;
   httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
   cfg.max_open_sockets = 5;
   cfg.lru_purge_enable = true;
   cfg.stack_size = 10240;
-  cfg.max_uri_handlers = 10;
+  cfg.max_uri_handlers = 12;
+  cfg.recv_wait_timeout = 5;   // seconds; a phone that walks out of range must not hold a socket for long
+  cfg.send_wait_timeout = 5;
   cfg.core_id = 0;          // control loop runs on core 1 (Arduino); HTTP/camera on core 0 with Wi-Fi
   cfg.task_priority = tskIDLE_PRIORITY + 3;
   if (httpd_start(&server, &cfg) != ESP_OK) return;
@@ -382,6 +408,7 @@ void start() {
     {"/api/v1/provision", HTTP_POST, hProvision, nullptr},
     {"/api/v1/ota/status", HTTP_GET, hOtaStatus, nullptr},
     {"/api/v1/ota", HTTP_POST, hOta, nullptr},
+    {"/", HTTP_GET, hRoot, nullptr},
   };
   for (auto &u : routes) httpd_register_uri_handler(server, &u);
 }

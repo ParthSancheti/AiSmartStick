@@ -104,6 +104,25 @@ const demoContacts: Contact[] = [
   { id: 'papa', name: 'Papa', relation: 'Father', phone: '+91 00000 00002', aliases: ['papa', 'dad', 'daddy', 'father', 'पापा'] },
 ];
 
+/**
+ * On the stick user's phone: the user themself (one source of truth for name, phone, places —
+ * Home greeting, avatar, assistant context and SOS all read it). On a guardian phone: the person
+ * they look after.
+ */
+export interface Person {
+  name: string;
+  /** Set only when the person typed their name (Settings): from then on the Google name never replaces it. */
+  nameEditedAt?: number;
+  phone: string;
+  email: string;
+  homeAddress: string;
+  workAddress: string;
+  savedPlaces: SavedPlace[];
+  medicalId: string;
+}
+
+export const emptyPerson = (): Person => ({ name: '', phone: '', email: '', homeAddress: '', workAddress: '', medicalId: '', savedPlaces: [] });
+
 interface SessionData {
   /** For the combined dev build only; shipped builds are single-role. */
   entryRole: Role | null;
@@ -115,8 +134,14 @@ interface SessionData {
   userOnboarded: boolean;
   /** The other person in the relationship, as this phone knows them. Empty until paired (real mode). */
   guardian: { name: string; email: string; heardAs: string; phone: string | null };
-  person: { name: string; phone: string; email: string; homeAddress: string; workAddress: string;
-  savedPlaces: SavedPlace[]; medicalId: string };
+  person: Person;
+  /**
+   * Last local change of the synced profile fields (phone, addresses, places) — stamped by
+   * core/sync/profileSync.ts, compared with the cloud's profileUpdatedAt (last writer wins).
+   */
+  profileEditedAt?: number;
+  /** Last local change of the cloud-synced settings (core/sync/settingsSync.ts, last writer wins). */
+  settingsEditedAt?: number;
   pairingCode: string | null;
   linked: boolean;
   contacts: Contact[];
@@ -148,7 +173,7 @@ const seeded: SessionData = demo
       guardianOnboarded: false,
       userOnboarded: false,
       guardian: { name: '', email: '', heardAs: '', phone: null },
-      person: { name: '', phone: '', email: '', homeAddress: '', workAddress: '', medicalId: '', savedPlaces: [] },
+      person: emptyPerson(),
       pairingCode: null,
       linked: false,
       contacts: [],
@@ -177,6 +202,8 @@ export const useSession = create<SessionState>()(
         settings: s.settings,
         contacts: s.contacts,
         person: s.person,
+        profileEditedAt: s.profileEditedAt,
+        settingsEditedAt: s.settingsEditedAt,
         guardian: s.guardian,
         userOnboarded: s.userOnboarded,
         guardianOnboarded: s.guardianOnboarded,

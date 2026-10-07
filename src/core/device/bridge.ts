@@ -79,7 +79,7 @@ function onLink(s: LinkState, detail?: string) {
       earcon('connect');
       haptics.play('connect');
     }
-    logEvent({ kind: 'device', severity: 'success', title: 'Stick connected', detail: 'Verified on the phone hotspot' });
+    logEvent({ kind: 'device', severity: 'success', title: 'Stick connected', detail: 'Live data over the stick’s Wi-Fi' });
   } else if ((s === 'disconnected' || s === 'reconnecting') && wasUp) {
     announce(P.linkDown, { high: true });
     if (fx) {
@@ -91,8 +91,9 @@ function onLink(s: LinkState, detail?: string) {
     announce({ en: 'Your stick needs a firmware update before it can connect.', hi: 'स्टिक को जोड़ने से पहले उसका फ़र्मवेयर अपडेट करना होगा।' }, { high: true });
     logEvent({ kind: 'device', severity: 'critical', title: 'Stick firmware incompatible', detail: detail ?? 'Protocol version mismatch' });
   } else if (s === 'auth_failed') {
-    announce(P.authFailed, { high: true });
-    logEvent({ kind: 'device', severity: 'critical', title: 'Stick could not be verified', detail: detail ?? 'Pair the stick again' });
+    // v1 simple link: a 401 only means the stick still runs the old secure firmware (1.1).
+    announce({ en: 'Your stick needs new firmware before it can connect.', hi: 'स्टिक को जोड़ने से पहले उसमें नया फ़र्मवेयर डालना होगा।' }, { high: true });
+    logEvent({ kind: 'device', severity: 'critical', title: 'Stick needs firmware 1.2', detail: detail ?? 'Flash the new firmware, then set the stick up again' });
   }
 }
 

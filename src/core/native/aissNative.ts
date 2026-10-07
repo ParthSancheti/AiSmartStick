@@ -18,8 +18,15 @@ export type AudioRoute = 'speaker' | 'wired' | 'bluetooth' | 'unknown';
 export interface AissNativePlugin {
   /** Wi-Fi scan for the stick's setup AP (needs NEARBY_WIFI_DEVICES / location permission). */
   scanForSetupNetworks(opts: { prefix: string }): Promise<{ networks: SetupNetwork[] }>;
-  /** Android 10+: WifiNetworkSpecifier request; shows one system "Connect to device?" sheet. */
-  connectToSetupNetwork(opts: { ssid: string; passphrase: string; timeoutMs?: number }): Promise<{ connected: boolean; reason?: string }>;
+  /**
+   * Makes the stick reachable: keeps a live binding, adopts a Wi-Fi network already on the stick's
+   * subnet (joined by hand), or (Android 10+) shows one system "Connect to device" sheet.
+   * reason: WIFI_DISABLED | UNAVAILABLE (not found / declined / timed out) | CANCELLED | UNSUPPORTED (Android 9-) | PERMISSION_DENIED
+   * | NOT_IN_RANGE / RANGE_UNKNOWN (only with onlyIfVisible: the last scan did not see the stick / Android would not say).
+   */
+  connectToSetupNetwork(opts: { ssid: string; passphrase: string; timeoutMs?: number; openWifiPanelIfOff?: boolean; onlyIfVisible?: boolean }): Promise<{ connected: boolean; reason?: string; via?: 'bound' | 'existing' | 'request' }>;
+  /** Wi-Fi state hint for setup. ssid needs location permission + location on; stickNetwork does not. */
+  getCurrentWifiSsid(): Promise<{ wifiEnabled: boolean; ssid?: string | null; stickNetwork: boolean; bound: boolean; locationEnabled?: boolean }>;
   /** HTTP over the setup network specifically (process stays on mobile data for everything else). */
   setupRequest(opts: { method: 'GET' | 'POST'; path: string; body?: string; bodyBase64?: string; headers?: Record<string, string>; timeoutMs?: number }): Promise<{ status: number; body: string }>;
   /** GET returning the raw response bytes base64-encoded (camera JPEG). Same network binding and headers as setupRequest. */
@@ -35,7 +42,7 @@ export interface AissNativePlugin {
   openLocationSettings(): Promise<void>;
   openAppSettings(): Promise<void>;
   openBluetoothSettings(): Promise<void>;
-  /** Android Keystore-backed storage (EncryptedSharedPreferences) for the device key. */
+  /** Android Keystore-backed storage (EncryptedSharedPreferences). Only read once to migrate old pairing records. */
   secureSet(opts: { key: string; value: string }): Promise<void>;
   secureGet(opts: { key: string }): Promise<{ value: string | null }>;
   secureRemove(opts: { key: string }): Promise<void>;

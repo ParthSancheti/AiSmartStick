@@ -1,13 +1,14 @@
 import { AnimatePresence, motion } from 'motion/react';
 import { useBackHandler } from '../../core/backStack';
 import { toggleThemeWithTransition } from '../../util/theme';
-import { Accessibility, AlertTriangle, Battery, ChevronLeft, ChevronRight, Contrast, Heart, Home, Mic, Minus, Moon, Plus, Shield, Smartphone, Sun, User, Vibrate, Volume2, Wifi, Search, Download, Unplug, ShieldAlert, ScanEye, MessageSquare, Sparkles, Radar, MapPin, Phone } from 'lucide-react';
+import { Accessibility, AlertTriangle, Battery, Check, ChevronLeft, ChevronRight, Contrast, Heart, Home, Mic, Minus, Moon, Plus, Shield, Smartphone, Sun, User, Vibrate, Volume2, Wifi, Search, Download, Unplug, ShieldAlert, ScanEye, MessageSquare, Sparkles, Radar, MapPin, Phone, Pencil } from 'lucide-react';
 import { EventRow } from '../guardian/parts';
 import { useUI } from '../../core/store/ui';
 import { useRuntime, switchMode } from '../../core/runtime/mode';
 import { ENV } from '../../core/runtime/env';
 import { BRAND } from '../../core/brand/brand';
-import { updateProfileFields, deleteAccount } from '../../core/auth/authService';
+import { deleteAccount } from '../../core/auth/authService';
+import { useAuth } from '../../core/auth/authStore';
 import { getTransport, getMock } from '../../core/device/bridge';
 import { unpairStick, connectLegacyTestFirmware } from '../../core/device/realDevice';
 import { verifyFirmware } from '../../core/device/otaVerify';
@@ -22,471 +23,522 @@ import { say } from '../../core/audio/audioManager';
 import { AissNative } from '../../core/native/aissNative';
 import { SENSITIVITY } from '../../core/device/deviceConfig';
 import { emptyMedical, loadMedical, saveMedical, type MedicalProfile } from '../../core/profile/medical';
+import { cleanName, setProfileName, useProfileName } from '../../core/profile/profile';
 import { friendlyError } from '../../core/errors';
 import { useBackground } from '../../core/native/background';
 import { useSession } from '../../core/store/session';
 import { useDevice, isLinked } from '../../core/store/device';
 import { StickVisual } from '../../components/StickVisual';
+import { AccountAvatar, ProfilePhotoEditor } from '../../components/Avatar';
+import { AppScreen, ScreenHeader } from '../../components/Layout';
 import { recognitionSupported } from '../../core/voice/recognition';
 import { speak } from '../../core/feedback/speech';
 import { GlassButton, Segmented, Toggle } from '../../components/glass';
 import { clamp } from '../../core/util';
 import { Atmosphere } from '../../components/Atmosphere';
-import { useState, useEffect, useRef } from 'react';
+import { HomeLocationStep } from './onboarding/HomeLocationStep';
+import { useState, useEffect, useRef, type ReactNode } from 'react';
+import type { Contact } from '../../core/types';
 
-/* ──────── Shared row component ──────── */
-function BigRow({ icon, label, detail, on, onChange }: { icon: React.ReactNode; label: string; detail?: string; on: boolean; onChange: (v: boolean) => void }) {
+/* ──────── Page frame: fixed header, only the content scrolls ──────── */
+
+const EASE: [number, number, number, number] = [0.3, 0, 0.2, 1];
+/** Short tween instead of a spring: no overshoot work on slow Android WebViews. */
+const SLIDE = { duration: 0.24, ease: EASE };
+
+/**
+ * One settings page: opaque background (a still copy of the ambient background, so two animated
+ * backgrounds are never composited), the shared ScreenHeader pinned at the top (it also binds the
+ * Android back button), and a scroll area under it. `scroll={false}` for full-height content (map).
+ */
+function Page({ title, onBack, children, scroll = true }: { title: ReactNode; onBack: () => void; children: ReactNode; scroll?: boolean }) {
   return (
-    <div className="flex min-h-[76px] items-center gap-4 px-4 py-3">
+    <AppScreen className="bg-bg">
+      <Atmosphere variant="user" still />
+      <header className="relative z-20 shrink-0 px-4 pb-2" style={{ paddingTop: 'calc(var(--island, var(--sat)) + 10px)' }}>
+        <ScreenHeader title={<span className="text-[19px] font-extrabold tracking-[-0.01em]">{title}</span>} onBack={onBack} />
+      </header>
+      {scroll ? (
+        <div className="relative z-10 min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain no-scrollbar" style={{ paddingBottom: 'calc(var(--sab) + 28px)' }}>
+          <div className="mx-auto w-full min-w-0 max-w-[560px] px-4 pt-2">{children}</div>
+        </div>
+      ) : (
+        <div className="relative z-10 min-h-0 flex-1">{children}</div>
+      )}
+    </AppScreen>
+  );
+}
+
+/** A page that slides in from the right over Settings. Its content mounts only while open. */
+function SubPage({ open, onClose, title, z = 70, scroll, children }: { open: boolean; onClose: () => void; title: ReactNode; z?: number; scroll?: boolean; children: ReactNode }) {
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div className="absolute inset-0" style={{ zIndex: z }} initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={SLIDE}>
+          <Page title={title} onBack={onClose} scroll={scroll}>
+            {children}
+          </Page>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+function SectionTitle({ children }: { children: ReactNode }) {
+  return <h2 className="mb-2 mt-1 px-1 text-[13px] font-bold uppercase tracking-wider text-ink-3">{children}</h2>;
+}
+
+/* ──────── Shared row components ──────── */
+function BigRow({ icon, label, detail, on, onChange }: { icon: ReactNode; label: string; detail?: string; on: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <div className="flex min-h-[72px] items-center gap-3 px-4 py-3">
       <span className="grid h-11 w-11 shrink-0 place-items-center rounded-[14px] bg-teal-soft text-teal-ink">{icon}</span>
       <div className="min-w-0 flex-1">
-        <p className="text-[19px] font-semibold leading-tight text-ink">{label}</p>
-        {detail && <p className="mt-0.5 text-[15px] leading-snug text-ink-3">{detail}</p>}
+        <p className="break-words text-[17px] font-semibold leading-tight text-ink">{label}</p>
+        {detail && <p className="mt-0.5 break-words text-[14px] leading-snug text-ink-3">{detail}</p>}
       </div>
-      <Toggle label={label} on={on} onChange={onChange} />
+      <span className="shrink-0">
+        <Toggle label={label} on={on} onChange={onChange} />
+      </span>
     </div>
   );
 }
 
-/* ──────── Nav row for sub-pages ──────── */
-function NavRow({ icon, iconBg, label, detail, onClick }: { icon: React.ReactNode; iconBg: string; label: string; detail?: string; onClick: () => void }) {
+function NavRow({ icon, iconBg, label, detail, onClick }: { icon: ReactNode; iconBg: string; label: string; detail?: string; onClick: () => void }) {
   return (
-    <button onClick={onClick} className="flex min-h-[72px] items-center gap-4 px-4 py-3 w-full text-left interactive">
+    <button type="button" onClick={onClick} className="interactive flex min-h-[68px] w-full items-center gap-3 px-4 py-3 text-left">
       <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-[14px] ${iconBg}`}>{icon}</span>
       <div className="min-w-0 flex-1">
-        <p className="text-[17px] font-semibold leading-tight text-ink">{label}</p>
-        {detail && <p className="mt-0.5 text-[14px] leading-snug text-ink-3">{detail}</p>}
+        <p className="truncate text-[16.5px] font-semibold leading-tight text-ink">{label}</p>
+        {detail && <p className="mt-0.5 line-clamp-2 text-[13.5px] leading-snug text-ink-3">{detail}</p>}
       </div>
-      <ChevronRight size={20} className="text-ink-3 shrink-0" />
+      <ChevronRight size={20} className="shrink-0 text-ink-3" />
     </button>
   );
 }
 
-/* ──────── Profile Editing Sub-Page ──────── */
-function ProfileSubpage({ open, onClose }: { open: boolean; onClose: () => void }) {
+function Field({ label, icon, children }: { label: string; icon?: ReactNode; children: ReactNode }) {
+  return (
+    <label className="glass block min-w-0 rounded-[20px] px-4 py-3">
+      <span className="mb-1 flex items-center gap-2 text-[12.5px] font-bold uppercase tracking-wider text-ink-3">
+        {icon}
+        {label}
+      </span>
+      {children}
+    </label>
+  );
+}
+
+const inputCls = 'w-full min-w-0 bg-transparent text-[17px] font-semibold text-ink outline-none placeholder:font-medium placeholder:text-ink-3';
+
+/* ──────── Profile: photo, name, phone, home, medical ──────── */
+function ProfileForm({ onDone, onEditHome }: { onDone: () => void; onEditHome: () => void }) {
   const person = useSession((s) => s.person);
-  const setSession = useSession((s) => s.set);
-  const [form, setForm] = useState(person);
+  const email = useAuth((s) => s.user?.email ?? '');
+  const shownName = useProfileName();
+  const home = person.savedPlaces.find((p) => p.id === 'home') ?? null;
+  // Initialised once when the page opens: a sync arriving while typing never overwrites the typing.
+  const [name, setName] = useState(shownName);
+  const [phone, setPhone] = useState(person.phone);
+  const [work, setWork] = useState(person.workAddress);
+  const [med, setMed] = useState<MedicalProfile>({ ...emptyMedical(), notes: person.medicalId });
+  const medTouched = useRef(false);
   const [saved, setSaved] = useState(false);
 
-  // Sync when person changes remotely
-  useEffect(() => { setForm(person) }, [person]);
-
-  const [med, setMed] = useState<MedicalProfile>(emptyMedical());
   useEffect(() => {
-    if (open) void loadMedical().then((m) => m && setMed(m)).catch(() => undefined);
-  }, [open]);
-  const handleSave = () => {
-    setSession({ person: form });
-    // Medical details go only to users/{uid}/medical/profile (readable by safety contacts for emergencies).
-    void saveMedical({ bloodGroup: med.bloodGroup, allergies: med.allergies, medications: med.medications, conditions: med.conditions, notes: form.medicalId || med.notes }).catch(() => undefined);
-    // Phone number and name are what safety contacts see and calls (real mode → Firebase profile).
-    void updateProfileFields({ phone: form.phone.trim() || null, displayName: form.name.trim() || undefined, homeAddress: form.homeAddress.trim() || null }).catch(() => undefined);
+    let alive = true;
+    void loadMedical()
+      .then((m) => {
+        if (alive && m && !medTouched.current) setMed(m);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, []);
+  const editMed = (p: Partial<MedicalProfile>) => {
+    medTouched.current = true;
+    setMed((m) => ({ ...m, ...p }));
+  };
+
+  const save = () => {
+    // Everything applies on this phone at once (Home greeting, avatar, assistant, SOS);
+    // core/sync/profileSync.ts uploads it — nothing here waits for the network.
+    if (cleanName(name) && cleanName(name) !== shownName) setProfileName(name);
+    const s = useSession.getState();
+    useSession.setState({ person: { ...s.person, phone: phone.trim(), workAddress: work.trim(), medicalId: med.notes.trim() } });
+    if (medTouched.current) void saveMedical({ bloodGroup: med.bloodGroup, allergies: med.allergies, medications: med.medications, conditions: med.conditions, notes: med.notes }).catch(() => undefined);
     setSaved(true);
-    navigator.vibrate?.([50, 50, 50]);
-    setTimeout(() => {
-      setSaved(false);
-      onClose();
-    }, 800);
+    haptics.play('success');
+    setTimeout(onDone, 650);
   };
 
   return (
-    <AnimatePresence>
-      {open && (
-        <motion.div
-          initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
-          transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-          className="absolute inset-0 z-[70] bg-bg overflow-y-auto no-scrollbar"
-        >
-          <Atmosphere variant="user" />
-          <div className="px-4 pb-8" style={{ paddingTop: 'calc(var(--island, var(--sat)) + 14px)' }}>
-            <div className="mb-6 mt-8 flex items-center gap-4">
-              <button onClick={onClose} className="h-12 w-12 glass interactive rounded-full flex items-center justify-center text-ink shrink-0">
-                <ChevronLeft size={24} />
-              </button>
-              <h1 className="text-[24px] font-bold text-ink">Edit Profile</h1>
-            </div>
-
-            {/* Avatar */}
-            <div className="flex justify-center mb-8">
-              <div className="relative">
-                <div className="w-28 h-28 rounded-full bg-gradient-to-br from-teal to-mint flex items-center justify-center text-white text-[42px] font-bold shadow-xl">
-                  {person.name.charAt(0)}
-                </div>
-                <div className="absolute -bottom-1 -right-1 bg-teal text-white w-9 h-9 rounded-full flex items-center justify-center shadow-lg border-2 border-bg">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
-                </div>
-              </div>
-            </div>
-
-            {/* Input Fields */}
-            <div className="flex flex-col gap-4">
-              <div className="glass rounded-[20px] p-4 border border-glass-border">
-                <label className="text-[13px] font-bold text-ink-3 uppercase tracking-wider block mb-2">Full Name</label>
-                <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full bg-transparent text-[18px] font-semibold text-ink outline-none placeholder:text-ink-3" placeholder="Your Name" />
-              </div>
-
-              <div className="glass rounded-[20px] p-4 border border-glass-border">
-                <label className="text-[13px] font-bold text-ink-3 uppercase tracking-wider block mb-2">Phone Number</label>
-                <input type="tel" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="w-full bg-transparent text-[18px] font-semibold text-ink outline-none placeholder:text-ink-3" placeholder="+91 XXXXX XXXXX" />
-              </div>
-
-              <div className="glass rounded-[20px] p-4 border border-glass-border">
-                <label className="text-[13px] font-bold text-ink-3 uppercase tracking-wider block mb-2">Email Address</label>
-                <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="w-full bg-transparent text-[18px] font-semibold text-ink outline-none placeholder:text-ink-3" placeholder="For account recovery" />
-              </div>
-
-              <div className="glass rounded-[20px] p-4 border border-glass-border">
-                <label className="text-[13px] font-bold text-ink-3 uppercase tracking-wider block mb-2 flex items-center gap-2"><Home size={14} /> Home Address</label>
-                <input type="text" value={form.homeAddress} onChange={(e) => setForm({ ...form, homeAddress: e.target.value })} className="w-full bg-transparent text-[18px] font-semibold text-ink outline-none placeholder:text-ink-3" placeholder="For 'Take me home' command" />
-              </div>
-
-              <div className="glass rounded-[20px] p-4 border border-glass-border">
-                <label className="text-[13px] font-bold text-ink-3 uppercase tracking-wider block mb-2">Work / College Address</label>
-                <input type="text" value={form.workAddress} onChange={(e) => setForm({ ...form, workAddress: e.target.value })} className="w-full bg-transparent text-[18px] font-semibold text-ink outline-none placeholder:text-ink-3" placeholder="For daily routing" />
-              </div>
-
-              <div className="glass rounded-[20px] p-4 border border-glass-border">
-                <label className="text-[13px] font-bold text-ink-3 uppercase tracking-wider block mb-2 flex items-center gap-2"><Heart size={14} className="text-sos" /> Medical ID (Optional)</label>
-                <div className="mb-2 grid grid-cols-2 gap-2">
-                  <input type="text" value={med.bloodGroup} onChange={(e) => setMed({ ...med, bloodGroup: e.target.value })} placeholder="Blood group" aria-label="Blood group" className="rounded-[12px] bg-ink/5 px-3 py-2 text-[15px] text-ink outline-none" />
-                  <input type="text" value={med.allergies} onChange={(e) => setMed({ ...med, allergies: e.target.value })} placeholder="Allergies" aria-label="Allergies" className="rounded-[12px] bg-ink/5 px-3 py-2 text-[15px] text-ink outline-none" />
-                  <input type="text" value={med.medications} onChange={(e) => setMed({ ...med, medications: e.target.value })} placeholder="Medications" aria-label="Medications" className="col-span-2 rounded-[12px] bg-ink/5 px-3 py-2 text-[15px] text-ink outline-none" />
-                </div>
-                <input type="text" value={form.medicalId} onChange={(e) => setForm({ ...form, medicalId: e.target.value })} className="w-full bg-transparent text-[18px] font-semibold text-ink outline-none placeholder:text-ink-3" placeholder="Blood group, allergies, conditions" />
-              </div>
-            </div>
-
-            {/* Save Button */}
-            <motion.button 
-              whileTap={{ scale: 0.97 }}
-              onClick={handleSave}
-              className={`w-full mt-8 h-[56px] text-[16px] font-bold rounded-[20px] transition-all flex items-center justify-center gap-2 interactive ${
-                saved ? 'bg-ok text-white shadow-[0_8px_30px_var(--ok)]' : 'glass text-teal border border-teal/20'
-              }`}
-            >
-              {saved ? '✓ Saved Successfully' : 'Save Changes'}
-            </motion.button>
-          </div>
-        </motion.div>
+    <div className="flex flex-col gap-3 pb-2">
+      <div className="mb-2 mt-2 flex justify-center">
+        <ProfilePhotoEditor size={112} />
+      </div>
+      <Field label="Your name">
+        <input type="text" value={name} maxLength={60} autoComplete="name" onChange={(e) => setName(e.target.value)} className={inputCls} placeholder="Your name" />
+      </Field>
+      <Field label="Your phone number" icon={<Phone size={13} />}>
+        <input type="tel" inputMode="tel" autoComplete="tel" value={phone} onChange={(e) => setPhone(e.target.value)} className={inputCls} placeholder="+91 98765 43210" />
+      </Field>
+      {email && (
+        <div className="glass min-w-0 rounded-[20px] px-4 py-3">
+          <p className="mb-1 text-[12.5px] font-bold uppercase tracking-wider text-ink-3">Google account</p>
+          <p className="truncate text-[16px] font-semibold text-ink-2">{email}</p>
+        </div>
       )}
-    </AnimatePresence>
+      <button type="button" onClick={onEditHome} className="glass interactive flex min-w-0 items-center gap-3 rounded-[20px] px-4 py-3 text-left">
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[12px] bg-info/10 text-info">
+          <Home size={20} />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[12.5px] font-bold uppercase tracking-wider text-ink-3">Home</span>
+          <span className="block truncate text-[16px] font-semibold text-ink">{home ? home.name || home.address : person.homeAddress || 'Not set'}</span>
+        </span>
+        <span className="shrink-0 text-[13.5px] font-bold text-teal-ink">{home ? 'Change' : 'Set'}</span>
+      </button>
+      <Field label="Work / college address">
+        <input type="text" value={work} onChange={(e) => setWork(e.target.value)} className={inputCls} placeholder="For daily routes" />
+      </Field>
+      <div className="glass min-w-0 rounded-[20px] px-4 py-3">
+        <p className="mb-2 flex items-center gap-2 text-[12.5px] font-bold uppercase tracking-wider text-ink-3">
+          <Heart size={13} className="text-sos" /> Medical ID (optional)
+        </p>
+        <div className="grid grid-cols-2 gap-2">
+          <input type="text" value={med.bloodGroup} onChange={(e) => editMed({ bloodGroup: e.target.value })} placeholder="Blood group" aria-label="Blood group" className="min-w-0 rounded-[12px] bg-ink/5 px-3 py-2.5 text-[15px] text-ink outline-none" />
+          <input type="text" value={med.allergies} onChange={(e) => editMed({ allergies: e.target.value })} placeholder="Allergies" aria-label="Allergies" className="min-w-0 rounded-[12px] bg-ink/5 px-3 py-2.5 text-[15px] text-ink outline-none" />
+          <input type="text" value={med.medications} onChange={(e) => editMed({ medications: e.target.value })} placeholder="Medications" aria-label="Medications" className="col-span-2 min-w-0 rounded-[12px] bg-ink/5 px-3 py-2.5 text-[15px] text-ink outline-none" />
+          <input type="text" value={med.conditions} onChange={(e) => editMed({ conditions: e.target.value })} placeholder="Conditions" aria-label="Conditions" className="col-span-2 min-w-0 rounded-[12px] bg-ink/5 px-3 py-2.5 text-[15px] text-ink outline-none" />
+          <input type="text" value={med.notes} onChange={(e) => editMed({ notes: e.target.value })} placeholder="Notes for emergencies" aria-label="Medical notes" className="col-span-2 min-w-0 rounded-[12px] bg-ink/5 px-3 py-2.5 text-[15px] text-ink outline-none" />
+        </div>
+        <p className="mt-2 text-[12.5px] leading-snug text-ink-3">Shared only with your linked safety contact, for emergencies. Never sent to the assistant.</p>
+      </div>
+      <motion.button
+        type="button"
+        whileTap={{ scale: 0.97 }}
+        onClick={save}
+        disabled={saved}
+        className={`mt-3 flex h-14 w-full items-center justify-center gap-2 rounded-[20px] text-[16.5px] font-bold transition-colors ${saved ? 'bg-ok text-white' : 'bg-teal text-on-teal shadow-lg'}`}
+      >
+        {saved ? (
+          <>
+            <Check size={20} /> Saved
+          </>
+        ) : (
+          'Save changes'
+        )}
+      </motion.button>
+      <p className="px-1 text-center text-[12.5px] text-ink-3">Saved on this phone at once and synced to your account when online.</p>
+    </div>
   );
 }
 
-import type { Contact } from '../../core/types';
-
-/* ──────── Contact Editor Sub-Page ──────── */
-function ContactSubpage({ open, onClose, contact, onSave, onDelete }: { open: boolean; onClose: () => void; contact: Contact | null; onSave: (c: Contact) => void; onDelete?: () => void }) {
-  const [form, setForm] = useState(contact || { id: '', name: '', relation: '', phone: '', aliases: [] });
-  const [pickErr, setPickErr] = useState<string | null>(null);
-
-  useEffect(() => { if (contact) setForm(contact); else setForm({ id: Date.now().toString(), name: '', relation: '', phone: '', aliases: [] }); }, [contact, open]);
-
+function ProfileSubpage({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [homeOpen, setHomeOpen] = useState(false);
+  useEffect(() => {
+    if (!open) setHomeOpen(false);
+  }, [open]);
   return (
-    <AnimatePresence>
-      {open && (
-        <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', damping: 30, stiffness: 300 }} className="absolute inset-0 z-[80] bg-bg overflow-y-auto no-scrollbar">
-          <Atmosphere variant="user" />
-          <div className="px-4 pb-8" style={{ paddingTop: 'calc(var(--island, var(--sat)) + 14px)' }}>
-            <div className="mb-6 mt-8 flex items-center gap-4">
-              <button onClick={onClose} className="h-12 w-12 glass interactive rounded-full flex items-center justify-center text-ink shrink-0"><ChevronLeft size={24} /></button>
-              <h1 className="text-[24px] font-bold text-ink">{contact ? 'Edit Contact' : 'New Contact'}</h1>
-            </div>
-            <button
-              type="button"
-              className="glass interactive mb-4 flex w-full items-center justify-center gap-2 rounded-[20px] border border-glass-border py-3 text-[15.5px] font-semibold text-ink"
-              onClick={async () => {
-                setPickErr(null);
-                try {
-                  const r = await AissNative.pickContact();
-                  if (!r.cancelled) setForm({ ...form, name: r.name ?? form.name, phone: r.phone ?? form.phone });
-                } catch (e) {
-                  setPickErr(/not available|implemented/i.test((e as Error).message) ? 'Choosing from contacts works in the Android app. Type the details instead.' : friendlyError(e));
-                }
-              }}
-            >
-              Choose from phone contacts
-            </button>
-            {pickErr && <p className="-mt-2 mb-3 px-1 text-[13.5px] text-amber-ink">{pickErr}</p>}
-
-
-            <div className="flex flex-col gap-4">
-              <div className="glass rounded-[20px] p-4 border border-glass-border">
-                <label className="text-[13px] font-bold text-ink-3 uppercase tracking-wider block mb-2">Name</label>
-                <input type="text" value={form.name} onChange={e => setForm({...form, name: e.target.value})} className="w-full bg-transparent text-[18px] font-semibold text-ink outline-none" placeholder="e.g. Papa" />
-              </div>
-              <div className="glass rounded-[20px] p-4 border border-glass-border">
-                <label className="text-[13px] font-bold text-ink-3 uppercase tracking-wider block mb-2">Relationship</label>
-                <input type="text" value={form.relation} onChange={e => setForm({...form, relation: e.target.value})} className="w-full bg-transparent text-[18px] font-semibold text-ink outline-none" placeholder="e.g. Father" />
-              </div>
-              <div className="glass rounded-[20px] p-4 border border-glass-border">
-                <label className="text-[13px] font-bold text-ink-3 uppercase tracking-wider block mb-2">Phone Number</label>
-                <input type="tel" value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} className="w-full bg-transparent text-[18px] font-semibold text-ink outline-none" placeholder="+91..." />
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3 mt-8">
-              {contact && (
-                <button onClick={() => { onDelete?.(); onClose(); }} className="flex-1 h-[56px] bg-sos/10 text-sos text-[16px] font-bold rounded-[20px] interactive">
-                  Remove Contact
-                </button>
-              )}
-              <motion.button 
-                whileTap={{ scale: 0.97 }}
-                onClick={() => { onSave(form); onClose(); }}
-                className={`flex-1 h-[56px] ${contact ? 'glass text-teal border border-teal/20' : 'bg-gradient-to-r from-teal to-mint text-white shadow-lg'} text-[16px] font-bold rounded-[20px] interactive`}
-              >
-                Save Contact
-              </motion.button>
-            </div>
-          </div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+    <>
+      <SubPage open={open} onClose={onClose} title="Profile">
+        <ProfileForm onDone={onClose} onEditHome={() => setHomeOpen(true)} />
+      </SubPage>
+      <HomeSubpage open={open && homeOpen} onClose={() => setHomeOpen(false)} z={75} />
+    </>
   );
 }
 
-/* ──────── Emergency SOS Sub-Page ──────── */
+/** Home on the map: the exact point "Take me home" walks to (same picker as setup). */
+function HomeSubpage({ open, onClose, z = 70 }: { open: boolean; onClose: () => void; z?: number }) {
+  return (
+    <SubPage open={open} onClose={onClose} title="Home & places" z={z} scroll={false}>
+      <div className="absolute inset-0">
+        <HomeLocationStep onSaved={onClose} />
+      </div>
+    </SubPage>
+  );
+}
+
+/* ──────── Contact editor ──────── */
+function ContactForm({ contact, onSave, onDelete, onClose }: { contact: Contact | null; onSave: (c: Contact) => void; onDelete?: () => void; onClose: () => void }) {
+  const [form, setForm] = useState<Contact>(() => contact ?? { id: `c_${Date.now().toString(36)}`, name: '', relation: '', phone: '', aliases: [] });
+  const [pickErr, setPickErr] = useState<string | null>(null);
+  const valid = form.name.trim().length > 0 && form.phone.replace(/\D/g, '').length >= 10;
+  return (
+    <div className="flex flex-col gap-3">
+      <button
+        type="button"
+        className="glass interactive flex w-full items-center justify-center gap-2 rounded-[20px] py-3 text-[15.5px] font-semibold text-ink"
+        onClick={async () => {
+          setPickErr(null);
+          try {
+            const r = await AissNative.pickContact();
+            if (!r.cancelled) setForm((f) => ({ ...f, name: r.name ?? f.name, phone: r.phone ?? f.phone }));
+          } catch (e) {
+            setPickErr(/not available|implemented/i.test((e as Error).message) ? 'Choosing from contacts works in the Android app. Type the details instead.' : friendlyError(e));
+          }
+        }}
+      >
+        Choose from phone contacts
+      </button>
+      {pickErr && <p className="px-1 text-[13.5px] text-amber-ink">{pickErr}</p>}
+      <Field label="Name">
+        <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className={inputCls} placeholder="e.g. Papa" />
+      </Field>
+      <Field label="Relationship">
+        <input type="text" value={form.relation} onChange={(e) => setForm({ ...form, relation: e.target.value })} className={inputCls} placeholder="e.g. Father" />
+      </Field>
+      <Field label="Phone number">
+        <input type="tel" inputMode="tel" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className={inputCls} placeholder="+91 98765 43210" />
+      </Field>
+      <div className="mt-3 flex gap-3">
+        {contact && onDelete && (
+          <button type="button" onClick={() => { onDelete(); onClose(); }} className="interactive h-14 min-w-0 flex-1 rounded-[20px] bg-sos/10 text-[15.5px] font-bold text-sos">
+            Remove
+          </button>
+        )}
+        <button
+          type="button"
+          disabled={!valid}
+          onClick={() => { onSave({ ...form, name: form.name.trim(), relation: form.relation.trim(), phone: form.phone.trim() }); onClose(); }}
+          className="interactive h-14 min-w-0 flex-1 rounded-[20px] bg-teal text-[15.5px] font-bold text-on-teal shadow-lg disabled:opacity-50"
+        >
+          Save contact
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ──────── Emergency SOS ──────── */
 function EmergencySubpage({ open, onClose }: { open: boolean; onClose: () => void }) {
   const settings = useSession((s) => s.settings);
   const contacts = useSession((s) => s.contacts);
   const updateSettings = useSession((s) => s.updateSettings);
-  const setSession = useSession((s) => s.set);
-  
   const [testTriggered, setTestTriggered] = useState(false);
-  
-  const [editingContact, setEditingContact] = useState<Contact | null>(null);
-  const [isAddingContact, setIsAddingContact] = useState(false);
+  const [editing, setEditing] = useState<Contact | null>(null);
+  const [adding, setAdding] = useState(false);
+  useEffect(() => {
+    if (!open) {
+      setEditing(null);
+      setAdding(false);
+    }
+  }, [open]);
+  const setContacts = (next: Contact[]) => useSession.setState({ contacts: next });
 
   return (
-    <AnimatePresence>
-      {open && (
-        <motion.div
-          initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
-          transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-          className="absolute inset-0 z-[70] bg-bg overflow-hidden"
-        >
-          <Atmosphere variant="user" />
-          
-          {/* Scrollable inner content */}
-          <div className="absolute inset-0 overflow-y-auto no-scrollbar px-4 pb-8" style={{ paddingTop: 'calc(var(--island, var(--sat)) + 14px)' }}>
-            <div className="mb-6 mt-8 flex items-center gap-4">
-              <button onClick={onClose} className="h-12 w-12 glass interactive rounded-full flex items-center justify-center text-ink shrink-0">
-                <ChevronLeft size={24} />
-              </button>
-              <h1 className="text-[24px] font-bold text-ink">Emergency & SOS</h1>
-            </div>
-
-            {/* Fall Detection */}
-            <div className="glass rounded-[24px] p-5 border border-glass-border flex items-center gap-4 mb-5">
-              <div className="p-3 bg-sos/10 rounded-[14px] text-sos"><AlertTriangle size={24} /></div>
-              <div className="flex-1">
-                <p className="text-[17px] font-bold text-ink">Fall Detection</p>
-                <p className="text-[14px] text-ink-3 mt-0.5">Auto-triggers SOS when a fall is detected</p>
-              </div>
-              <Toggle 
-                label="Fall Detection" 
-                on={settings.sosTriggers.fall} 
-                onChange={(v) => updateSettings({ sosTriggers: { ...settings.sosTriggers, fall: v } })} 
-              />
-            </div>
-
-            {/* SOS Contacts */}
-            <h2 className="text-[18px] font-bold text-ink px-1 mb-3">SOS Contacts</h2>
-            <div className="glass rounded-[24px] overflow-hidden border border-glass-border [&>*+*]:border-t [&>*+*]:border-line mb-5">
-              {contacts.map((c, i) => (
-                <button key={c.id} onClick={() => setEditingContact(c)} className="flex items-center gap-4 px-4 py-4 w-full text-left interactive">
-                  <div className="w-12 h-12 rounded-full bg-teal/10 flex items-center justify-center text-[22px] font-bold text-teal shrink-0">
-                    {c.name.charAt(0).toUpperCase()}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[16px] font-bold text-ink">{c.name} <span className="text-[13px] font-normal text-ink-3 ml-1">({c.relation})</span></p>
-                    <p className="text-[14px] text-ink-3 mt-0.5">{c.phone}</p>
-                  </div>
-                  <span className="text-[13px] font-bold text-teal bg-teal/10 px-3 py-1 rounded-full">Slot {i + 1}</span>
-                </button>
-              ))}
-              {contacts.length < 5 && (
-                <button onClick={() => setIsAddingContact(true)} className="flex items-center gap-4 px-4 py-4 w-full text-left interactive">
-                  <div className="w-12 h-12 rounded-full bg-ink/5 flex items-center justify-center text-ink-3 shrink-0 border-2 border-dashed border-ink/20">
-                    <Plus size={22} />
-                  </div>
-                  <p className="text-[16px] font-semibold text-ink-2">Add New Contact</p>
-                </button>
-              )}
-            </div>
-
-            {/* Emergency Message */}
-            <h2 className="text-[18px] font-bold text-ink px-1 mb-3">SOS Message</h2>
-            <div className="glass rounded-[20px] p-4 border border-glass-border mb-6">
-              <textarea
-                value={settings.sosMessage}
-                onChange={(e) => updateSettings({ sosMessage: e.target.value.slice(0, 280) })}
-                aria-label="SOS message"
-                className="w-full bg-transparent text-[16px] text-ink outline-none resize-none h-24 placeholder:text-ink-3" 
-                placeholder="Message sent to contacts during SOS"
-              />
-            </div>
-
-            {/* Test SOS */}
-            <motion.button 
-              whileTap={{ scale: 0.97 }}
-              onClick={() => {
-                setTestTriggered(true);
-                haptics.play('sos');
-                earcon('alert');
-                const t = getTransport();
-                if (t) void t.send({ type: 'haptic', pattern: 'sos' }).catch(() => undefined);
-                void say('This is a test of the SOS sound and vibration. No alert was sent.', { lang: 'en', priority: 'high' });
-                setTimeout(() => setTestTriggered(false), 2500);
-              }}
-              className={`w-full h-16 text-[18px] font-bold rounded-[24px] shadow-lg transition-all ${
-                testTriggered 
-                  ? 'bg-ok text-white shadow-[0_8px_30px_var(--ok)]' 
-                  : 'bg-amber/10 text-amber border-2 border-amber/30'
-              }`}
-            >
-              {testTriggered ? '✓ Sound & vibration played. Nothing was sent.' : '⚠️ Test SOS sound & vibration (sends nothing)'}
-            </motion.button>
+    <>
+      <SubPage open={open} onClose={onClose} title="Emergency & SOS">
+        <div className="glass mb-5 flex items-center gap-3 rounded-[24px] p-4">
+          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-[14px] bg-sos/10 text-sos">
+            <AlertTriangle size={22} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-[16.5px] font-bold text-ink">Fall detection</p>
+            <p className="mt-0.5 text-[13.5px] leading-snug text-ink-3">Starts SOS when a fall is detected</p>
           </div>
-          <ContactSubpage 
-            open={!!editingContact || isAddingContact} 
-            onClose={() => { setEditingContact(null); setIsAddingContact(false); }}
-            contact={editingContact}
-            onSave={(c) => {
-               if (isAddingContact) setSession({ contacts: [...contacts, c] });
-               else setSession({ contacts: contacts.map(x => x.id === c.id ? c : x) });
-            }}
-            onDelete={() => {
-               setSession({ contacts: contacts.filter(x => x.id !== editingContact?.id) });
-            }}
+          <span className="shrink-0">
+            <Toggle label="Fall detection" on={settings.sosTriggers.fall} onChange={(v) => updateSettings({ sosTriggers: { ...settings.sosTriggers, fall: v } })} />
+          </span>
+        </div>
+
+        <SectionTitle>SOS contacts</SectionTitle>
+        <div className="glass mb-5 overflow-hidden rounded-[24px] [&>*+*]:border-t [&>*+*]:border-line">
+          {contacts.map((c, i) => (
+            <button type="button" key={c.id} onClick={() => setEditing(c)} className="interactive flex w-full items-center gap-3 px-4 py-3.5 text-left">
+              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-teal/10 text-[19px] font-bold text-teal">{(c.name || '?').charAt(0).toUpperCase()}</span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[16px] font-bold text-ink">
+                  {c.name}
+                  {c.relation && <span className="ml-1 text-[13px] font-normal text-ink-3">({c.relation})</span>}
+                </span>
+                <span className="mt-0.5 block truncate text-[14px] text-ink-3">{c.phone}</span>
+              </span>
+              <span className="shrink-0 rounded-full bg-teal/10 px-2.5 py-1 text-[12px] font-bold text-teal">#{i + 1}</span>
+            </button>
+          ))}
+          {contacts.length < 5 && (
+            <button type="button" onClick={() => setAdding(true)} className="interactive flex w-full items-center gap-3 px-4 py-3.5 text-left">
+              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full border-2 border-dashed border-ink/20 bg-ink/5 text-ink-3">
+                <Plus size={20} />
+              </span>
+              <span className="text-[16px] font-semibold text-ink-2">Add contact</span>
+            </button>
+          )}
+        </div>
+
+        <SectionTitle>SOS message</SectionTitle>
+        <div className="glass mb-5 rounded-[20px] p-4">
+          <textarea
+            value={settings.sosMessage}
+            onChange={(e) => updateSettings({ sosMessage: e.target.value.slice(0, 280) })}
+            aria-label="SOS message"
+            className="h-24 w-full resize-none bg-transparent text-[16px] text-ink outline-none placeholder:text-ink-3"
+            placeholder="Message sent to contacts during SOS"
           />
-        </motion.div>
-      )}
-    </AnimatePresence>
+        </div>
+
+        <motion.button
+          type="button"
+          whileTap={{ scale: 0.97 }}
+          onClick={() => {
+            setTestTriggered(true);
+            haptics.play('sos');
+            earcon('alert');
+            const t = getTransport();
+            if (t) void t.send({ type: 'haptic', pattern: 'sos' }).catch(() => undefined);
+            void say('This is a test of the SOS sound and vibration. No alert was sent.', { lang: 'en', priority: 'high' });
+            setTimeout(() => setTestTriggered(false), 2500);
+          }}
+          className={`min-h-14 w-full rounded-[22px] px-4 py-3 text-[16px] font-bold transition-colors ${testTriggered ? 'bg-ok text-white' : 'border-2 border-amber/30 bg-amber/10 text-amber-ink'}`}
+        >
+          {testTriggered ? '✓ Sound & vibration played. Nothing was sent.' : 'Test SOS sound & vibration (sends nothing)'}
+        </motion.button>
+      </SubPage>
+      <SubPage open={open && (!!editing || adding)} onClose={() => { setEditing(null); setAdding(false); }} title={editing ? 'Edit contact' : 'New contact'} z={80}>
+        <ContactForm
+          key={editing?.id ?? 'new'}
+          contact={editing}
+          onClose={() => { setEditing(null); setAdding(false); }}
+          onSave={(c) => {
+            const cur = useSession.getState().contacts;
+            setContacts(cur.some((x) => x.id === c.id) ? cur.map((x) => (x.id === c.id ? c : x)) : [...cur, c]);
+          }}
+          onDelete={editing ? () => setContacts(useSession.getState().contacts.filter((x) => x.id !== editing.id)) : undefined}
+        />
+      </SubPage>
+    </>
   );
 }
 
 /* ──────── Easter Egg Game: Flappy Stick ──────── */
 function StickGameSubpage({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const isDark = useSession(s => s.settings.theme === 'dark' || (s.settings.theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches));
-  
+  const isDark = useSession((s) => s.settings.theme === 'dark' || (s.settings.theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches));
+  useBackHandler(open, onClose);
+
   const [playing, setPlaying] = useState(false);
   const [gameOver, setGameOver] = useState(false);
   const [score, setScore] = useState(0);
 
   const stickRef = useRef<HTMLDivElement>(null);
+  const obsRef = useRef<HTMLDivElement>(null);
   const requestRef = useRef<number>(0);
-  
+
   const state = useRef({
-    stickY: 50, velocity: 0, score: 0,
-    obstacles: [] as { x: number, gapY: number, passed: boolean }[],
+    stickY: 50,
+    velocity: 0,
+    score: 0,
+    obstacles: [] as { x: number; gapY: number; passed: boolean }[],
   });
 
   const jump = () => {
-    if (!playing && !gameOver) {
-      state.current = { stickY: 50, velocity: 0, obstacles: [{ x: 100, gapY: 50, passed: false }], score: 0 };
-      setScore(0); setPlaying(true); return;
-    }
-    if (gameOver) {
+    if (!playing || gameOver) {
       setGameOver(false);
       state.current = { stickY: 50, velocity: 0, obstacles: [{ x: 100, gapY: 50, passed: false }], score: 0 };
-      setScore(0); setPlaying(true); return;
+      setScore(0);
+      setPlaying(true);
+      return;
     }
     state.current.velocity = -1.2;
     navigator.vibrate?.(20);
   };
 
   useEffect(() => {
-    if (!open) { setPlaying(false); setGameOver(false); return; }
+    if (!open) {
+      setPlaying(false);
+      setGameOver(false);
+      return;
+    }
     let lastTime = performance.now();
+    const crash = () => {
+      setPlaying(false);
+      setGameOver(true);
+      navigator.vibrate?.([100, 50, 100]);
+    };
     const loop = (time: number) => {
       if (!playing) return;
-      const dt = (time - lastTime) / 16;
+      const dt = Math.min(3, (time - lastTime) / 16);
       lastTime = time;
       const s = state.current;
-      
-      s.velocity += 0.08 * dt; // gravity
+      s.velocity += 0.08 * dt;
       s.stickY += s.velocity * dt;
       if (s.stickY < 0) s.stickY = 0;
-      if (s.stickY > 90) { // floor crash
-         setPlaying(false); setGameOver(true); navigator.vibrate?.([100, 50, 100]);
-      }
-
-      s.obstacles.forEach((obs) => {
+      if (s.stickY > 90) return crash();
+      for (const obs of s.obstacles) {
         obs.x -= 0.7 * dt;
-        // stick box check (stick is at x: 20-25, y: stickY)
-        if (obs.x < 25 && obs.x > 15) {
-           if (s.stickY < obs.gapY - 15 || s.stickY > obs.gapY + 15) {
-              setPlaying(false); setGameOver(true); navigator.vibrate?.([100, 50, 100]);
-           }
-        }
+        if (obs.x < 25 && obs.x > 15 && (s.stickY < obs.gapY - 15 || s.stickY > obs.gapY + 15)) return crash();
         if (!obs.passed && obs.x < 15) {
-           obs.passed = true; s.score += 1; setScore(s.score);
+          obs.passed = true;
+          s.score += 1;
+          setScore(s.score);
         }
-      });
-
+      }
       if (s.obstacles[0] && s.obstacles[0].x < -10) s.obstacles.shift();
       const lastObs = s.obstacles[s.obstacles.length - 1];
       if (!lastObs || lastObs.x < 60) s.obstacles.push({ x: 100, gapY: 30 + Math.random() * 40, passed: false });
-
       if (stickRef.current) {
-         stickRef.current.style.top = `${s.stickY}%`;
-         stickRef.current.style.transform = `rotate(${s.velocity * 10}deg)`;
+        stickRef.current.style.top = `${s.stickY}%`;
+        stickRef.current.style.transform = `rotate(${s.velocity * 10}deg)`;
       }
-      
-      const obsContainer = document.getElementById('obs-container');
-      if (obsContainer) {
-         obsContainer.innerHTML = '';
-         s.obstacles.forEach(o => {
-            const topP = document.createElement('div');
-            topP.className = 'absolute w-[10%] bg-gradient-to-b from-teal to-mint rounded-b-xl shadow-lg border border-white/20';
-            topP.style.left = `${o.x}%`; topP.style.top = '0'; topP.style.height = `${o.gapY - 20}%`;
-            
-            const botP = document.createElement('div');
-            botP.className = 'absolute w-[10%] bg-gradient-to-t from-teal to-mint rounded-t-xl shadow-lg border border-white/20';
-            botP.style.left = `${o.x}%`; botP.style.bottom = '0'; botP.style.height = `${100 - (o.gapY + 20)}%`;
-            
-            obsContainer.appendChild(topP); obsContainer.appendChild(botP);
-         });
+      const box = obsRef.current;
+      if (box) {
+        box.innerHTML = '';
+        for (const o of s.obstacles) {
+          const topP = document.createElement('div');
+          topP.className = 'absolute w-[10%] rounded-b-xl bg-gradient-to-b from-teal to-mint';
+          topP.style.left = `${o.x}%`;
+          topP.style.top = '0';
+          topP.style.height = `${o.gapY - 20}%`;
+          const botP = document.createElement('div');
+          botP.className = 'absolute w-[10%] rounded-t-xl bg-gradient-to-t from-teal to-mint';
+          botP.style.left = `${o.x}%`;
+          botP.style.bottom = '0';
+          botP.style.height = `${100 - (o.gapY + 20)}%`;
+          box.appendChild(topP);
+          box.appendChild(botP);
+        }
       }
       requestRef.current = requestAnimationFrame(loop);
     };
-
     if (playing) requestRef.current = requestAnimationFrame(loop);
-    return () => { if (requestRef.current) cancelAnimationFrame(requestRef.current); };
+    return () => {
+      if (requestRef.current) cancelAnimationFrame(requestRef.current);
+    };
   }, [playing, open]);
 
   return (
     <AnimatePresence>
       {open && (
-        <motion.div initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', damping: 30, stiffness: 300 }} className={`absolute inset-0 z-[80] ${isDark ? 'bg-ink' : 'bg-glass-bg'} overflow-hidden`}>
-          <div className="absolute inset-0 opacity-20 pointer-events-none" style={{ backgroundImage: `radial-gradient(circle at 50% 50%, ${isDark ? '#2dd4bf' : '#0fa08e'} 1px, transparent 1px)`, backgroundSize: '20px 20px' }} />
-          <div className="absolute top-12 w-full px-6 flex items-center z-20 pointer-events-none">
-            <button onClick={onClose} className={`w-12 h-12 rounded-full flex items-center justify-center pointer-events-auto shadow-xl ${isDark ? 'bg-white/10 text-white' : 'bg-black/5 text-ink'}`}><ChevronLeft size={24} /></button>
-            <p className={`font-black text-[32px] drop-shadow-md flex-1 text-center ${isDark ? 'text-white' : 'text-ink'}`}>{score}</p>
-            <div className="w-12" /> {/* Spacer */}
+        <motion.div initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={SLIDE} className={`absolute inset-0 z-[80] overflow-hidden ${isDark ? 'bg-ink' : 'bg-bg'}`}>
+          <div className="absolute inset-x-0 z-20 flex items-center px-4" style={{ top: 'calc(var(--island, var(--sat)) + 10px)' }}>
+            <button type="button" aria-label="Back" onClick={onClose} className={`grid h-12 w-12 place-items-center rounded-full shadow-xl ${isDark ? 'bg-white/10 text-white' : 'bg-black/5 text-ink'}`}>
+              <ChevronLeft size={24} />
+            </button>
+            <p className={`flex-1 text-center text-[32px] font-black ${isDark ? 'text-white' : 'text-ink'}`}>{score}</p>
+            <div className="w-12" />
           </div>
-          <div className="w-full h-full relative cursor-pointer active:bg-white/5 transition-colors" onClick={jump}>
-             {!playing && !gameOver && (
-                <div className={`absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10 ${isDark ? 'text-white' : 'text-ink'}`}>
-                   <div className="text-[64px] mb-4 drop-shadow-[0_0_15px_rgba(45,212,191,0.8)]">🦯</div>
-                   <h2 className="text-[28px] font-bold">Flappy Stick</h2>
-                   <p className="text-[16px] text-teal mt-2">Tap to jump & survive</p>
-                </div>
-             )}
-             {gameOver && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center text-white pointer-events-none z-10 bg-black/40 backdrop-blur-md">
-                   <h2 className="text-[42px] font-black text-sos drop-shadow-lg">CRASHED!</h2>
-                   <p className="text-[24px] font-bold mt-2 bg-white/10 px-6 py-2 rounded-full">Score: {score}</p>
-                   <p className="opacity-70 mt-6 animate-pulse text-[18px]">Tap anywhere to restart</p>
-                </div>
-             )}
-             <div id="obs-container" className="absolute inset-0 pointer-events-none" />
-             <div ref={stickRef} className="absolute left-[20%] w-[5%] h-[12%] text-[36px] flex items-center justify-center origin-center transition-none pointer-events-none z-20 drop-shadow-[0_0_8px_rgba(45,212,191,0.5)]" style={{ top: '50%' }}>
-                🦯
-             </div>
+          <div className="relative h-full w-full cursor-pointer" onClick={jump}>
+            {!playing && !gameOver && (
+              <div className={`pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center ${isDark ? 'text-white' : 'text-ink'}`}>
+                <div className="mb-4 text-[64px]">🦯</div>
+                <h2 className="text-[28px] font-bold">Flappy Stick</h2>
+                <p className="mt-2 text-[16px] text-teal">Tap to jump & survive</p>
+              </div>
+            )}
+            {gameOver && (
+              <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center bg-black/50 text-white">
+                <h2 className="text-[42px] font-black text-sos">CRASHED!</h2>
+                <p className="mt-2 rounded-full bg-white/10 px-6 py-2 text-[24px] font-bold">Score: {score}</p>
+                <p className="mt-6 text-[18px] opacity-70">Tap anywhere to restart</p>
+              </div>
+            )}
+            <div ref={obsRef} className="pointer-events-none absolute inset-0" />
+            <div ref={stickRef} className="pointer-events-none absolute left-[20%] z-20 flex h-[12%] w-[5%] items-center justify-center text-[36px]" style={{ top: '50%' }}>
+              🦯
+            </div>
           </div>
         </motion.div>
       )}
@@ -494,73 +546,89 @@ function StickGameSubpage({ open, onClose }: { open: boolean; onClose: () => voi
   );
 }
 
-
-
-/* ──────── Accessibility & Vision Sub-Page ──────── */
+/* ──────── Voice, language & display ──────── */
 function AccessibilitySubpage({ open, onClose }: { open: boolean; onClose: () => void }) {
   const s = useSession((x) => x.settings);
   const update = useSession((x) => x.updateSettings);
-
+  const demo = useRuntime((x) => x.mode) === 'demo';
   return (
-    <AnimatePresence>
-      {open && (
-        <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', damping: 30, stiffness: 300 }} className="absolute inset-0 z-[70] bg-bg overflow-y-auto no-scrollbar">
-          <Atmosphere variant="user" />
-          <div className="px-4 pb-8" style={{ paddingTop: 'calc(var(--island, var(--sat)) + 14px)' }}>
-            <div className="mb-6 mt-8 flex items-center gap-4">
-              <button onClick={onClose} className="h-12 w-12 glass interactive rounded-full flex items-center justify-center text-ink shrink-0"><ChevronLeft size={24} /></button>
-              <h1 className="text-[24px] font-bold text-ink">Accessibility</h1>
-            </div>
-
-            <section className="mb-5">
-              <h2 className="mb-2 px-1 text-[17px] font-semibold text-ink-2">Assistant replies in</h2>
-              <Segmented label="Reply language" size="lg" value={s.replyLang} onChange={(v) => update({ replyLang: v })} options={[{ value: 'auto', label: 'Same as me' }, { value: 'en', label: 'English' }, { value: 'hi', label: 'हिंदी' }]} />
-            </section>
-
-            <section className="mb-5">
-              <h2 className="mb-2 px-1 text-[17px] font-semibold text-ink-2">Voice speed</h2>
-              <Segmented 
-                label="Voice speed" size="lg" value={s.voiceRate} 
-                onChange={(v) => { update({ voiceRate: v }); void speak('This is how fast I will talk.', 'en'); }} 
-                options={[{ value: 0.85, label: 'Slow' }, { value: 1, label: 'Normal' }, { value: 1.25, label: 'Fast' }]} 
-              />
-            </section>
-
-            <section className="mb-5">
-              <h2 className="mb-2 px-1 text-[17px] font-semibold text-ink-2">Text size</h2>
-              <div className="glass flex items-center gap-3 rounded-[24px] p-2">
-                <GlassButton size="lg" aria-label="Smaller text" className="w-16 !px-0" onClick={() => update({ textScale: clamp(+(s.textScale - 0.15).toFixed(2), 0.85, 1.6) })}><Minus size={22} /></GlassButton>
-                <p className="scaled-text flex-1 text-center font-semibold text-ink" style={{ ['--fs' as string]: '20px' }}>Aa {Math.round(s.textScale * 100)}%</p>
-                <GlassButton size="lg" aria-label="Bigger text" className="w-16 !px-0" onClick={() => update({ textScale: clamp(+(s.textScale + 0.15).toFixed(2), 0.85, 1.6) })}><Plus size={22} /></GlassButton>
-              </div>
-            </section>
-
-            <h2 className="mb-2 px-1 text-[17px] font-semibold text-ink-2">Preferences</h2>
-            <div className="glass overflow-hidden rounded-[28px] [&>*+*]:border-t [&>*+*]:border-line mb-5">
-              <BigRow icon={<Accessibility size={22} />} label="Screen reader mode" detail="Big buttons instead of taps on the orb. Best with TalkBack or VoiceOver." on={s.screenReaderMode} onChange={(v) => { update({ screenReaderMode: v }); navigator.vibrate?.(50); }} />
-              <BigRow icon={<Contrast size={22} />} label="High contrast" detail="Solid surfaces and stronger outlines" on={s.highContrast} onChange={(v) => { update({ highContrast: v }); navigator.vibrate?.(50); }} />
-              <BigRow icon={<Volume2 size={22} />} label="Sounds" detail="Ticks, beeps and the thinking tune" on={s.earcons} onChange={(v) => { update({ earcons: v }); navigator.vibrate?.(50); }} />
-              <BigRow icon={<Vibrate size={22} />} label="Phone vibration" detail="The stick always vibrates for obstacles" on={s.haptics} onChange={(v) => { update({ haptics: v }); navigator.vibrate?.(50); }} />
-              {useRuntime.getState().mode === 'demo' && (
-                <BigRow icon={<Mic size={22} />} label="Use the real microphone" detail={recognitionSupported() ? 'Demo only: speech recognition in this browser.' : 'Not available in this browser'} on={s.realMic && recognitionSupported()} onChange={(v) => { update({ realMic: v }); navigator.vibrate?.(50); }} />
-              )}
-              <BigRow icon={<Sparkles size={22} />} label="Reduce motion" detail="Fewer animations" on={s.reduceMotion} onChange={(v) => update({ reduceMotion: v })} />
-            </div>
-          </div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+    <SubPage open={open} onClose={onClose} title="Voice & display">
+      <section className="mb-5">
+        <SectionTitle>Assistant replies in</SectionTitle>
+        <Segmented label="Reply language" value={s.replyLang} onChange={(v) => update({ replyLang: v })} options={[{ value: 'auto', label: 'Auto' }, { value: 'en', label: 'English' }, { value: 'hi', label: 'हिंदी' }]} />
+      </section>
+      <section className="mb-5">
+        <SectionTitle>Voice speed</SectionTitle>
+        <Segmented
+          label="Voice speed"
+          value={s.voiceRate}
+          onChange={(v) => {
+            update({ voiceRate: v });
+            void speak('This is how fast I will talk.', 'en');
+          }}
+          options={[{ value: 0.85, label: 'Slow' }, { value: 1, label: 'Normal' }, { value: 1.25, label: 'Fast' }]}
+        />
+      </section>
+      <section className="mb-5">
+        <SectionTitle>Assistant volume · {s.assistantVolume}%</SectionTitle>
+        <div className="glass rounded-[20px] px-4 py-3">
+          <input type="range" min={20} max={100} step={10} value={s.assistantVolume} onChange={(e) => update({ assistantVolume: Number(e.target.value) })} className="w-full accent-teal" aria-label="Assistant volume" />
+          <p className="text-[12.5px] text-ink-3">The SOS siren is always at full volume.</p>
+        </div>
+      </section>
+      <section className="mb-5">
+        <SectionTitle>Text size</SectionTitle>
+        <div className="glass flex items-center gap-3 rounded-[24px] p-2">
+          <GlassButton size="lg" aria-label="Smaller text" className="w-14 shrink-0 !px-0" onClick={() => update({ textScale: clamp(+(s.textScale - 0.15).toFixed(2), 0.85, 1.6) })}>
+            <Minus size={22} />
+          </GlassButton>
+          <p className="min-w-0 flex-1 text-center text-[19px] font-semibold text-ink">Aa {Math.round(s.textScale * 100)}%</p>
+          <GlassButton size="lg" aria-label="Bigger text" className="w-14 shrink-0 !px-0" onClick={() => update({ textScale: clamp(+(s.textScale + 0.15).toFixed(2), 0.85, 1.6) })}>
+            <Plus size={22} />
+          </GlassButton>
+        </div>
+      </section>
+      <SectionTitle>Preferences</SectionTitle>
+      <div className="glass mb-5 overflow-hidden rounded-[24px] [&>*+*]:border-t [&>*+*]:border-line">
+        <BigRow icon={<Accessibility size={22} />} label="Screen reader mode" detail="Big buttons instead of taps on the orb. Best with TalkBack." on={s.screenReaderMode} onChange={(v) => update({ screenReaderMode: v })} />
+        <BigRow icon={<Contrast size={22} />} label="High contrast" detail="Solid surfaces and stronger outlines" on={s.highContrast} onChange={(v) => update({ highContrast: v })} />
+        <BigRow icon={<Volume2 size={22} />} label="Sounds" detail="Ticks, beeps and the connecting tune" on={s.earcons} onChange={(v) => update({ earcons: v })} />
+        <BigRow icon={<Vibrate size={22} />} label="Phone vibration" detail="The stick always vibrates for obstacles" on={s.haptics} onChange={(v) => update({ haptics: v })} />
+        {demo && (
+          <BigRow icon={<Mic size={22} />} label="Use the real microphone" detail={recognitionSupported() ? 'Demo only: speech recognition in this browser.' : 'Not available in this browser'} on={s.realMic && recognitionSupported()} onChange={(v) => update({ realMic: v })} />
+        )}
+        <BigRow icon={<Sparkles size={22} />} label="Reduce motion" detail="Fewer animations" on={s.reduceMotion} onChange={(v) => update({ reduceMotion: v })} />
+      </div>
+      <p className="px-1 text-[12.5px] text-ink-3">Voice, language, sounds and vibration are saved with your account. Text size, contrast and motion are for this phone.</p>
+    </SubPage>
   );
 }
 
-/* ──────── Hardware Management Sub-Page ──────── */
+/* ──────── Stick hardware ──────── */
 function HardwareSubpage({ open, onClose }: { open: boolean; onClose: () => void }) {
+  return (
+    <SubPage open={open} onClose={onClose} title="Stick & hardware">
+      <HardwareContent onClose={onClose} />
+    </SubPage>
+  );
+}
+
+function HardwareContent({ onClose }: { onClose: () => void }) {
   const d = useDevice();
   const update = useSession((x) => x.updateSettings);
   const cal = useSession((x) => x.settings.imuCalibration);
   const st = useSession((x) => x.settings);
+  const mode = useRuntime((x) => x.mode);
   const [testing, setTesting] = useState(false);
   const [testReport, setTestReport] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [confirmUnpair, setConfirmUnpair] = useState(false);
+  const [legacyIp, setLegacyIp] = useState('');
+  const [otaChecking, setOtaChecking] = useState(false);
+  const [otaProgress, setOtaProgress] = useState<string | null>(null);
+  const connected = isLinked(d.link);
+  const l = linkLabel(d.link);
+
   const selfTest = async () => {
     const t = getTransport();
     if (!t) return;
@@ -574,13 +642,6 @@ function HardwareSubpage({ open, onClose }: { open: boolean; onClose: () => void
       setTesting(false);
     }
   };
-  const mode = useRuntime((x) => x.mode);
-  const [msg, setMsg] = useState<string | null>(null);
-  const [confirmUnpair, setConfirmUnpair] = useState(false);
-  const [legacyIp, setLegacyIp] = useState('');
-  const connected = isLinked(d.link);
-  const l = linkLabel(d.link);
-
   const locate = async () => {
     const t = getTransport();
     if (!t || !connected) return setMsg('The stick is not connected.');
@@ -602,37 +663,31 @@ function HardwareSubpage({ open, onClose }: { open: boolean; onClose: () => void
     setConfirmUnpair(false);
     if (mode === 'demo') getMock()?.setLinked(false);
     else await unpairStick();
-    setMsg('Stick unpaired from this phone. To pair it again, reset it: hold its button and switch it on, and keep holding about 10 seconds until it buzzes.');
+    setMsg('Stick removed from this phone. To connect it again, choose “Set up stick”.');
   };
-
-  const [otaChecking, setOtaChecking] = useState(false);
-  const [otaProgress, setOtaProgress] = useState<string | null>(null);
-
   const checkOta = async () => {
     if (!connected || !d.identity) return;
     setOtaChecking(true);
-    setMsg('Checking for updates...');
+    setMsg('Checking for updates…');
     try {
-      const release = await call<any, any>('getLatestFirmwareRelease', {});
+      const release = await call<Record<string, never>, { version: string; binaryUrl: string; sha256: string; signature: string } | null>('getLatestFirmwareRelease', {});
       if (!release || compareVersions(String(release.version), d.identity.firmware) <= 0) {
         setMsg('Your stick is already up to date.');
         return;
       }
-      setOtaProgress(`Downloading version ${release.version}...`);
+      setOtaProgress(`Downloading version ${release.version}…`);
       const res = await fetch(release.binaryUrl);
       if (!res.ok) throw new Error('Download failed');
       const blob = await res.blob();
-      setOtaProgress('Verifying signature...');
-      const isValid = await verifyFirmware(blob, release.sha256, release.signature);
-      if (!isValid) throw new Error('Firmware signature verification failed');
-
-      setOtaProgress('Sending to stick...');
+      setOtaProgress('Verifying signature…');
+      if (!(await verifyFirmware(blob, release.sha256, release.signature))) throw new Error('Firmware signature verification failed');
+      setOtaProgress('Sending to stick…');
       const t = getTransport();
       if (t && t.pushOTA) {
         await t.pushOTA(blob, release.sha256);
-        setMsg(`Firmware update to ${release.version} sent. The stick will reboot now.`);
+        setMsg(`Firmware update to ${release.version} sent. The stick will restart now.`);
       } else {
-        setMsg('OTA is not supported in this mode.');
+        setMsg('Updates are not supported in this mode.');
       }
     } catch (e) {
       setMsg(`Update failed: ${friendlyError(e)}`);
@@ -642,154 +697,167 @@ function HardwareSubpage({ open, onClose }: { open: boolean; onClose: () => void
     }
   };
 
-  const item = (icon: React.ReactNode, tone: string, title: string, sub: string, onClick?: () => void, disabled?: boolean) => (
-    <button type="button" disabled={disabled} className="flex items-center gap-4 px-4 py-4 w-full text-left interactive disabled:opacity-50" onClick={onClick}>
-      <div className={`w-10 h-10 rounded-full flex items-center justify-center ${tone}`}>{icon}</div>
-      <div className="flex-1"><p className="text-[16px] font-bold text-ink">{title}</p><p className="text-[13px] text-ink-3 mt-0.5">{sub}</p></div>
+  const item = (icon: ReactNode, tone: string, title: string, sub: string, onClick?: () => void, disabled?: boolean) => (
+    <button type="button" disabled={disabled} className="interactive flex w-full items-center gap-3 px-4 py-3.5 text-left disabled:opacity-50" onClick={onClick}>
+      <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-full ${tone}`}>{icon}</span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[16px] font-bold text-ink">{title}</span>
+        <span className="mt-0.5 block text-[13px] leading-snug text-ink-3">{sub}</span>
+      </span>
     </button>
   );
 
   return (
-    <AnimatePresence>
-      {open && (
-        <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', damping: 30, stiffness: 300 }} className="absolute inset-0 z-[70] bg-bg overflow-y-auto no-scrollbar">
-          <Atmosphere variant="user" />
-          <div className="px-4 pb-8" style={{ paddingTop: 'calc(var(--island, var(--sat)) + 14px)' }}>
-            <div className="mb-6 mt-8 flex items-center gap-4">
-              <button onClick={onClose} aria-label="Back" className="h-12 w-12 glass interactive rounded-full flex items-center justify-center text-ink shrink-0"><ChevronLeft size={24} /></button>
-              <h1 className="text-[24px] font-bold text-ink">Hardware</h1>
-            </div>
+    <>
+      <div className="glass mb-5 flex flex-col items-center rounded-[24px] px-4 py-5 text-center">
+        <StickVisual height={150} />
+        <p className="mt-3 text-[18px] font-bold text-ink">{BRAND.name}</p>
+        <p className="mt-1 break-words text-[13.5px] text-ink-3">{d.identity ? `${d.identity.deviceId} · firmware ${d.health?.firmware ?? d.identity.firmware}` : 'No stick paired'}</p>
+        {d.health && (
+          <p className="mt-0.5 break-words text-[12.5px] text-ink-3">
+            Last restart: {d.health.resetReason ?? 'unknown'}
+            {d.health.mode && d.health.mode !== 'normal' ? ` · mode ${d.health.mode}` : ''}
+            {d.health.errors?.length ? ` · issues: ${d.health.errors.join(', ')}` : ''}
+          </p>
+        )}
+        <p className="mt-1 break-words text-[14px] font-semibold text-ink-2">
+          {l.text}
+          {d.linkDetail ? ` · ${d.linkDetail}` : ''}
+        </p>
+      </div>
 
-            <div className="glass rounded-[24px] p-6 flex flex-col items-center justify-center mb-6 border border-glass-border shadow-sm">
-               <StickVisual height={180} />
-               <p className="text-[18px] font-bold text-ink mt-4">{BRAND.name}</p>
-               <p className="text-[14px] text-ink-3 mt-1">{d.identity ? `${d.identity.deviceId} · firmware ${d.health?.firmware ?? d.identity.firmware} · protocol v${d.identity.protocolVersion}` : 'No stick paired'}</p>
-               {d.health && <p className="text-[12.5px] text-ink-3 mt-0.5">Last restart: {d.health.resetReason ?? 'unknown'}{d.health.mode && d.health.mode !== 'normal' ? ` · mode ${d.health.mode}` : ''}{d.health.errors?.length ? ` · issues: ${d.health.errors.join(', ')}` : ''}</p>}
-               <p className="text-[14px] font-semibold mt-1 text-ink-2">{l.text}{d.linkDetail ? ` · ${d.linkDetail}` : ''}</p>
-            </div>
+      {msg && <p className="mb-4 rounded-[18px] bg-teal-soft px-4 py-3 text-[15px] font-medium text-teal-ink" role="status">{msg}</p>}
 
-            {msg && <p className="mb-4 rounded-[18px] bg-teal-soft px-4 py-3 text-[15px] font-medium text-teal-ink" role="status">{msg}</p>}
-
-            <h2 className="mb-2 px-1 text-[17px] font-semibold text-ink-2">Device Management</h2>
-            <div className="glass overflow-hidden rounded-[24px] [&>*+*]:border-t [&>*+*]:border-line mb-5 border border-glass-border">
-              {item(<Search size={20} />, 'bg-info/10 text-info', 'Find My Stick', connected ? 'Vibrate the stick so you can find it' : 'Stick not connected', () => void locate(), !connected)}
-              {item(<Radar size={20} />, 'bg-teal/10 text-teal', 'Calibrate orientation', cal ? 'Hold the stick upright, then tap to update' : 'Not calibrated. Hold the stick upright, then tap', calibrate, !connected)}
-              {item(<Download size={20} />, 'bg-teal/10 text-teal', otaProgress || (otaChecking ? 'Checking...' : 'Update Firmware'), d.identity ? `Installed ${d.identity.firmware}. Tap to check for updates.` : 'Unknown until a stick is paired', checkOta, !connected || otaChecking)}
-              {item(<Wifi size={20} />, 'bg-teal/10 text-teal', d.link === 'unpaired' ? 'Set up stick' : 'Set up again', 'Hold the stick button 5 s, then follow the steps', () => { onClose(); useUI.setState({ userSettings: false, stickSetup: true }); })}
-              {d.link !== 'unpaired' && item(<Unplug size={20} />, 'bg-sos/10 text-sos', 'Unpair Stick', 'Forget this stick and its key on this phone', () => setConfirmUnpair(true))}
-            </div>
-            {confirmUnpair && (
-              <div className="glass mb-5 rounded-[24px] border border-sos/30 p-4">
-                <p className="text-[15px] font-semibold text-ink">Unpair the stick? It will stop connecting to this phone until you set it up again.</p>
-                <div className="mt-3 grid grid-cols-2 gap-2">
-                  <GlassButton size="sm" onClick={() => setConfirmUnpair(false)}>Keep</GlassButton>
-                  <GlassButton size="sm" variant="sos" onClick={() => void unpair()}>Unpair</GlassButton>
-                </div>
-              </div>
-            )}
-
-            <h2 className="mb-2 px-1 text-[17px] font-semibold text-ink-2">Stick behaviour</h2>
-            <div className="glass mb-2 rounded-[24px] border border-glass-border p-4 space-y-4">
-              <div>
-                <p className="mb-2 text-[15px] font-semibold text-ink">Obstacle sensitivity</p>
-                <Segmented label="Obstacle sensitivity" size="sm" value={st.obstacleSensitivity} onChange={(v) => update({ obstacleSensitivity: v })} options={[{ value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }]} />
-                <p className="mt-1.5 text-[13px] text-ink-3">Danger below {SENSITIVITY[st.obstacleSensitivity].dangerCm} cm, warning below {SENSITIVITY[st.obstacleSensitivity].warningCm} cm, awareness below {SENSITIVITY[st.obstacleSensitivity].awarenessCm} cm. Decided on the stick itself, even without the phone.</p>
-              </div>
-              <label className="block">
-                <span className="flex items-center justify-between text-[15px] font-semibold text-ink">Vibration strength <span className="text-teal">{st.hapticStrength}%</span></span>
-                <input type="range" min={20} max={100} step={10} value={st.hapticStrength} onChange={(e) => update({ hapticStrength: Number(e.target.value) })} className="mt-2 w-full accent-teal" aria-label="Vibration strength" />
-                <span className="text-[13px] text-ink-3">Obstacle danger alerts never go below 60%.</span>
-              </label>
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-[15px] font-semibold text-ink">Obstacle vibration</span>
-                <Toggle label="Obstacle vibration" on={st.obstacleVibration} onChange={(v) => update({ obstacleVibration: v })} />
-              </div>
-              <div>
-                <p className="mb-2 text-[15px] font-semibold text-ink">Sleep when not moving</p>
-                <Segmented label="Auto sleep" size="sm" value={String(st.autoSleepMin)} onChange={(v) => update({ autoSleepMin: Number(v) })} options={[{ value: '0', label: 'Never' }, { value: '10', label: '10 min' }, { value: '30', label: '30 min' }]} />
-              </div>
-              <p className="text-[13.5px] font-semibold" role="status">
-                {d.configSync.state === 'applied' && <span className="text-ok">✓ Applied on the stick (v{d.configSync.appliedVersion})</span>}
-                {d.configSync.state === 'pending' && <span className="text-teal-ink">Sending to the stick…</span>}
-                {d.configSync.state === 'rejected' && <span className="text-sos">The stick rejected these settings: {d.configSync.error}</span>}
-                {(d.configSync.state === 'offline' || d.configSync.state === 'idle') && <span className="text-ink-3">Saved. Will apply when the stick connects.</span>}
-              </p>
-            </div>
-            <GlassButton size="sm" className="mb-5 w-full" disabled={!connected || testing} onClick={() => void selfTest()}>{testing ? 'Testing the stick…' : 'Run stick self-test'}</GlassButton>
-            {testReport && <pre className="mb-5 max-h-56 overflow-auto whitespace-pre-wrap rounded-[16px] bg-ink/[0.06] p-3 text-[12.5px] text-ink-2">{testReport}</pre>}
-
-            {mode === 'real' && (
-              <>
-                <h2 className="mb-2 px-1 text-[17px] font-semibold text-ink-2">Hardware test (developers)</h2>
-                <div className="glass rounded-[24px] p-4 border border-glass-border">
-                  <p className="text-[13.5px] leading-snug text-ink-3">Connect to the old test firmware (/data, /stream) by IP. It has no authentication, so it is labelled “Unverified test firmware” and battery % from it is not trusted.</p>
-                  <div className="mt-3 flex gap-2">
-                    <input value={legacyIp} onChange={(e) => setLegacyIp(e.target.value)} placeholder="192.168.43.120" aria-label="Test firmware IP address" className="h-11 min-w-0 flex-1 rounded-full border border-line bg-surface/70 px-4 text-[15px] text-ink outline-none" />
-                    <GlassButton size="sm" disabled={!/^\d+\.\d+\.\d+\.\d+$/.test(legacyIp)} onClick={() => void connectLegacyTestFirmware(legacyIp)}>Connect</GlassButton>
-                  </div>
-                </div>
-              </>
-            )}
+      <SectionTitle>Device</SectionTitle>
+      <div className="glass mb-5 overflow-hidden rounded-[24px] [&>*+*]:border-t [&>*+*]:border-line">
+        {item(<Wifi size={20} />, 'bg-teal/10 text-teal', d.link === 'unpaired' ? 'Set up stick' : 'Connect again', 'Joins the stick’s Wi-Fi and connects', () => { onClose(); useUI.setState({ userSettings: false, stickSetup: true }); })}
+        {item(<Search size={20} />, 'bg-info/10 text-info', 'Find my stick', connected ? 'Vibrate the stick so you can find it' : 'Stick not connected', () => void locate(), !connected)}
+        {item(<Radar size={20} />, 'bg-teal/10 text-teal', 'Calibrate orientation', cal ? 'Hold the stick upright, then tap to update' : 'Hold the stick upright, then tap', calibrate, !connected)}
+        {item(<Download size={20} />, 'bg-teal/10 text-teal', otaProgress || (otaChecking ? 'Checking…' : 'Update firmware'), d.identity ? `Installed ${d.identity.firmware}` : 'Unknown until a stick is paired', () => void checkOta(), !connected || otaChecking)}
+        {d.link !== 'unpaired' && item(<Unplug size={20} />, 'bg-sos/10 text-sos', 'Forget stick', 'Remove this stick from this phone', () => setConfirmUnpair(true))}
+      </div>
+      {confirmUnpair && (
+        <div className="glass mb-5 rounded-[24px] border border-sos/30 p-4">
+          <p className="text-[15px] font-semibold text-ink">Forget the stick? It stops connecting to this phone until you set it up again.</p>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <GlassButton size="sm" onClick={() => setConfirmUnpair(false)}>Keep</GlassButton>
+            <GlassButton size="sm" variant="sos" onClick={() => void unpair()}>Forget</GlassButton>
           </div>
-        </motion.div>
+        </div>
       )}
-    </AnimatePresence>
+
+      <SectionTitle>Stick behaviour</SectionTitle>
+      <div className="glass mb-3 space-y-4 rounded-[24px] p-4">
+        <div>
+          <p className="mb-2 text-[15px] font-semibold text-ink">Obstacle sensitivity</p>
+          <Segmented label="Obstacle sensitivity" size="sm" value={st.obstacleSensitivity} onChange={(v) => update({ obstacleSensitivity: v })} options={[{ value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }]} />
+          <p className="mt-1.5 text-[13px] leading-snug text-ink-3">
+            Danger below {SENSITIVITY[st.obstacleSensitivity].dangerCm} cm, warning below {SENSITIVITY[st.obstacleSensitivity].warningCm} cm. Decided on the stick itself, even without the phone.
+          </p>
+        </div>
+        <label className="block">
+          <span className="flex items-center justify-between text-[15px] font-semibold text-ink">
+            Vibration strength <span className="text-teal">{st.hapticStrength}%</span>
+          </span>
+          <input type="range" min={20} max={100} step={10} value={st.hapticStrength} onChange={(e) => update({ hapticStrength: Number(e.target.value) })} className="mt-2 w-full accent-teal" aria-label="Vibration strength" />
+          <span className="text-[13px] text-ink-3">Danger alerts never go below 60%.</span>
+        </label>
+        <div className="flex items-center justify-between gap-3">
+          <span className="min-w-0 text-[15px] font-semibold text-ink">Obstacle vibration</span>
+          <Toggle label="Obstacle vibration" on={st.obstacleVibration} onChange={(v) => update({ obstacleVibration: v })} />
+        </div>
+        <div>
+          <p className="mb-2 text-[15px] font-semibold text-ink">Sleep when not moving</p>
+          <Segmented label="Auto sleep" size="sm" value={String(st.autoSleepMin)} onChange={(v) => update({ autoSleepMin: Number(v) })} options={[{ value: '0', label: 'Never' }, { value: '10', label: '10 min' }, { value: '30', label: '30 min' }]} />
+        </div>
+        <p className="text-[13.5px] font-semibold" role="status">
+          {d.configSync.state === 'applied' && <span className="text-ok">✓ Applied on the stick</span>}
+          {d.configSync.state === 'pending' && <span className="text-teal-ink">Sending to the stick…</span>}
+          {d.configSync.state === 'rejected' && <span className="text-sos">The stick rejected these settings: {d.configSync.error}</span>}
+          {(d.configSync.state === 'offline' || d.configSync.state === 'idle') && <span className="text-ink-3">Saved. Applies when the stick connects.</span>}
+        </p>
+      </div>
+      <GlassButton size="sm" className="mb-5 w-full" disabled={!connected || testing} onClick={() => void selfTest()}>
+        {testing ? 'Testing the stick…' : 'Run stick self-test'}
+      </GlassButton>
+      {testReport && <pre className="mb-5 max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-[16px] bg-ink/[0.06] p-3 text-[12.5px] text-ink-2">{testReport}</pre>}
+
+      {mode === 'real' && (
+        <>
+          <SectionTitle>Hardware test (developers)</SectionTitle>
+          <div className="glass rounded-[24px] p-4">
+            <p className="text-[13.5px] leading-snug text-ink-3">Connect to the old test firmware (/data, /stream) by IP. Battery % from it is not trusted.</p>
+            <div className="mt-3 flex gap-2">
+              <input value={legacyIp} onChange={(e) => setLegacyIp(e.target.value)} placeholder="192.168.4.1" inputMode="decimal" aria-label="Test firmware IP address" className="h-11 min-w-0 flex-1 rounded-full border border-line bg-surface/70 px-4 text-[15px] text-ink outline-none" />
+              <GlassButton size="sm" className="shrink-0" disabled={!/^\d+\.\d+\.\d+\.\d+$/.test(legacyIp)} onClick={() => void connectLegacyTestFirmware(legacyIp)}>
+                Connect
+              </GlassButton>
+            </div>
+          </div>
+        </>
+      )}
+    </>
   );
 }
 
 /* ──────── Privacy: camera & location ──────── */
 function PrivacySubpage({ open, onClose }: { open: boolean; onClose: () => void }) {
+  return (
+    <SubPage open={open} onClose={onClose} title="Camera & location">
+      <PrivacyContent />
+    </SubPage>
+  );
+}
+
+function PrivacyContent() {
   const s = useSession((x) => x.settings);
+  const update = useSession((x) => x.updateSettings);
   const bg = useBackground();
   const [batt, setBatt] = useState<{ ignoring: boolean; manufacturer: string } | null>(null);
   useEffect(() => {
-    if (open && bg.supported) void AissNative.getBatteryOptimization().then(setBatt).catch(() => setBatt(null));
-  }, [open, bg.supported]);
-  const update = useSession((x) => x.updateSettings);
+    if (bg.supported) void AissNative.getBatteryOptimization().then(setBatt).catch(() => setBatt(null));
+  }, [bg.supported]);
   return (
-    <AnimatePresence>
-      {open && (
-        <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', damping: 30, stiffness: 300 }} className="absolute inset-0 z-[70] bg-bg overflow-y-auto no-scrollbar">
-          <Atmosphere variant="user" />
-          <div className="px-4 pb-8" style={{ paddingTop: 'calc(var(--island, var(--sat)) + 14px)' }}>
-            <div className="mb-6 mt-8 flex items-center gap-4">
-              <button onClick={onClose} aria-label="Back" className="h-12 w-12 glass interactive rounded-full flex items-center justify-center text-ink shrink-0"><ChevronLeft size={24} /></button>
-              <h1 className="text-[24px] font-bold text-ink">Camera & Location</h1>
-            </div>
-            <div className="glass overflow-hidden rounded-[28px] [&>*+*]:border-t [&>*+*]:border-line mb-5">
-              <BigRow icon={<MapPin size={22} />} label="Share live location with safety contact" detail="During an SOS your location is always shared." on={s.locationSharing} onChange={(v) => update({ locationSharing: v })} />
-              <BigRow
-                icon={<Smartphone size={22} />}
-                label="Keep running with the screen off"
-                detail={!bg.supported ? 'Available in the Android app only' : bg.error ? `Could not start: ${bg.error}` : bg.running ? 'On now: stick, GPS and SOS keep working. Android shows a notification.' : 'Starts when a stick is paired, during SOS or navigation.'}
-                on={s.runInBackground}
-                onChange={(v) => update({ runInBackground: v })}
-              />
-              {bg.supported && batt && !batt.ignoring && (
-                <div className="px-4 py-3">
-                  <p className="text-[14px] leading-snug text-amber-ink">Android battery saving may stop AI SmartStick in the background{/xiaomi|redmi|samsung|oppo|vivo|realme/i.test(batt.manufacturer) ? ` (common on ${batt.manufacturer})` : ''}.</p>
-                  <button type="button" className="mt-2 text-[14.5px] font-semibold text-teal-ink underline" onClick={() => void AissNative.openBatteryOptimizationSettings().catch(() => undefined)}>Open battery settings → choose “Don’t optimise”</button>
-                </div>
-              )}
-              <div className="px-4 py-3">
-                <p className="mb-2 flex items-center gap-2 text-[16px] font-medium text-ink"><ScanEye size={18} className="text-ink-3" /> When a safety contact requests the camera</p>
-                <Segmented label="Camera requests" size="sm" value={s.cameraRequests} onChange={(v) => update({ cameraRequests: v })} options={[{ value: 'auto', label: 'Announce & allow' }, { value: 'ask', label: 'Ask me first' }]} />
-                <p className="mt-2 text-[13.5px] leading-snug text-ink-3">You always hear “camera requested”, “camera active” and “camera ended”. Photos go straight to your guardian’s phone and are never stored.</p>
-              </div>
-              <div className="px-4 py-3">
-                <p className="mb-2 flex items-center gap-2 text-[16px] font-medium text-ink"><Phone size={18} className="text-ink-3" /> Calls to your safety contact</p>
-                <Segmented label="Call mode" size="sm" value={s.callMode} onChange={(v) => { update({ callMode: v }); if (v === 'direct') void AissNative.requestPermissions({ permissions: ['phone'] }).catch(() => undefined); }} options={[{ value: 'direct', label: 'Call directly' }, { value: 'dialer', label: 'Open dialer' }]} />
-              </div>
-              <div className="px-4 py-3">
-                <p className="mb-2 flex items-center gap-2 text-[16px] font-medium text-ink"><MessageSquare size={18} className="text-ink-3" /> Texts to your safety contact</p>
-                <Segmented label="SMS mode" size="sm" value={s.smsMode} onChange={(v) => { update({ smsMode: v }); if (v === 'direct') void AissNative.requestPermissions({ permissions: ['sms'] }).catch(() => undefined); }} options={[{ value: 'composer', label: 'Open messages' }, { value: 'direct', label: 'Send directly' }]} />
-                <p className="mt-2 text-[13.5px] leading-snug text-ink-3">“Send directly” needs Android SMS permission. Otherwise the message opens for you to press send, and the assistant says so.</p>
-              </div>
-            </div>
-          </div>
-        </motion.div>
+    <div className="glass mb-5 overflow-hidden rounded-[28px] [&>*+*]:border-t [&>*+*]:border-line">
+      <BigRow icon={<MapPin size={22} />} label="Share live location" detail="With your safety contact. During an SOS it is always shared." on={s.locationSharing} onChange={(v) => update({ locationSharing: v })} />
+      <BigRow
+        icon={<Smartphone size={22} />}
+        label="Keep running with the screen off"
+        detail={!bg.supported ? 'Available in the Android app only' : bg.error ? `Could not start: ${bg.error}` : bg.running ? 'On now: stick, GPS and SOS keep working.' : 'Starts when a stick is paired, during SOS or navigation.'}
+        on={s.runInBackground}
+        onChange={(v) => update({ runInBackground: v })}
+      />
+      {bg.supported && batt && !batt.ignoring && (
+        <div className="px-4 py-3">
+          <p className="text-[14px] leading-snug text-amber-ink">
+            Android battery saving may stop {BRAND.name} in the background{/xiaomi|redmi|samsung|oppo|vivo|realme/i.test(batt.manufacturer) ? ` (common on ${batt.manufacturer})` : ''}.
+          </p>
+          <button type="button" className="mt-2 text-left text-[14.5px] font-semibold text-teal-ink underline" onClick={() => void AissNative.openBatteryOptimizationSettings().catch(() => undefined)}>
+            Open battery settings → choose “Don’t optimise”
+          </button>
+        </div>
       )}
-    </AnimatePresence>
+      <div className="px-4 py-3">
+        <p className="mb-2 flex items-center gap-2 text-[15.5px] font-medium text-ink">
+          <ScanEye size={18} className="shrink-0 text-ink-3" /> When your safety contact asks for the camera
+        </p>
+        <Segmented label="Camera requests" size="sm" value={s.cameraRequests} onChange={(v) => update({ cameraRequests: v })} options={[{ value: 'auto', label: 'Announce & allow' }, { value: 'ask', label: 'Ask me' }]} />
+        <p className="mt-2 text-[13px] leading-snug text-ink-3">You always hear when the camera starts and ends. Photos are never stored.</p>
+      </div>
+      <div className="px-4 py-3">
+        <p className="mb-2 flex items-center gap-2 text-[15.5px] font-medium text-ink">
+          <Phone size={18} className="shrink-0 text-ink-3" /> Calls to your safety contact
+        </p>
+        <Segmented label="Call mode" size="sm" value={s.callMode} onChange={(v) => { update({ callMode: v }); if (v === 'direct') void AissNative.requestPermissions({ permissions: ['phone'] }).catch(() => undefined); }} options={[{ value: 'direct', label: 'Call directly' }, { value: 'dialer', label: 'Open dialer' }]} />
+      </div>
+      <div className="px-4 py-3">
+        <p className="mb-2 flex items-center gap-2 text-[15.5px] font-medium text-ink">
+          <MessageSquare size={18} className="shrink-0 text-ink-3" /> Texts to your safety contact
+        </p>
+        <Segmented label="SMS mode" size="sm" value={s.smsMode} onChange={(v) => { update({ smsMode: v }); if (v === 'direct') void AissNative.requestPermissions({ permissions: ['sms'] }).catch(() => undefined); }} options={[{ value: 'composer', label: 'Open Messages' }, { value: 'direct', label: 'Send directly' }]} />
+        <p className="mt-2 text-[13px] leading-snug text-ink-3">“Send directly” needs Android SMS permission. Otherwise the message opens for you to press Send.</p>
+      </div>
+    </div>
   );
 }
 
@@ -797,143 +865,88 @@ function PrivacySubpage({ open, onClose }: { open: boolean; onClose: () => void 
 function ActivitySubpage({ open, onClose }: { open: boolean; onClose: () => void }) {
   const events = useActivity((x) => x.events);
   return (
-    <AnimatePresence>
-      {open && (
-        <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', damping: 30, stiffness: 300 }} className="absolute inset-0 z-[70] bg-bg overflow-y-auto no-scrollbar">
-          <Atmosphere variant="user" />
-          <div className="px-4 pb-8" style={{ paddingTop: 'calc(var(--island, var(--sat)) + 14px)' }}>
-            <div className="mb-6 mt-8 flex items-center gap-4">
-              <button onClick={onClose} aria-label="Back" className="h-12 w-12 glass interactive rounded-full flex items-center justify-center text-ink shrink-0"><ChevronLeft size={24} /></button>
-              <h1 className="text-[24px] font-bold text-ink">Activity History</h1>
-            </div>
-            <p className="mb-4 px-1 text-[14.5px] leading-snug text-ink-3">Events (connections, alerts, walks, camera access) are saved to your account and shared with your linked safety contact. Camera photos are never saved.</p>
-            <div className="glass overflow-hidden rounded-[24px] [&>*+*]:border-t [&>*+*]:border-line">
-              {events.length ? events.slice(0, 40).map((e) => <EventRow key={e.id} e={e} now={Date.now()} />) : <p className="px-4 py-6 text-center text-[15px] text-ink-3">No activity yet.</p>}
-            </div>
-            <GlassButton size="lg" className="mt-4 w-full" onClick={() => useActivity.setState({ events: [] })}>Clear from this screen</GlassButton>
-            <p className="mt-2 px-1 text-[13px] text-ink-3">Clearing hides events on this phone only; account history remains for them.</p>
-          </div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+    <SubPage open={open} onClose={onClose} title="Activity">
+      <p className="mb-4 px-1 text-[14px] leading-snug text-ink-3">Connections, alerts, walks and camera access are saved to your account and shared with your linked safety contact. Camera photos are never saved.</p>
+      <div className="glass overflow-hidden rounded-[24px] [&>*+*]:border-t [&>*+*]:border-line">
+        {events.length ? events.slice(0, 40).map((e) => <EventRow key={e.id} e={e} now={Date.now()} />) : <p className="px-4 py-6 text-center text-[15px] text-ink-3">No activity yet.</p>}
+      </div>
+      <GlassButton size="lg" className="mt-4 w-full" onClick={() => useActivity.setState({ events: [] })}>
+        Clear from this screen
+      </GlassButton>
+      <p className="mt-2 px-1 text-[13px] text-ink-3">Clearing hides events on this phone only.</p>
+    </SubPage>
   );
 }
 
 /* ──────── Device information ──────── */
 function DeviceInfoSubpage({ open, onClose }: { open: boolean; onClose: () => void }) {
+  return (
+    <SubPage open={open} onClose={onClose} title="About this phone">
+      <DeviceInfoContent />
+    </SubPage>
+  );
+}
+
+function DeviceInfoContent() {
   const p = usePhoneInfo();
   const d = useDevice();
   const mode = useRuntime((x) => x.mode);
   const [confirmMode, setConfirmMode] = useState(false);
   const [delState, setDelState] = useState<string>('idle');
   const row = (k: string, v: string) => (
-    <div className="flex items-center justify-between gap-3 px-4 py-3"><span className="text-[15px] text-ink-2">{k}</span><span className="text-right text-[15px] font-semibold text-ink">{v}</span></div>
+    <div className="flex items-start justify-between gap-3 px-4 py-3">
+      <span className="shrink-0 text-[15px] text-ink-2">{k}</span>
+      <span className="min-w-0 break-words text-right text-[15px] font-semibold text-ink">{v}</span>
+    </div>
   );
   return (
-    <AnimatePresence>
-      {open && (
-        <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', damping: 30, stiffness: 300 }} className="absolute inset-0 z-[70] bg-bg overflow-y-auto no-scrollbar">
-          <Atmosphere variant="user" />
-          <div className="px-4 pb-8" style={{ paddingTop: 'calc(var(--island, var(--sat)) + 14px)' }}>
-            <div className="mb-6 mt-8 flex items-center gap-4">
-              <button onClick={onClose} aria-label="Back" className="h-12 w-12 glass interactive rounded-full flex items-center justify-center text-ink shrink-0"><ChevronLeft size={24} /></button>
-              <h1 className="text-[24px] font-bold text-ink">Device Information</h1>
-            </div>
-            <div className="glass overflow-hidden rounded-[24px] [&>*+*]:border-t [&>*+*]:border-line mb-5">
-              {row('App', `${BRAND.name} ${p.appVersion}`)}
-              {row('Mode', mode === 'demo' ? 'Demo (simulated data)' : 'Real')}
-              {row('Phone', phoneLabel(p))}
-              {row('System', p.osVersion ?? 'Unavailable')}
-              {row('Phone battery', p.batteryPct == null ? 'Unavailable' : `${p.batteryPct}%${p.charging ? ', charging' : ''}`)}
-              {row('Stick', d.identity ? d.identity.deviceId : 'Not paired')}
-              {row('Stick firmware', d.identity?.firmware ?? 'Unavailable')}
-              {row('Stick battery', batteryLabel(d.battery).text)}
-            </div>
-            <div className="glass rounded-[24px] p-4">
-              <p className="text-[16px] font-bold text-ink">{mode === 'demo' ? 'Leave demo mode' : 'Demo mode'}</p>
-              <p className="mt-1 text-[13.5px] leading-snug text-ink-3">{mode === 'demo' ? 'Switch to real mode: real account, stick, GPS and assistant.' : 'Shows a simulated stick, street and assistant for demonstrations. Real data is never mixed in.'}</p>
-              {confirmMode ? (
-                <div className="mt-3 grid grid-cols-2 gap-2">
-                  <GlassButton size="sm" onClick={() => setConfirmMode(false)}>Cancel</GlassButton>
-                  <GlassButton size="sm" variant="teal" onClick={() => switchMode(mode === 'demo' ? 'real' : 'demo')}>Switch & restart</GlassButton>
-                </div>
-              ) : (
-                <GlassButton size="sm" className="mt-3 w-full" onClick={() => setConfirmMode(true)}>{mode === 'demo' ? 'Switch to real mode' : 'Switch to demo mode'}</GlassButton>
-              )}
-            </div>
-            {mode === 'real' && (
-              <div className="glass mt-4 rounded-[24px] border border-sos/20 p-4">
-                <p className="text-[16px] font-bold text-ink">Delete account</p>
-                <p className="mt-1 text-[13.5px] leading-snug text-ink-3">Permanently deletes your profile, settings, activity, assistant history and SOS records, and unlinks your safety contact. This cannot be undone.</p>
-                {delState === 'confirm' ? (
-                  <div className="mt-3 grid grid-cols-2 gap-2">
-                    <GlassButton size="sm" onClick={() => setDelState('idle')}>Cancel</GlassButton>
-                    <GlassButton size="sm" variant="sos" onClick={() => { setDelState('busy'); void deleteAccount().catch((e) => setDelState(`error:${friendlyError(e)}`)); }}>Delete forever</GlassButton>
-                  </div>
-                ) : (
-                  <GlassButton size="sm" className="mt-3 w-full" disabled={delState === 'busy'} onClick={() => setDelState('confirm')}>{delState === 'busy' ? 'Deleting…' : 'Delete my account'}</GlassButton>
-                )}
-                {delState.startsWith('error:') && <p className="mt-2 text-[13.5px] font-semibold text-sos" role="alert">{delState.slice(6)}</p>}
-              </div>
-            )}
-            <p className="mt-4 px-1 text-[13px] text-ink-3">Open-source licences are listed in the repository (package.json dependencies).</p>
+    <>
+      <div className="glass mb-5 overflow-hidden rounded-[24px] [&>*+*]:border-t [&>*+*]:border-line">
+        {row('App', `${BRAND.name} ${p.appVersion}`)}
+        {row('Mode', mode === 'demo' ? 'Demo (simulated data)' : 'Real')}
+        {row('Phone', phoneLabel(p))}
+        {row('System', p.osVersion ?? 'Unavailable')}
+        {row('Phone battery', p.batteryPct == null ? 'Unavailable' : `${p.batteryPct}%${p.charging ? ', charging' : ''}`)}
+        {row('Stick', d.identity ? d.identity.deviceId : 'Not paired')}
+        {row('Stick firmware', d.identity?.firmware ?? 'Unavailable')}
+        {row('Stick battery', batteryLabel(d.battery).text)}
+      </div>
+      <div className="glass rounded-[24px] p-4">
+        <p className="text-[16px] font-bold text-ink">{mode === 'demo' ? 'Leave demo mode' : 'Demo mode'}</p>
+        <p className="mt-1 text-[13.5px] leading-snug text-ink-3">{mode === 'demo' ? 'Switch to real mode: real account, stick, GPS and assistant.' : 'Shows a simulated stick, street and assistant for demonstrations. Real data is never mixed in.'}</p>
+        {confirmMode ? (
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <GlassButton size="sm" onClick={() => setConfirmMode(false)}>Cancel</GlassButton>
+            <GlassButton size="sm" variant="teal" onClick={() => switchMode(mode === 'demo' ? 'real' : 'demo')}>Switch & restart</GlassButton>
           </div>
-        </motion.div>
+        ) : (
+          <GlassButton size="sm" className="mt-3 w-full" onClick={() => setConfirmMode(true)}>{mode === 'demo' ? 'Switch to real mode' : 'Switch to demo mode'}</GlassButton>
+        )}
+      </div>
+      {mode === 'real' && (
+        <div className="glass mt-4 rounded-[24px] border border-sos/20 p-4">
+          <p className="text-[16px] font-bold text-ink">Delete account</p>
+          <p className="mt-1 text-[13.5px] leading-snug text-ink-3">Permanently deletes your profile, settings, activity, assistant history and SOS records, and unlinks your safety contact. This cannot be undone.</p>
+          {delState === 'confirm' ? (
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <GlassButton size="sm" onClick={() => setDelState('idle')}>Cancel</GlassButton>
+              <GlassButton size="sm" variant="sos" onClick={() => { setDelState('busy'); void deleteAccount().catch((e) => setDelState(`error:${friendlyError(e)}`)); }}>Delete forever</GlassButton>
+            </div>
+          ) : (
+            <GlassButton size="sm" className="mt-3 w-full" disabled={delState === 'busy'} onClick={() => setDelState('confirm')}>{delState === 'busy' ? 'Deleting…' : 'Delete my account'}</GlassButton>
+          )}
+          {delState.startsWith('error:') && <p className="mt-2 text-[13.5px] font-semibold text-sos" role="alert">{delState.slice(6)}</p>}
+        </div>
       )}
-    </AnimatePresence>
+      <p className="mt-4 px-1 text-[13px] text-ink-3">Open-source licences are listed in the repository (package.json dependencies).</p>
+    </>
   );
 }
 
-/** Full-Fledged Settings Hub — Profile, Emergency, Accessibility, Hardware */
+/* ──────── Settings hub ──────── */
 export function UserSettings() {
   const open = useUI((s) => s.userSettings);
-  const s = useSession((x) => x.settings);
-  const update = useSession((x) => x.updateSettings);
-  
   const close = () => useUI.setState({ userSettings: false });
-  const linkState = useDevice((s) => s.link);
-  const battery = useDevice((s) => s.battery);
-  const contactsCount = useSession((x) => x.contacts.length);
-  const guardianName = useSession((x) => x.guardian.heardAs);
-  const mode = useRuntime((x) => x.mode);
-  const [privacyOpen, setPrivacyOpen] = useState(false);
-  const [activityOpen, setActivityOpen] = useState(false);
-  const [infoOpen, setInfoOpen] = useState(false);
-  
-  const isDark = s.theme === 'dark' || (s.theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-
-  const [profileOpen, setProfileOpen] = useState(false);
-  const [emergencyOpen, setEmergencyOpen] = useState(false);
-  const [accessibilityOpen, setAccessibilityOpen] = useState(false);
-  const [gameOpen, setGameOpen] = useState(false);
-  const [hardwareOpen, setHardwareOpen] = useState(false);
-  // Back closes the open sub-page, not the whole of Settings (core/backStack.ts).
-  useBackHandler(privacyOpen, () => setPrivacyOpen(false));
-  useBackHandler(activityOpen, () => setActivityOpen(false));
-  useBackHandler(infoOpen, () => setInfoOpen(false));
-  useBackHandler(profileOpen, () => setProfileOpen(false));
-  useBackHandler(emergencyOpen, () => setEmergencyOpen(false));
-  useBackHandler(accessibilityOpen, () => setAccessibilityOpen(false));
-  useBackHandler(gameOpen, () => setGameOpen(false));
-  useBackHandler(hardwareOpen, () => setHardwareOpen(false));
-  
-  const [osTapCount, setOsTapCount] = useState(0);
-  const tapTimeoutRef = useRef<any>(undefined);
-
-  const handleOsTap = () => {
-    setOsTapCount((prev) => {
-      const next = prev + 1;
-      if (next >= 3) {
-        setGameOpen(true);
-        navigator.vibrate?.([50, 100, 150]);
-        return 0; // reset
-      }
-      return next;
-    });
-    if (tapTimeoutRef.current) clearTimeout(tapTimeoutRef.current);
-    tapTimeoutRef.current = setTimeout(() => setOsTapCount(0), 1000);
-  };
-
   return (
     <AnimatePresence>
       {open && (
@@ -941,245 +954,164 @@ export function UserSettings() {
           role="dialog"
           aria-modal="true"
           aria-label="Settings"
-          className="absolute inset-0 z-[60] overflow-hidden bg-bg"
-          initial={{ clipPath: 'circle(0% at 85% 85%)' }}
-          animate={{ clipPath: 'circle(150% at 85% 85%)' }}
-          exit={{ clipPath: 'circle(0% at 85% 85%)' }}
-          transition={{ duration: 0.35, ease: 'linear' }}
+          className="absolute inset-0 z-[60]"
+          initial={{ opacity: 0, y: 24 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 24 }}
+          transition={{ duration: 0.2, ease: EASE }}
         >
-          <Atmosphere variant="user" />
-          <motion.div 
-            animate={{ 
-              opacity: profileOpen || emergencyOpen || accessibilityOpen || hardwareOpen ? 0 : 1, 
-              x: profileOpen || emergencyOpen || accessibilityOpen || hardwareOpen ? -50 : 0 
-            }} 
-            transition={{ duration: 0.3, ease: 'easeOut' }}
-            className={`absolute inset-0 overflow-y-auto no-scrollbar px-4 pb-8 ${profileOpen || emergencyOpen || accessibilityOpen || hardwareOpen ? 'pointer-events-none' : ''}`}
-            style={{ paddingTop: 'calc(var(--island, var(--sat)) + 14px)' }}
-          >
-            <div className="mb-5 mt-8 flex items-center gap-4">
-              <button onClick={close} className="h-12 w-12 glass interactive rounded-full flex items-center justify-center text-ink shrink-0">
-                <ChevronLeft size={24} />
-              </button>
-              <h1 className="text-[28px] font-bold tracking-[-0.02em] text-ink">Settings</h1>
-            </div>
-
-            {/* ──── MIUI-Style Hero Grid ──── */}
-            <div className="flex gap-3 mb-6 h-[240px]">
-              {/* Stick Visual Box - Left (Big) */}
-              <button 
-                onClick={() => { close(); useUI.setState({ stickPage: true }); }}
-                className="glass flex-1 rounded-[28px] p-5 border border-glass-border flex flex-col items-center justify-center relative overflow-hidden shadow-lg interactive"
-              >
-                <div className="absolute inset-0 bg-gradient-to-br from-teal/10 to-teal/5 pointer-events-none" />
-                <div className="absolute -top-10 -left-10 w-40 h-40 bg-teal/15 rounded-full blur-2xl pointer-events-none" />
-                <div className="flex-1 flex flex-col justify-center items-center relative z-10 w-full">
-                  <StickVisual height={160} />
-                  <p className="text-[15px] font-bold text-ink mt-3 tracking-wide uppercase opacity-80">AI SmartStick</p>
-                </div>
-              </button>
-
-              {/* Info Column - Right */}
-              <div className="w-[140px] flex flex-col gap-3 shrink-0">
-                {/* Brand box (easter egg trigger: tap 3×) */}
-                <button 
-                  onClick={handleOsTap}
-                  className="glass interactive flex-1 rounded-[24px] p-4 border border-glass-border flex flex-col justify-between shadow-sm relative overflow-hidden"
-                >
-                  <div className={`absolute inset-0 bg-white transition-opacity duration-300 ${osTapCount > 0 ? 'opacity-20' : 'opacity-0'}`} />
-                  <div className="flex items-baseline justify-center mt-2 relative z-10">
-                    <span className="text-[40px] font-black text-transparent bg-clip-text bg-gradient-to-br from-teal to-mint leading-none drop-shadow-sm">V1</span>
-                  </div>
-                  <div className="text-center mb-1 relative z-10">
-                    <p className="text-[13px] font-bold text-ink">{BRAND.name}</p>
-                    <p className="text-[11px] text-ink-3">v{ENV.appVersion}</p>
-                  </div>
-                </button>
-
-                {/* Device Health Mini */}
-                <button 
-                  onClick={() => { close(); useUI.setState({ batteryPage: true }); }}
-                  className="glass flex-1 rounded-[24px] p-3 border border-glass-border flex flex-col justify-center shadow-sm interactive"
-                >
-                  <p className="text-[12px] font-bold text-ink-3 uppercase tracking-wider mb-2 text-center">Health</p>
-                  <div className="flex items-center gap-2 justify-center mb-2">
-                    <Battery size={16} className={battery.status === 'ok' ? 'text-ok' : 'text-ink-3'} />
-                    <span className="text-[16px] font-bold text-ink">{batteryLabel(battery).text}</span>
-                  </div>
-                  <div className="flex items-center justify-center gap-1.5">
-                    <Wifi size={14} className={linkState === 'connected' ? "text-teal" : "text-ink-3"} />
-                    <span className="text-[12px] font-medium text-ink-2">{linkLabel(linkState).text}</span>
-                  </div>
-                </button>
-              </div>
-            </div>
-
-            {/* ──── Quick Action Cards ──── */}
-            <div className="flex flex-col gap-3 mb-6">
-              {/* Theme Toggle */}
-              <motion.button 
-                whileTap={{ scale: 0.98 }}
-                onClick={(e) => toggleThemeWithTransition(e)}
-                className="glass rounded-[24px] p-5 border border-glass-border flex items-center gap-4 w-full text-left interactive shadow-sm"
-              >
-                <div className={`p-3 rounded-[14px] ${isDark ? 'bg-info/10 text-info' : 'bg-amber/10 text-amber'}`}>
-                  {isDark ? <Moon size={24} /> : <Sun size={24} />}
-                </div>
-                <div className="flex-1">
-                  <p className="text-[17px] font-bold text-ink">Appearance</p>
-                  <p className="text-[14px] text-ink-3 mt-0.5">{isDark ? 'Dark Mode' : 'Light Mode'}</p>
-                </div>
-                <div className="w-[52px] h-8 bg-ink/10 rounded-full relative p-1 shrink-0 border border-ink/5">
-                  <motion.div 
-                    initial={false}
-                    animate={{ x: isDark ? 24 : 0 }}
-                    transition={{ type: "spring", stiffness: 500, damping: 30 }}
-                    className={`w-6 h-6 rounded-full shadow-sm ${isDark ? 'bg-info' : 'bg-amber'}`}
-                  />
-                </div>
-              </motion.button>
-
-              {/* Emergency SOS Card */}
-              <motion.button 
-                whileTap={{ scale: 0.98 }}
-                onClick={() => setEmergencyOpen(true)}
-                className="glass rounded-[24px] p-5 border border-sos/20 bg-sos/5 flex items-center gap-4 w-full text-left interactive shadow-sm"
-              >
-                <div className="p-3 bg-sos/15 rounded-[14px] text-sos">
-                  <Shield size={26} />
-                </div>
-                <div className="flex-1">
-                  <p className="text-[17px] font-bold text-ink">Emergency & SOS</p>
-                  <p className="text-[14px] text-ink-3 mt-0.5">{guardianName ? `Safety Contact: ${guardianName}` : 'No safety contact linked'} · {contactsCount} contact{contactsCount === 1 ? '' : 's'} · Fall detection {s.sosTriggers.fall ? 'on' : 'off'}</p>
-                </div>
-                <ChevronRight size={20} className="text-ink-3" />
-              </motion.button>
-
-              {/* Take Me Home */}
-              <button 
-                onClick={() => setProfileOpen(true)}
-                className="glass rounded-[24px] p-5 border border-glass-border flex items-center gap-4 shadow-sm interactive w-full text-left"
-              >
-                <div className="p-3 bg-info/10 rounded-[14px] text-info">
-                  <Home size={24} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-[17px] font-bold text-ink">Take Me Home</p>
-                  <p className="text-[14px] text-ink-3 mt-0.5 truncate italic">
-                    {useSession.getState().person.homeAddress || 'No home address set'}
-                  </p>
-                </div>
-                <ChevronRight size={20} className="text-ink-3 shrink-0" />
-              </button>
-            </div>
-
-            <div className="flex flex-col gap-6 mb-8">
-              {/* AI SMART STICK */}
-              <div>
-                <h2 className="mb-2 px-1 text-[14px] font-bold text-ink-3 uppercase tracking-wider">AI SMART STICK</h2>
-                <div className="glass overflow-hidden rounded-[24px] border border-glass-border">
-                  <NavRow 
-                    icon={<Smartphone size={20} />} iconBg="bg-teal/10 text-teal" 
-                    label="Stick Connection & Hardware" detail="Manage paired stick, battery, firmware"
-                    onClick={() => setHardwareOpen(true)} 
-                  />
-                </div>
-              </div>
-
-              {/* ASSISTANCE */}
-              <div>
-                <h2 className="mb-2 px-1 text-[14px] font-bold text-ink-3 uppercase tracking-wider">ASSISTANCE</h2>
-                <div className="glass overflow-hidden rounded-[24px] border border-glass-border">
-                  <NavRow 
-                    icon={<Mic size={20} />} iconBg="bg-teal/10 text-teal" 
-                    label="Voice, Language & Vision" detail="AI behaviour, camera preferences"
-                    onClick={() => setAccessibilityOpen(true)} 
-                  />
-                </div>
-              </div>
-
-              {/* SAFETY */}
-              <div>
-                <h2 className="mb-2 px-1 text-[14px] font-bold text-ink-3 uppercase tracking-wider">SAFETY</h2>
-                <div className="glass overflow-hidden rounded-[24px] [&>*+*]:border-t [&>*+*]:border-line">
-                  <NavRow 
-                    icon={<ShieldAlert size={20} />} iconBg="bg-sos/10 text-sos" 
-                    label="Emergency & SOS" detail="Contacts, countdown, fall detection"
-                    onClick={() => setEmergencyOpen(true)} 
-                  />
-                  <NavRow 
-                    icon={<User size={20} />} iconBg="bg-info/10 text-info" 
-                    label="Medical Profile" detail="Medical ID and home address"
-                    onClick={() => setProfileOpen(true)} 
-                  />
-                </div>
-              </div>
-
-              {/* ACCESSIBILITY */}
-              <div>
-                <h2 className="mb-2 px-1 text-[14px] font-bold text-ink-3 uppercase tracking-wider">ACCESSIBILITY</h2>
-                <div className="glass overflow-hidden rounded-[24px] [&>*+*]:border-t [&>*+*]:border-line">
-                  <NavRow 
-                    icon={<Accessibility size={20} />} iconBg="bg-amber/10 text-amber" 
-                    label="Display & Vision" detail="Text size, high contrast, screen reader"
-                    onClick={() => setAccessibilityOpen(true)} 
-                  />
-                  <NavRow 
-                    icon={<Vibrate size={20} />} iconBg="bg-sos/10 text-sos" 
-                    label="Haptics & Feedback" detail="Vibration intensity, reduced motion"
-                    onClick={() => setAccessibilityOpen(true)} 
-                  />
-                </div>
-              </div>
-
-              {/* PRIVACY */}
-              <div>
-                <h2 className="mb-2 px-1 text-[14px] font-bold text-ink-3 uppercase tracking-wider">PRIVACY</h2>
-                <div className="glass overflow-hidden rounded-[24px] [&>*+*]:border-t [&>*+*]:border-line">
-                  <NavRow 
-                    icon={<ScanEye size={20} />} iconBg="bg-ink-3/10 text-ink-3" 
-                    label="Camera & Location" detail={`Location sharing ${s.locationSharing ? 'on' : 'off'} · camera ${s.cameraRequests === 'auto' ? 'announce & allow' : 'ask first'}`}
-                    onClick={() => setPrivacyOpen(true)} 
-                  />
-                  <NavRow 
-                    icon={<MessageSquare size={20} />} iconBg="bg-info/10 text-info" 
-                    label="Activity History" detail="What is saved and shared"
-                    onClick={() => setActivityOpen(true)} 
-                  />
-                </div>
-              </div>
-
-              {/* ABOUT */}
-              <div>
-                <h2 className="mb-2 px-1 text-[14px] font-bold text-ink-3 uppercase tracking-wider">ABOUT</h2>
-                <div className="glass overflow-hidden rounded-[24px] [&>*+*]:border-t [&>*+*]:border-line">
-                  <NavRow 
-                    icon={<Smartphone size={20} />} iconBg="bg-ink-3/10 text-ink-3" 
-                    label="Device Information" detail={`App ${ENV.appVersion} · ${mode === 'demo' ? 'Demo mode' : 'Real mode'}`}
-                    onClick={() => setInfoOpen(true)} 
-                  />
-                </div>
-              </div>
-            </div>
-
-            
-
-            {/* App Info */}
-            <p className="text-center text-[13px] text-ink-3 mt-6 opacity-60">{BRAND.name} · Made with ❤️ in India</p>
-          </motion.div>
-
-          {/* Sub-pages */}
-          <ProfileSubpage open={profileOpen} onClose={() => setProfileOpen(false)} />
-          <EmergencySubpage open={emergencyOpen} onClose={() => setEmergencyOpen(false)} />
-          <AccessibilitySubpage open={accessibilityOpen} onClose={() => setAccessibilityOpen(false)} />
-          <HardwareSubpage open={hardwareOpen} onClose={() => setHardwareOpen(false)} />
-          <StickGameSubpage open={gameOpen} onClose={() => setGameOpen(false)} />
-          <PrivacySubpage open={privacyOpen} onClose={() => setPrivacyOpen(false)} />
-          <ActivitySubpage open={activityOpen} onClose={() => setActivityOpen(false)} />
-          <DeviceInfoSubpage open={infoOpen} onClose={() => setInfoOpen(false)} />
+          <SettingsHub onClose={close} />
         </motion.div>
       )}
     </AnimatePresence>
+  );
+}
+
+function SettingsHub({ onClose }: { onClose: () => void }) {
+  const s = useSession((x) => x.settings);
+  const linkState = useDevice((x) => x.link);
+  const battery = useDevice((x) => x.battery);
+  const contactsCount = useSession((x) => x.contacts.length);
+  const guardianName = useSession((x) => x.guardian.heardAs);
+  const home = useSession((x) => x.person.savedPlaces.find((p) => p.id === 'home') ?? null);
+  const homeText = useSession((x) => x.person.homeAddress);
+  const name = useProfileName();
+  const email = useAuth((x) => x.user?.email ?? '');
+  const mode = useRuntime((x) => x.mode);
+  const [page, setPage] = useState<null | 'profile' | 'home' | 'emergency' | 'access' | 'hardware' | 'privacy' | 'activity' | 'info' | 'game'>(null);
+  const closePage = () => setPage(null);
+  const isDark = s.theme === 'dark' || (s.theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  const batt = batteryLabel(battery);
+  const link = linkLabel(linkState);
+
+  const [taps, setTaps] = useState(0);
+  const tapTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const versionTap = () => {
+    const next = taps + 1;
+    clearTimeout(tapTimer.current);
+    if (next >= 3) {
+      setTaps(0);
+      setPage('game');
+      navigator.vibrate?.([50, 100, 150]);
+      return;
+    }
+    setTaps(next);
+    tapTimer.current = setTimeout(() => setTaps(0), 1000);
+  };
+
+  return (
+    <>
+      <Page title="Settings" onBack={onClose}>
+        {/* Profile */}
+        <button type="button" onClick={() => setPage('profile')} className="glass interactive mb-4 flex w-full min-w-0 items-center gap-3 rounded-[26px] p-3.5 text-left">
+          <span className="shrink-0 overflow-hidden rounded-full ring-2 ring-teal/30">
+            <AccountAvatar size={58} />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[19px] font-extrabold leading-tight text-ink">{name || 'Add your name'}</span>
+            <span className="mt-0.5 block truncate text-[13.5px] text-ink-3">{mode === 'demo' ? 'Demo mode · simulated data' : email || 'Profile, photo, home'}</span>
+          </span>
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-teal-soft text-teal-ink" aria-hidden>
+            <Pencil size={17} />
+          </span>
+        </button>
+
+        {/* Stick + version + health */}
+        <div className="mb-4 grid grid-cols-2 gap-3">
+          <button type="button" onClick={() => { onClose(); useUI.setState({ stickPage: true }); }} className="glass interactive relative row-span-2 flex min-h-[200px] min-w-0 flex-col items-center justify-center overflow-hidden rounded-[26px] px-2 py-4">
+            <span className="pointer-events-none absolute inset-0 bg-gradient-to-br from-teal/10 to-transparent" aria-hidden />
+            <StickVisual height={140} />
+            <span className="relative mt-2 max-w-full truncate text-[12.5px] font-bold uppercase tracking-wider text-ink-2">Your stick</span>
+          </button>
+          <button type="button" onClick={versionTap} className="glass interactive relative flex min-h-[94px] min-w-0 flex-col items-center justify-center overflow-hidden rounded-[22px] px-2 py-3">
+            <span className={`pointer-events-none absolute inset-0 bg-white transition-opacity duration-200 ${taps > 0 ? 'opacity-20' : 'opacity-0'}`} aria-hidden />
+            <span className="bg-gradient-to-br from-teal to-mint bg-clip-text text-[30px] font-black leading-none text-transparent">V1</span>
+            <span className="mt-1 max-w-full truncate text-[12px] font-semibold text-ink-3">v{ENV.appVersion}</span>
+          </button>
+          <button type="button" onClick={() => { onClose(); useUI.setState({ batteryPage: true }); }} className="glass interactive flex min-h-[94px] min-w-0 flex-col items-center justify-center gap-1 rounded-[22px] px-2 py-3">
+            <span className="flex max-w-full items-center gap-1.5">
+              <Battery size={16} className={`shrink-0 ${batt.tone === 'ok' ? 'text-ok' : batt.tone === 'sos' ? 'text-sos' : batt.tone === 'warn' ? 'text-amber' : 'text-ink-3'}`} />
+              <span className="truncate text-[17px] font-bold text-ink">{batt.text}</span>
+            </span>
+            <span className="flex max-w-full items-center gap-1.5">
+              <Wifi size={13} className={`shrink-0 ${linkState === 'connected' ? 'text-teal' : 'text-ink-3'}`} />
+              <span className="truncate text-[12px] font-medium text-ink-2">{link.text}</span>
+            </span>
+          </button>
+        </div>
+
+        {/* Quick actions */}
+        <div className="mb-5 flex flex-col gap-3">
+          <button type="button" onClick={(e) => toggleThemeWithTransition(e)} className="glass interactive flex w-full min-w-0 items-center gap-3 rounded-[24px] p-4 text-left">
+            <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-[14px] ${isDark ? 'bg-info/10 text-info' : 'bg-amber/10 text-amber'}`}>{isDark ? <Moon size={22} /> : <Sun size={22} />}</span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[16.5px] font-bold text-ink">Appearance</span>
+              <span className="mt-0.5 block text-[13.5px] text-ink-3">{isDark ? 'Dark' : 'Light'}</span>
+            </span>
+            <span className="relative h-8 w-[52px] shrink-0 rounded-full border border-ink/5 bg-ink/10 p-1" aria-hidden>
+              <span className={`block h-6 w-6 rounded-full shadow-sm transition-transform duration-150 ${isDark ? 'translate-x-5 bg-info' : 'translate-x-0 bg-amber'}`} />
+            </span>
+          </button>
+          <button type="button" onClick={() => setPage('emergency')} className="glass interactive flex w-full min-w-0 items-center gap-3 rounded-[24px] border border-sos/20 p-4 text-left">
+            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-[14px] bg-sos/15 text-sos">
+              <Shield size={22} />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[16.5px] font-bold text-ink">Emergency & SOS</span>
+              <span className="mt-0.5 line-clamp-2 block text-[13.5px] leading-snug text-ink-3">
+                {guardianName ? `Linked: ${guardianName}` : 'No safety contact linked'} · {contactsCount} contact{contactsCount === 1 ? '' : 's'} · Fall detection {s.sosTriggers.fall ? 'on' : 'off'}
+              </span>
+            </span>
+            <ChevronRight size={20} className="shrink-0 text-ink-3" />
+          </button>
+          <button type="button" onClick={() => setPage('home')} className="glass interactive flex w-full min-w-0 items-center gap-3 rounded-[24px] p-4 text-left">
+            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-[14px] bg-info/10 text-info">
+              <Home size={22} />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[16.5px] font-bold text-ink">Take me home</span>
+              <span className="mt-0.5 block truncate text-[13.5px] text-ink-3">{home ? home.name || home.address : homeText || 'No home saved. Tap to choose it on the map.'}</span>
+            </span>
+            <ChevronRight size={20} className="shrink-0 text-ink-3" />
+          </button>
+        </div>
+
+        <SectionTitle>Stick</SectionTitle>
+        <div className="glass mb-5 overflow-hidden rounded-[24px]">
+          <NavRow icon={<Smartphone size={20} />} iconBg="bg-teal/10 text-teal" label="Stick & hardware" detail="Connect, find, firmware, vibration" onClick={() => setPage('hardware')} />
+        </div>
+
+        <SectionTitle>Assistant & accessibility</SectionTitle>
+        <div className="glass mb-5 overflow-hidden rounded-[24px] [&>*+*]:border-t [&>*+*]:border-line">
+          <NavRow icon={<Mic size={20} />} iconBg="bg-teal/10 text-teal" label="Voice & display" detail="Language, voice speed, text size, sounds" onClick={() => setPage('access')} />
+          <NavRow icon={<User size={20} />} iconBg="bg-info/10 text-info" label="Profile & medical ID" detail="Name, photo, phone, home, medical" onClick={() => setPage('profile')} />
+        </div>
+
+        <SectionTitle>Safety & privacy</SectionTitle>
+        <div className="glass mb-5 overflow-hidden rounded-[24px] [&>*+*]:border-t [&>*+*]:border-line">
+          <NavRow icon={<ShieldAlert size={20} />} iconBg="bg-sos/10 text-sos" label="Emergency & SOS" detail="Contacts, message, fall detection" onClick={() => setPage('emergency')} />
+          <NavRow icon={<ScanEye size={20} />} iconBg="bg-ink-3/10 text-ink-3" label="Camera & location" detail={`Location sharing ${s.locationSharing ? 'on' : 'off'} · camera ${s.cameraRequests === 'auto' ? 'announce & allow' : 'ask first'}`} onClick={() => setPage('privacy')} />
+          <NavRow icon={<MessageSquare size={20} />} iconBg="bg-info/10 text-info" label="Activity" detail="What is saved and shared" onClick={() => setPage('activity')} />
+        </div>
+
+        <SectionTitle>About</SectionTitle>
+        <div className="glass mb-5 overflow-hidden rounded-[24px]">
+          <NavRow icon={<Smartphone size={20} />} iconBg="bg-ink-3/10 text-ink-3" label="About this phone" detail={`App ${ENV.appVersion} · ${mode === 'demo' ? 'Demo mode' : 'Real mode'}`} onClick={() => setPage('info')} />
+        </div>
+
+        <p className="mb-2 mt-2 text-center text-[13px] text-ink-3 opacity-70">{BRAND.name} · Made with ❤️ in India</p>
+      </Page>
+
+      <ProfileSubpage open={page === 'profile'} onClose={closePage} />
+      <HomeSubpage open={page === 'home'} onClose={closePage} />
+      <EmergencySubpage open={page === 'emergency'} onClose={closePage} />
+      <AccessibilitySubpage open={page === 'access'} onClose={closePage} />
+      <HardwareSubpage open={page === 'hardware'} onClose={closePage} />
+      <PrivacySubpage open={page === 'privacy'} onClose={closePage} />
+      <ActivitySubpage open={page === 'activity'} onClose={closePage} />
+      <DeviceInfoSubpage open={page === 'info'} onClose={closePage} />
+      <StickGameSubpage open={page === 'game'} onClose={closePage} />
+    </>
   );
 }
 

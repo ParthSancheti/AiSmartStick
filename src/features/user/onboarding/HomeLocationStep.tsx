@@ -1,12 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Check, Loader2, LocateFixed, MapPin, Search, X } from 'lucide-react';
 import { LocationStatus } from '../../../components/LocationStatus';
 import { MapView } from '../../../components/MapView';
 import { GlassButton, cx } from '../../../components/glass';
 import { useBackHandler } from '../../../core/backStack';
-import { useLocation } from '../../../core/location/locationService';
-import { autocomplete, placeDetails, reverseLookup, type Suggestion } from '../../../core/maps/mapsService';
+import { ensureLocation, useLocation } from '../../../core/location/locationService';
+import { autocomplete, friendlyMapsError, placeDetails, reverseLookup, type Suggestion } from '../../../core/maps/mapsService';
 import { useSession, type SavedPlace } from '../../../core/store/session';
 import { useRuntime } from '../../../core/runtime/mode';
 
@@ -28,6 +28,10 @@ const LABELS = ['Home', 'College', 'Work', 'Other'] as const;
 export function HomeLocationStep({ onSaved }: { onSaved: () => void }) {
   const demo = useRuntime((s) => s.mode) === 'demo';
   const fix = useLocation((s) => s.fix);
+  const locStatus = useLocation((s) => s.status);
+  // Only a live position can become "Home" (a cached one may be from somewhere else).
+  const liveFix = fix && (locStatus === 'ok' || locStatus === 'poor') ? fix : null;
+  const lookupSeq = useRef(0);
   const [q, setQ] = useState('');
   const [items, setItems] = useState<Suggestion[]>([]);
   const [searching, setSearching] = useState(false);
@@ -60,7 +64,7 @@ export function HomeLocationStep({ onSaved }: { onSaved: () => void }) {
       // Places biases results around the user (or India's centre before the first GPS fix).
       autocomplete(text, fix?.lat ?? 20.59, fix?.lng ?? 78.96, token)
         .then((r) => setItems(r.suggestions))
-        .catch((e) => setErr(`Search unavailable: ${(e as Error).message}`))
+        .catch((e) => setErr(`Search unavailable: ${friendlyMapsError(e)} You can still use your current location or tap the map.`))
         .finally(() => setSearching(false));
     }, 300);
     return () => clearTimeout(t);
@@ -76,23 +80,35 @@ export function HomeLocationStep({ onSaved }: { onSaved: () => void }) {
       const { place } = await placeDetails(s.placeId, token);
       setPicked({ lat: place.lat, lng: place.lng, placeId: place.placeId, name: place.name, address: place.address ?? [s.main, s.secondary].filter(Boolean).join(', ') });
     } catch (e) {
-      setErr(`Could not open that place: ${(e as Error).message}`);
+      setErr(`Could not open that place: ${friendlyMapsError(e)}`);
     } finally {
       setResolving(false);
     }
   };
 
-  const pickPoint = async (p: { lat: number; lng: number }) => {
+  /**
+   * Picks a point immediately (the exact coordinates are what gets saved); the street address is
+   * looked up in the background and only makes the label nicer. Saving never waits for it.
+   */
+  const pickPoint = async (p: { lat: number; lng: number }, name = 'Dropped pin') => {
     setItems([]);
-    setPicked({ lat: p.lat, lng: p.lng, placeId: null, name: 'Dropped pin', address: `${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}` });
+    setErr(null);
+    const seq = ++lookupSeq.current;
+    const coords = `${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}`;
+    setPicked({ lat: p.lat, lng: p.lng, placeId: null, name, address: coords });
     setResolving(true);
     try {
       const r = await reverseLookup(p.lat, p.lng);
-      setPicked({ lat: p.lat, lng: p.lng, placeId: null, name: r.landmark?.name && r.landmark.distanceM < 60 ? r.landmark.name : (r.address?.split(',')[0] ?? 'Selected place'), address: r.address ?? `${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}` });
+      if (seq !== lookupSeq.current) return; // a newer point was picked meanwhile
+      setPicked((cur) =>
+        cur && cur.lat === p.lat && cur.lng === p.lng
+          ? { ...cur, name: r.landmark?.name && r.landmark.distanceM < 60 ? r.landmark.name : (r.address?.split(',')[0] ?? name), address: r.address ?? coords }
+          : cur,
+      );
     } catch {
       /* keep the coordinates; the address is just nicer */
     } finally {
-      setResolving(false);
+      if (seq === lookupSeq.current) setResolving(false);
     }
   };
 
@@ -173,7 +189,7 @@ export function HomeLocationStep({ onSaved }: { onSaved: () => void }) {
                 </button>
               ))}
             </div>
-            <GlassButton variant="teal" className="mt-4 h-14 w-full rounded-[20px] text-[17px] font-bold" disabled={saving || resolving} onClick={() => void save()}>
+            <GlassButton variant="teal" className="mt-4 h-14 w-full rounded-[20px] text-[17px] font-bold" disabled={saving} onClick={() => void save()}>
               {saving ? <Loader2 size={20} className="animate-spin" /> : <Check size={20} className="mr-2" />} Use this location
             </GlassButton>
           </motion.div>
@@ -183,16 +199,28 @@ export function HomeLocationStep({ onSaved }: { onSaved: () => void }) {
       {!picked && (
         <div className="absolute inset-x-0 bottom-[calc(var(--sab)+20px)] z-10 flex flex-col items-stretch gap-3 px-5">
           {!demo && <LocationStatus />}
-          {!demo && fix && (
-            <GlassButton variant="teal" className="h-14 w-full rounded-[20px] text-[16px] font-bold" disabled={resolving} onClick={() => void pickPoint({ lat: fix.lat, lng: fix.lng })}>
-              <LocateFixed size={20} className="mr-2" /> Use my current location
+          {!demo && (
+            <GlassButton
+              variant="teal"
+              className="h-14 w-full rounded-[20px] text-[16px] font-bold"
+              onClick={() => {
+                if (liveFix) void pickPoint({ lat: liveFix.lat, lng: liveFix.lng }, 'Current location');
+                else void ensureLocation();
+              }}
+            >
+              {liveFix ? <LocateFixed size={20} className="mr-2" /> : <Loader2 size={20} className="mr-2 animate-spin" />}
+              {liveFix ? 'Use my current location' : 'Finding your location…'}
             </GlassButton>
           )}
           <p className="glass self-center rounded-full px-4 py-2 text-center text-[13.5px] font-semibold text-ink-2">{demo ? 'Demo mode: the map is simulated.' : 'Or search above, or tap the map to drop a pin.'}</p>
-          {demo && (
+          {demo ? (
             <GlassButton variant="teal" className="h-12 self-center rounded-[18px] px-6 font-bold" onClick={onSaved}>
               Continue
             </GlassButton>
+          ) : (
+            <button type="button" onClick={onSaved} className="self-center rounded-full px-4 py-1.5 text-[13.5px] font-bold text-ink-3 underline-offset-4 active:underline">
+              Skip for now
+            </button>
           )}
         </div>
       )}

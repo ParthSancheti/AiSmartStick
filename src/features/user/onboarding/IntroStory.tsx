@@ -135,7 +135,7 @@ function HeroReveal({ reduce }: { reduce: boolean }) {
   return (
     <div className="relative grid place-items-center">
       <div className="intro-spotlight absolute h-[420px] w-[420px] rounded-full" aria-hidden />
-      <div className="absolute bottom-[-6px] h-6 w-40 rounded-[50%] bg-black/25" style={{ filter: 'blur(6px)' }} aria-hidden />
+      <div className="absolute bottom-[-6px] h-6 w-44 rounded-[50%]" style={{ background: 'radial-gradient(closest-side, rgba(0,0,0,.28), transparent)' }} aria-hidden />
       <motion.div
         initial={{ opacity: 0, y: 30, scale: 0.92 }}
         animate={reduce ? { opacity: 1, y: 0, scale: 1 } : { opacity: 1, y: [0, -8, 0], scale: 1, rotate: [-2.5, 2.5, -2.5] }}

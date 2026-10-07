@@ -51,6 +51,9 @@ export class AissNativeWeb extends WebPlugin implements AissNativePlugin {
   async connectToSetupNetwork(): Promise<{ connected: boolean }> {
     return this.no();
   }
+  async getCurrentWifiSsid(): Promise<{ wifiEnabled: boolean; stickNetwork: boolean; bound: boolean }> {
+    return this.no();
+  }
   async setupRequest(): Promise<{ status: number; body: string }> {
     return this.no();
   }

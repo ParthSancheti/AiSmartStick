@@ -1,32 +1,35 @@
 import { getSettings } from '../store/session';
 import { audioVolume } from '../audio/audioManager';
+import { sharedAudioContext, unlockAudioContext } from '../audio/audioContext';
+import { startConnectingTune } from '../audio/connectingTune';
 
 /**
  * Earcons: short synthesized sounds that mean the same thing every time.
  * For someone who can't see the screen, these are what icons are for everyone else.
+ * They play on the app's one shared AudioContext (core/audio/audioContext.ts).
  */
-let ctx: AudioContext | null = null;
-
 function ac(): AudioContext | null {
-  if (typeof window === 'undefined') return null;
-  if (!ctx) {
-    const C = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!C) return null;
-    ctx = new C();
-  }
-  if (ctx.state === 'suspended') void ctx.resume();
-  return ctx;
+  return sharedAudioContext();
 }
 
+/**
+ * A context that ran before and is now suspended (app in background) must not queue sounds:
+ * they would all burst out at once when it resumes.
+ */
+function stale(c: AudioContext) {
+  return c.state !== 'running' && c.currentTime > 0;
+}
+
+/** Call inside a user gesture: unlocks audio for the whole app (earcons, tune, Live voice). */
 export function unlockAudio() {
-  ac();
+  unlockAudioContext();
 }
 
 interface ToneOpts { type?: OscillatorType; gain?: number; to?: number }
 
 function tone(freq: number, at: number, dur: number, o: ToneOpts = {}) {
   const c = ac();
-  if (!c) return;
+  if (!c || stale(c)) return;
   const t0 = c.currentTime + at;
   const osc = c.createOscillator();
   const g = c.createGain();
@@ -66,19 +69,11 @@ export function earcon(name: EarconName) {
 
 /** Looping sounds. Returns a stop function. */
 export function loopEarcon(name: 'thinking' | 'siren' | 'connecting'): () => void {
+  // The assistant's connecting tune has its own robust player (Web Audio + <audio> fallback).
+  if (name === 'connecting') return startConnectingTune();
   if (!getSettings().earcons) return () => {};
   const c = ac();
   if (!c) return () => {};
-
-  if (name === 'connecting') {
-    const play = () => {
-      tone(440, 0, 0.4, { type: 'sine', gain: 0.04 });
-      tone(440, 0.8, 0.4, { type: 'sine', gain: 0.04 });
-    };
-    play();
-    const id = setInterval(play, 2400); // ringing tone
-    return () => clearInterval(id);
-  }
 
   if (name === 'thinking') {
     const play = () => {
@@ -87,7 +82,8 @@ export function loopEarcon(name: 'thinking' | 'siren' | 'connecting'): () => voi
       tone(784, 0.32, 0.3, { gain: 0.03 });
     };
     play();
-    const id = setInterval(play, 1300);
+    // Repeats only while audio actually runs, so nothing piles up in a locked/suspended context.
+    const id = setInterval(() => c.state === 'running' && play(), 1300);
     return () => clearInterval(id);
   }
 

@@ -15,8 +15,9 @@ function originOf(e?: PointLike | null): { x: number; y: number } {
   return { x: window.innerWidth / 2, y: window.innerHeight / 2 };
 }
 
-const DURATION = 720;
-const EASE = 'cubic-bezier(0.65, 0, 0.35, 1)';
+// Fast and smooth: ~1/3 s, decelerating so the reveal feels instant but is still readable.
+const DURATION = 340;
+const EASE = 'cubic-bezier(0.3, 0, 0.2, 1)';
 let busy = false;
 
 /**
@@ -69,7 +70,7 @@ export function toggleThemeWithTransition(e?: PointLike | null) {
     .animate({ clipPath: [from, to] }, { duration: DURATION, easing: EASE, fill: 'forwards' })
     .finished.then(() => {
       root.dataset.theme = next;
-      return veil.animate({ opacity: [1, 0] }, { duration: 260, easing: 'ease-out', fill: 'forwards' }).finished;
+      return veil.animate({ opacity: [1, 0] }, { duration: 120, easing: 'ease-out', fill: 'forwards' }).finished;
     })
     .catch(() => {
       root.dataset.theme = next;

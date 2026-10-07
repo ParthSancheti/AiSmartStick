@@ -78,6 +78,13 @@ describe('ownership and server-only data', () => {
     await assertFails(updateDoc(doc(as(U), `users/${U}`), { guardianRelationshipId: null }));
     await assertSucceeds(updateDoc(doc(as(U), `users/${U}`), { phone: '+91 9' }));
   });
+  it('profile name and a small photo sync; oversized or non-image photos are refused', async () => {
+    await assertSucceeds(setDoc(doc(as(U), `users/${U}`), { displayName: 'Aarav S', nameEditedAt: 5, photoData: 'data:image/jpeg;base64,' + 'A'.repeat(1000), photoUpdatedAt: 5 }, { merge: true }));
+    await assertSucceeds(setDoc(doc(as(U), `users/${U}`), { photoData: null, photoUpdatedAt: 6 }, { merge: true }));
+    await assertFails(setDoc(doc(as(U), `users/${U}`), { photoData: 'data:image/jpeg;base64,' + 'A'.repeat(200000) }, { merge: true }));
+    await assertFails(setDoc(doc(as(U), `users/${U}`), { photoData: 'https://example.com/x.jpg' }, { merge: true }));
+    await assertFails(getDoc(doc(as(X), `users/${U}`)));
+  });
   it('assistant history is written by functions only', async () => {
     await assertFails(setDoc(doc(as(U), `users/${U}/aiConversations/c1`), { title: 'x' }));
   });

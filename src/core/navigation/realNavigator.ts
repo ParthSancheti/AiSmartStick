@@ -1,5 +1,5 @@
 import type { Fix } from '../location/locationService';
-import { haversineM, onFix, useLocation } from '../location/locationService';
+import { haversineM, onFix, useLocation, LOCATION_STALE_MS } from '../location/locationService';
 import { walkingRoute, type PlaceResult, type RouteResult } from '../maps/mapsService';
 import { emptyNav, maneuverFrom, useNavView } from './navView';
 import { logEvent } from '../store/activity';
@@ -81,7 +81,8 @@ function build(place: PlaceResult, route: RouteResult): Active {
 
 export async function startRealNavigation(place: PlaceResult) {
   const fix = useLocation.getState().fix;
-  if (!fix) throw new Error('location-unavailable');
+  // A cached position (location off, indoors for long) would route from the wrong place.
+  if (!fix || Date.now() - fix.ts > LOCATION_STALE_MS) throw new Error('location-unavailable');
   const route = await walkingRoute({ origin: { lat: fix.lat, lng: fix.lng }, destination: { placeId: place.placeId } });
   if (!route.path.length) throw new Error('no-route');
   active = build(place, route);

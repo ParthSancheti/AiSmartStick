@@ -37,11 +37,36 @@ export interface UserDoc {
   homeAddress?: string | null;
   /** The exact place the user picked on the map during setup (preferred over geocoding homeAddress). */
   homePlace?: { lat: number; lng: number; placeId: string | null; address: string; label: string } | null;
+  /**
+   * Set when the person typed their own name (Settings). From then on displayName is theirs and the
+   * Google account name never overwrites it. Absent/null: displayName is the Google default.
+   */
+  nameEditedAt?: number | null;
+  /** Profile photo picked on the phone: a small JPEG data URL (≤ ~100 KB; rules cap it). null = removed. */
+  photoData?: string | null;
+  /** When photoData last changed (last writer wins between phones). */
+  photoUpdatedAt?: number | null;
+  workAddress?: string | null;
+  /** Places saved in the app (Home, College, …), restored on a new phone. */
+  savedPlaces?: SavedPlaceDoc[];
+  /** Last change of the profile fields above (phone, addresses, places) made on a phone. */
+  profileUpdatedAt?: number | null;
   /** For a stick user: the active guardian relationship (1 user → 1 guardian). */
   guardianRelationshipId: string | null;
   /** For a guardian: the user they look after. */
   watchesUserUid: string | null;
   createdAt: number;
+  updatedAt: number;
+}
+
+export interface SavedPlaceDoc {
+  id: string;
+  label: string;
+  placeId: string;
+  name: string;
+  address: string | null;
+  lat: number;
+  lng: number;
   updatedAt: number;
 }
 

@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Bell, Check, Loader2, MapPin, Mic, Radar, Wifi, X } from 'lucide-react';
+import { Bell, Check, Home, Loader2, MapPin, Mic, Radar, Wifi, X } from 'lucide-react';
 import { useSession } from '../../core/store/session';
 import { GlassButton, cx } from '../../components/glass';
 import { AppScreen, SafeAreaContent, ScreenHeader } from '../../components/Layout';
-import { AccountAvatar } from '../../components/Avatar';
+import { ProfilePhotoEditor } from '../../components/Avatar';
 import { StickVisual } from '../../components/StickVisual';
 import { BrandLogo } from '../../core/brand/BrandLogo';
 import { BRAND } from '../../core/brand/brand';
@@ -13,7 +13,8 @@ import { signInWithGoogle } from '../../core/auth/authService';
 import { firebaseConfigured } from '../../core/runtime/env';
 import { useRuntime } from '../../core/runtime/mode';
 import { useBackHandler } from '../../core/backStack';
-import { cacheProfilePhoto } from '../../core/profile/photoCache';
+import { cacheProfilePhoto, usePhotoCache } from '../../core/profile/photoCache';
+import { firstName, setProfileName, useProfileName } from '../../core/profile/profile';
 import { ensureLocation } from '../../core/location/locationService';
 import { requestSetupPermissions, type PermState, type SetupPermission } from '../../core/setup/permissions';
 import { IntroStory } from './onboarding/IntroStory';
@@ -82,7 +83,7 @@ export function UserOnboarding() {
           initial={{ opacity: 0, x: dir * 48 }}
           animate={{ opacity: 1, x: 0 }}
           exit={{ opacity: 0, x: dir * -48 }}
-          transition={{ type: 'spring', stiffness: 300, damping: 34 }}
+          transition={{ duration: 0.22, ease: [0.3, 0, 0.2, 1] }}
         >
           {step === 'intro' && <IntroStory onDone={() => setStep('signin')} />}
 
@@ -96,7 +97,7 @@ export function UserOnboarding() {
               <div className="relative mt-2 flex flex-1 flex-col">
                 {step === 'stick' && <SetUpStick onNext={next} />}
                 {step === 'photo' && <ProfilePhoto onNext={next} />}
-                {step === 'location' && <HomeLocationStep onSaved={next} />}
+                {step === 'location' && <HomeStep onSaved={next} />}
                 {step === 'safety' && <SafetyNumberStep onSaved={next} />}
               </div>
             </SafeAreaContent>
@@ -244,22 +245,70 @@ function SetUpStick({ onNext }: { onNext: () => void }) {
 
 function ProfilePhoto({ onNext }: { onNext: () => void }) {
   const user = useAuth((s) => s.user);
+  const name = useProfileName();
+  const custom = usePhotoCache((s) => s.custom);
+  const [draft, setDraft] = useState(name);
+  // The account name may arrive a moment after this step opens (cloud restore): show it once known.
+  useEffect(() => {
+    setDraft((d) => d || name);
+  }, [name]);
+  const save = () => {
+    if (draft.trim() && draft.trim() !== name) setProfileName(draft);
+    onNext();
+  };
   return (
-    <div className="flex h-full flex-col items-center px-6 text-center">
-      <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: 'spring', stiffness: 220, damping: 18 }} className="relative mt-10">
-        <motion.span className="absolute -inset-3 rounded-full border-2 border-teal/40" animate={{ scale: [1, 1.08, 1], opacity: [0.8, 0.3, 0.8] }} transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }} aria-hidden />
-        <div className="h-36 w-36 overflow-hidden rounded-full shadow-2xl ring-4 ring-surface">
-          <AccountAvatar size={144} />
-        </div>
+    <div className="flex h-full min-w-0 flex-col items-center overflow-y-auto px-6 text-center no-scrollbar">
+      <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ duration: 0.25, ease: 'easeOut' }} className="mt-6">
+        <ProfilePhotoEditor size={128} />
       </motion.div>
-      <h1 className="mt-8 text-[28px] font-extrabold tracking-tight text-ink">{user?.displayName ? `Hi, ${user.displayName.split(' ')[0]}` : 'Your profile photo'}</h1>
-      <p className="mt-2 max-w-[320px] text-[15.5px] leading-relaxed text-ink-2">
-        {user?.photoURL ? 'Your Google photo is saved on this phone, so Home shows it instantly, even offline.' : 'Your Google account has no photo, so your initials are used. You can add a photo to your Google account anytime.'}
+      <h1 className="mt-6 text-[26px] font-extrabold tracking-tight text-ink">{name ? `Hi, ${firstName(name)}` : 'Your profile'}</h1>
+      <p className="mt-2 max-w-[320px] text-[15px] leading-relaxed text-ink-2">
+        {custom?.dataUrl ? 'Your photo is saved with your account and shows on Home.' : user?.photoURL ? 'Your Google photo is used. Tap the camera to pick another one.' : 'Tap the camera to add a photo. Until then your initials are shown.'}
       </p>
-      {user?.email && <p className="mt-3 text-[13.5px] text-ink-3">{user.email}</p>}
+      <label className="glass mt-5 block w-full max-w-[360px] rounded-[20px] px-4 py-3 text-left">
+        <span className="block text-[12.5px] font-bold uppercase tracking-wider text-ink-3">Your name</span>
+        <input
+          type="text"
+          value={draft}
+          maxLength={60}
+          autoComplete="name"
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="Your name"
+          className="mt-1 w-full min-w-0 bg-transparent text-[18px] font-semibold text-ink outline-none placeholder:text-ink-3"
+        />
+      </label>
+      {user?.email && <p className="mt-2 text-[13px] text-ink-3">{user.email}</p>}
       <div className="mt-auto w-full pb-[calc(var(--sab)+20px)] pt-6">
-        <GlassButton variant="teal" className="h-14 w-full rounded-[20px] text-[17px] font-bold" onClick={onNext}>
+        <GlassButton variant="teal" className="h-14 w-full rounded-[20px] text-[17px] font-bold" onClick={save}>
           Looks good
+        </GlassButton>
+      </div>
+    </div>
+  );
+}
+
+/** Home: a home already saved with this account (restored at sign-in) can simply be kept. */
+function HomeStep({ onSaved }: { onSaved: () => void }) {
+  const home = useSession((s) => s.person.savedPlaces.find((p) => p.id === 'home') ?? null);
+  const [change, setChange] = useState(false);
+  if (!home || change) return <HomeLocationStep onSaved={onSaved} />;
+  return (
+    <div className="flex h-full flex-col px-6">
+      <div className="mt-4 grid h-14 w-14 place-items-center rounded-[20px] border border-teal/30 bg-teal/15">
+        <Home size={28} className="text-teal" />
+      </div>
+      <h1 className="mt-6 text-[28px] font-extrabold leading-tight tracking-tight text-ink">Your home</h1>
+      <p className="mt-2 text-[15.5px] leading-relaxed text-ink-2">This home is saved with your account. “Take me home” walks you here.</p>
+      <div className="glass mt-6 rounded-[22px] p-4">
+        <p className="text-[17px] font-bold text-ink">{home.name || home.label}</p>
+        {home.address && <p className="mt-1 break-words text-[14px] leading-snug text-ink-3">{home.address}</p>}
+      </div>
+      <div className="mt-auto flex flex-col gap-2 pb-[calc(var(--sab)+20px)] pt-6">
+        <GlassButton variant="teal" className="h-14 w-full rounded-[20px] text-[17px] font-bold" onClick={onSaved}>
+          Keep this home
+        </GlassButton>
+        <GlassButton className="h-12 w-full rounded-[20px] text-[15px] font-semibold" onClick={() => setChange(true)}>
+          Choose another place
         </GlassButton>
       </div>
     </div>

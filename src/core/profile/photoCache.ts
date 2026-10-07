@@ -1,33 +1,56 @@
 import { create } from 'zustand';
 
 /**
- * The Google profile photo, downloaded once and kept on the phone (data URL in localStorage), so
- * Home renders it instantly and offline and never re-downloads it on every launch. Re-fetched only
- * when the account's photo URL changes.
+ * The account's profile photo on this phone. Two sources, one answer (`effectivePhoto`):
+ *  - custom: a photo the person picked in the app (onboarding or Settings), already compressed to
+ *    a small JPEG data URL. It wins everywhere. Synced to the user doc (core/sync/profileSync.ts),
+ *    so the same account on another phone gets it. `dataUrl: null` with a time = "removed" (a
+ *    tombstone, so an older cloud copy can never bring it back).
+ *  - cached: the Google account photo, downloaded once and kept here (localStorage), so Home renders
+ *    it instantly and offline. Re-fetched only when the account's photo URL changes.
  */
 const KEY = 'aiss.profilePhoto.v1';
+const CUSTOM_KEY = 'aiss.profilePhoto.custom.v1';
 
-interface Cached {
+export interface Cached {
   url: string;
   dataUrl: string;
 }
 
+export interface CustomPhoto {
+  /** JPEG data URL, or null when the person removed their photo. */
+  dataUrl: string | null;
+  updatedAt: number;
+}
+
+const isImageData = (v: unknown): v is string => typeof v === 'string' && v.startsWith('data:image/');
+
 function read(): Cached | null {
   try {
     const v = JSON.parse(localStorage.getItem(KEY) ?? 'null') as Cached | null;
-    return v?.url && v.dataUrl?.startsWith('data:image/') ? v : null;
+    return v?.url && isImageData(v.dataUrl) ? v : null;
   } catch {
     return null;
   }
 }
 
-export const usePhotoCache = create<{ cached: Cached | null }>(() => ({ cached: read() }));
+function readCustom(): CustomPhoto | null {
+  try {
+    const v = JSON.parse(localStorage.getItem(CUSTOM_KEY) ?? 'null') as CustomPhoto | null;
+    if (!v || typeof v.updatedAt !== 'number') return null;
+    return { dataUrl: isImageData(v.dataUrl) ? v.dataUrl : null, updatedAt: v.updatedAt };
+  } catch {
+    return null;
+  }
+}
+
+export const usePhotoCache = create<{ cached: Cached | null; custom: CustomPhoto | null }>(() => ({ cached: read(), custom: readCustom() }));
 
 let inflight: string | null = null;
 
 /** Ensures the photo for `url` is cached. Safe to call often; downloads at most once per URL. */
 export async function cacheProfilePhoto(url: string | null | undefined) {
-  if (!url || usePhotoCache.getState().cached?.url === url || inflight === url) return;
+  if (!url || url.startsWith('data:') || usePhotoCache.getState().cached?.url === url || inflight === url) return;
   inflight = url;
   try {
     // Ask Google for a crisp but small square (s256) instead of the default 96 px thumbnail.
@@ -56,17 +79,43 @@ export async function cacheProfilePhoto(url: string | null | undefined) {
   }
 }
 
+/**
+ * The person picked (dataUrl) or removed (null) their own photo. Shown everywhere at once, kept
+ * across restarts; profileSync sends it to the account. `updatedAt` is given when the change comes
+ * from the cloud (keeps the cloud's time, so the echo is recognised).
+ */
+export function setCustomPhoto(dataUrl: string | null, updatedAt = Date.now()) {
+  const v: CustomPhoto = { dataUrl: isImageData(dataUrl) ? dataUrl : null, updatedAt };
+  try {
+    localStorage.setItem(CUSTOM_KEY, JSON.stringify(v));
+  } catch {
+    /* storage full: still shown for this session, and synced */
+  }
+  usePhotoCache.setState({ custom: v });
+}
+
+/** Sign-out / account deletion: no photo of the previous account stays on the phone. */
 export function clearProfilePhoto() {
   try {
     localStorage.removeItem(KEY);
+    localStorage.removeItem(CUSTOM_KEY);
   } catch {
     /* ignore */
   }
-  usePhotoCache.setState({ cached: null });
+  usePhotoCache.setState({ cached: null, custom: null });
 }
 
-/** Best source right now: the local copy for this account's photo, else the network URL. */
+/** Best Google-photo source right now: the local copy for this account's photo, else the network URL. */
 export function photoSrc(url: string | null | undefined, cached: Cached | null) {
   if (!url) return null;
   return cached?.url === url ? cached.dataUrl : url;
+}
+
+/**
+ * The one photo every screen shows: the picked photo, else the Google photo (local copy first).
+ * A removed custom photo falls back to the Google photo.
+ */
+export function effectivePhoto(googleUrl: string | null | undefined, cached: Cached | null, custom: CustomPhoto | null) {
+  if (custom?.dataUrl) return custom.dataUrl;
+  return photoSrc(googleUrl, cached);
 }

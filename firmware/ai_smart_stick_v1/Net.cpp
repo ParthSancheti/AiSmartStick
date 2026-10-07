@@ -1,6 +1,7 @@
 #include "Net.h"
 #include <WiFi.h>
 #include <WiFiUdp.h>
+#include <esp_wifi.h>
 #include "BoardConfig.h"
 #include "Identity.h"
 #include "Ecu.h"
@@ -21,7 +22,16 @@ const char *stateName() {
   }
 }
 bool inSetup() { return st == State::SetupAp; }
-int rssi() { return st == State::Connected ? WiFi.RSSI() : 0; }
+// Station mode: the router's signal. Access-point mode: the signal of the (first) phone that joined.
+// 0 = unknown (reported as null in telemetry, never as a made-up value).
+int rssi() {
+  if (st == State::Connected) return WiFi.RSSI();
+  if (st == State::SetupAp) {
+    wifi_sta_list_t list;
+    if (esp_wifi_ap_get_sta_list(&list) == ESP_OK && list.num > 0) return list.sta[0].rssi;
+  }
+  return 0;
+}
 
 void startStation() {
   WiFi.softAPdisconnect(true);
@@ -38,9 +48,10 @@ void startStation() {
 void startSetupAp() {
   WiFi.disconnect(true);
   WiFi.mode(WIFI_AP);
-  WiFi.softAP("SmartStick_AI", "Stick@1234");
+  // Fixed, well-known AP: the phone joins it directly (v1 simple link, no keys).
+  bool ok = WiFi.softAP(STICK_AP_SSID, STICK_AP_PASS, STICK_AP_CHANNEL, 0, STICK_AP_MAX_STA);
   st = State::SetupAp;
-  Serial.printf("[dashcam] AP SmartStick_AI at %s (PASSWORD: Stick@1234)\n", WiFi.softAPIP().toString().c_str());
+  Serial.printf("[dashcam] AP %s %s at %s (password %s, channel %d)\n", STICK_AP_SSID, ok ? "up" : "FAILED", WiFi.softAPIP().toString().c_str(), STICK_AP_PASS, STICK_AP_CHANNEL);
 }
 
 void tick() {

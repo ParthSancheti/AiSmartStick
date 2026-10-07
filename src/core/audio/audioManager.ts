@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { ReplyLang } from '../types';
 import { getSettings } from '../store/session';
 import { ttsEngine } from './tts';
+import { sharedAudioContext } from './audioContext';
 
 /**
  * UnifiedAudioOrchestrator — the ONE speech path (one TTS engine, one queue, one mono output).
@@ -180,14 +181,20 @@ const liveSources = new Set<AudioBufferSourceNode>();
 let liveSessionOpen = false;
 const pcmInterruptListeners = new Set<() => void>();
 
-function getAudioCtx() {
-  if (!audioCtx) {
-    audioCtx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
-    liveGain = audioCtx.createGain();
-    liveGain.connect(audioCtx.destination);
+/**
+ * The model's voice plays on the app's shared AudioContext — the one the user's first tap
+ * unlocked — so it is audible even when the session was started from the stick button.
+ */
+function getAudioCtx(): AudioContext | null {
+  const c = sharedAudioContext();
+  if (!c) return null;
+  if (c !== audioCtx || !liveGain) {
+    audioCtx = c;
+    liveGain = c.createGain();
+    liveGain.connect(c.destination);
+    pcmStartTime = 0;
   }
-  if (audioCtx.state === 'suspended') void audioCtx.resume();
-  return audioCtx;
+  return c;
 }
 
 /** Live session lifecycle (liveSession.ts). While open, the model's voice is the assistant output. */
@@ -206,6 +213,7 @@ export function playPcmChunk(base64: string, sampleRate = 24000) {
   // A P0/P1 announcement is speaking: the model must not talk over a safety alert.
   if (current && RANK[current.priority] >= RANK.high) return;
   const ctx = getAudioCtx();
+  if (!ctx) return;
   const bin = atob(base64);
   const n = bin.length >> 1;
   const floats = new Float32Array(n);

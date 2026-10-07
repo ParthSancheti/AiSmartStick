@@ -174,11 +174,12 @@ void loop() {
   if (button::down()) {
     uint32_t held = button::heldMs();
     // Immediate local feedback that the SOS hold registered (the phone decides and runs the countdown).
-    if (identity::provisioned() && held >= BTN_SOS_FEEDBACK_MS && lastSosFeedbackPress != now - held) {
+    // v1 simple link (REQUIRE_AUTH 0): the stick is never "provisioned", but the SOS hold must still buzz.
+    if ((REQUIRE_AUTH == 0 || identity::provisioned()) && held >= BTN_SOS_FEEDBACK_MS && lastSosFeedbackPress != now - held) {
       lastSosFeedbackPress = now - held;
       motor::play("sos", motor::FEEDBACK);
     }
-    if (!identity::provisioned() && !net::inSetup() && held >= BTN_SETUP_HOLD_MS) {
+    if (REQUIRE_AUTH != 0 && !identity::provisioned() && !net::inSetup() && held >= BTN_SETUP_HOLD_MS) {
       ecu::pushButton(2, now);
       motor::play("confirm", motor::FEEDBACK);
       net::startSetupAp();

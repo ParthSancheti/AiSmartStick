@@ -14,11 +14,14 @@ import android.content.SharedPreferences;
 import android.media.AudioDeviceInfo;
 import android.media.AudioManager;
 import android.net.ConnectivityManager;
+import android.net.LinkAddress;
+import android.net.LinkProperties;
 import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.net.NetworkRequest;
 import android.net.Uri;
 import android.net.wifi.ScanResult;
+import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
 import android.net.wifi.WifiNetworkSpecifier;
 import android.os.Build;
@@ -50,6 +53,8 @@ import java.io.OutputStream;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.HttpURLConnection;
+import java.net.Inet4Address;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
@@ -203,42 +208,40 @@ public class AissNativePlugin extends Plugin {
         else main.postDelayed(finish, 6000);
     }
 
+    /**
+     * Makes the stick reachable, in this order:
+     *  1. already bound to it (alive)                                → connected (via "bound")
+     *  2. the phone is already on the stick's Wi-Fi (joined by hand
+     *     in Android settings, or an earlier binding): a Wi-Fi
+     *     network with a 192.168.4.x address exists                  → adopt it (via "existing")
+     *  3. Android 10+: WifiNetworkSpecifier — ONE system "Connect to
+     *     device" sheet (it scans by itself; no app scan needed)    → via "request"
+     * Permissions are NOT required here (the system sheet does the scan); a missing one only makes
+     * Android refuse, which is reported as a reason instead of being guessed up front.
+     */
     @PluginMethod
     public void connectToSetupNetwork(PluginCall call) {
         int t = call.getInt("timeoutMs", 30000);
         final int timeout = t > 0 ? t : 30000;
-        if (Build.VERSION.SDK_INT < 29) {
-            call.reject("SmartStick needs Android 10 or newer");
-            return;
-        }
-
-        if (getPermissionState("location") != PermissionState.GRANTED) {
-            call.reject("Location permission is required to connect to the SmartStick.");
-            return;
-        }
-        if (Build.VERSION.SDK_INT >= 33 && getPermissionState("nearbyWifi") != PermissionState.GRANTED) {
-            call.reject("Nearby devices permission is required to connect to the SmartStick.");
-            return;
-        }
+        final boolean openPanel = !Boolean.FALSE.equals(call.getBoolean("openWifiPanelIfOff", true));
+        // Reconnects: only ask Android when the last Wi-Fi scan saw the stick, so a switched-off stick
+        // never makes the system "Connect to device" sheet pop up again and again.
+        final boolean onlyIfVisible = Boolean.TRUE.equals(call.getBoolean("onlyIfVisible", false));
+        final String ssid = call.getString("ssid", "SmartStick_AI");
+        final String passphrase = call.getString("passphrase", "Stick@1234");
 
         WifiManager wm = (WifiManager) getContext().getApplicationContext().getSystemService(Context.WIFI_SERVICE);
         if (wm != null && !wm.isWifiEnabled()) {
-            launch(new Intent(Settings.Panel.ACTION_WIFI), new Intent(Settings.ACTION_WIFI_SETTINGS));
-            JSObject r = new JSObject();
-            r.put("connected", false);
-            r.put("reason", "WIFI_DISABLED");
-            call.resolve(r);
+            if (openPanel) launch(new Intent(Settings.Panel.ACTION_WIFI), new Intent(Settings.ACTION_WIFI_SETTINGS));
+            resolveConnect(call, false, "WIFI_DISABLED", null);
             return;
         }
 
-        final String ssid = call.getString("ssid", "SmartStick_AI");
-        final String passphrase = call.getString("passphrase", "Stick@1234");
         synchronized (connectWaiters) {
             // Already bound to this stick network (telemetry reconnects call this every time): keep it.
-            if (setupNetwork != null && ssid.equals(setupSsid)) {
-                JSObject r = new JSObject();
-                r.put("connected", true);
-                call.resolve(r);
+            if (setupNetwork != null && alive(setupNetwork)) {
+                if (setupSsid == null) setupSsid = ssid;
+                resolveConnect(call, true, null, "bound");
                 return;
             }
             // A request for the same network is in flight: wait for it instead of cancelling it
@@ -248,6 +251,30 @@ public class AissNativePlugin extends Plugin {
                 return;
             }
         }
+
+        Network existing = findStickWifi();
+        if (existing != null) {
+            // Joined by hand (or Android kept an earlier connection): use it directly, no dialog.
+            setupNetwork = existing;
+            setupSsid = ssid;
+            resolveConnect(call, true, null, "existing");
+            return;
+        }
+
+        if (Build.VERSION.SDK_INT < 29) {
+            // Android 9 and older have no WifiNetworkSpecifier: the user joins SmartStick_AI in Wi-Fi settings.
+            resolveConnect(call, false, "UNSUPPORTED", null);
+            return;
+        }
+
+        if (onlyIfVisible) {
+            Boolean visible = ssidVisible(ssid);
+            if (!Boolean.TRUE.equals(visible)) {
+                resolveConnect(call, false, visible == null ? "RANGE_UNKNOWN" : "NOT_IN_RANGE", null);
+                return;
+            }
+        }
+
         releaseSetup();
 
         final WifiNetworkSpecifier spec;
@@ -303,9 +330,140 @@ public class AissNativePlugin extends Plugin {
             // Shows ONE system dialog ("Connect to device?"). Mobile data stays the default network.
             cm.requestNetwork(req, cb, timeout);
         } catch (Exception e) {
+            // Take this call out first: releaseSetup() resolves every waiter, and a call settles once.
+            synchronized (connectWaiters) {
+                connectWaiters.remove(call);
+            }
             releaseSetup();
-            call.reject("Could not request the stick network: " + e.getMessage());
+            if (e instanceof SecurityException) resolveConnect(call, false, "PERMISSION_DENIED", null);
+            else call.reject("Could not request the stick network: " + e.getMessage());
         }
+    }
+
+    private static void resolveConnect(PluginCall call, boolean connected, String reason, String via) {
+        JSObject r = new JSObject();
+        r.put("connected", connected);
+        if (reason != null) r.put("reason", reason);
+        if (via != null) r.put("via", via);
+        call.resolve(r);
+    }
+
+    /** True while Android still knows the network (a lost network has no capabilities). */
+    private boolean alive(Network n) {
+        try {
+            ConnectivityManager cm = (ConnectivityManager) getContext().getSystemService(Context.CONNECTIVITY_SERVICE);
+            return cm != null && cm.getNetworkCapabilities(n) != null;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * A Wi-Fi network on the stick's subnet (192.168.4.x, the ESP32 soft-AP default), e.g. joined by
+     * hand in Android settings. Needs no location permission (unlike reading the SSID).
+     */
+    @SuppressWarnings("deprecation")
+    private Network findStickWifi() {
+        try {
+            ConnectivityManager cm = (ConnectivityManager) getContext().getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (cm == null) return null;
+            for (Network n : cm.getAllNetworks()) {
+                NetworkCapabilities nc = cm.getNetworkCapabilities(n);
+                if (nc == null || !nc.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) continue;
+                LinkProperties lp = cm.getLinkProperties(n);
+                if (lp == null) continue;
+                for (LinkAddress la : lp.getLinkAddresses()) {
+                    InetAddress a = la.getAddress();
+                    if (!(a instanceof Inet4Address)) continue;
+                    byte[] q = a.getAddress();
+                    if ((q[0] & 0xff) == 192 && (q[1] & 0xff) == 168 && (q[2] & 0xff) == 4) return n;
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
+    }
+
+    /**
+     * Whether the last Wi-Fi scan saw this SSID. null = Android will not say (no location permission,
+     * location off, no or stale results). Also kicks a new scan (Android throttles it; harmless).
+     */
+    @SuppressWarnings("deprecation")
+    private Boolean ssidVisible(String ssid) {
+        try {
+            WifiManager wm = (WifiManager) getContext().getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+            if (wm == null || ssid == null) return null;
+            if (getPermissionState("location") != PermissionState.GRANTED || !locationEnabled()) return null;
+            try {
+                wm.startScan();
+            } catch (Exception ignored) {
+            }
+            List<ScanResult> rs = wm.getScanResults();
+            if (rs == null || rs.isEmpty()) return null;
+            long nowUs = android.os.SystemClock.elapsedRealtime() * 1000L;
+            long newest = 0;
+            for (ScanResult r : rs) {
+                if (r.timestamp > newest) newest = r.timestamp;
+                if (r.SSID != null && ssid.equals(r.SSID.replace("\"", ""))) return Boolean.TRUE;
+            }
+            // Results older than 45 s say nothing about a stick that was just switched on.
+            if (nowUs - newest > 45_000_000L) return null;
+            return Boolean.FALSE;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** Thrown when a binding was requested but the stick network is gone (the app re-binds at once). */
+    private static final class NotBound extends Exception {
+        private static final long serialVersionUID = 1L;
+
+        NotBound() {
+            super("not bound to the stick network (connection lost)");
+        }
+    }
+
+    /**
+     * The network stick HTTP goes over: the bound/adopted stick network; else a Wi-Fi network on the
+     * stick subnet; else (nothing ever requested) the default route. Never mobile data while a
+     * binding was requested but lost: that would only time out.
+     */
+    private Network stickRoute() throws NotBound {
+        Network net = setupNetwork;
+        if (net != null && alive(net)) return net;
+        Network found = findStickWifi();
+        if (found != null) {
+            setupNetwork = found;
+            return found;
+        }
+        if (net != null) setupNetwork = null;
+        if (setupCallback != null || net != null) throw new NotBound();
+        return null;
+    }
+
+    /** Wi-Fi state for the setup screen: on/off, current SSID (needs location), stick network present. */
+    @PluginMethod
+    @SuppressWarnings("deprecation")
+    public void getCurrentWifiSsid(PluginCall call) {
+        WifiManager wm = (WifiManager) getContext().getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+        boolean enabled = wm != null && wm.isWifiEnabled();
+        String ssid = null;
+        try {
+            WifiInfo info = enabled ? wm.getConnectionInfo() : null;
+            String s = info != null ? info.getSSID() : null;
+            if (s != null) {
+                s = s.replace("\"", "");
+                if (!s.isEmpty() && !"<unknown ssid>".equals(s)) ssid = s;
+            }
+        } catch (Exception ignored) {
+        }
+        JSObject r = new JSObject();
+        r.put("wifiEnabled", enabled);
+        if (ssid != null) r.put("ssid", ssid);
+        r.put("stickNetwork", findStickWifi() != null);
+        r.put("bound", setupNetwork != null);
+        r.put("locationEnabled", locationEnabled());
+        call.resolve(r);
     }
 
     /** Resolves every caller waiting for the current request. */
@@ -316,19 +474,16 @@ public class AissNativePlugin extends Plugin {
             waiting = new ArrayList<>(connectWaiters);
             connectWaiters.clear();
         }
-        for (PluginCall c : waiting) {
-            JSObject r = new JSObject();
-            r.put("connected", connected);
-            if (reason != null) r.put("reason", reason);
-            c.resolve(r);
-        }
+        for (PluginCall c : waiting) resolveConnect(c, connected, reason, connected ? "request" : null);
     }
 
     @PluginMethod
     public void setupRequest(PluginCall call) {
-        final Network net = setupNetwork;
-        if (net == null && setupCallback != null) {
-            call.reject("Setup request failed: not bound to the stick network (connection lost)");
+        final Network net;
+        try {
+            net = stickRoute();
+        } catch (NotBound e) {
+            call.reject("Setup request failed: " + e.getMessage());
             return;
         }
         final String method = call.getString("method", "GET");
@@ -341,7 +496,7 @@ public class AissNativePlugin extends Plugin {
             HttpURLConnection c = null;
             try {
                 // Bound to the stick network specifically, regardless of the default route.
-                // net is null only when no binding was requested (joined manually via OS settings).
+                // net is null only when no binding was requested and no stick Wi-Fi is up (default route).
                 URL url = new URL(SETUP_HOST + path);
                 c = (HttpURLConnection) (net != null ? net.openConnection(url) : url.openConnection());
                 c.setRequestMethod(method);
@@ -393,9 +548,11 @@ public class AissNativePlugin extends Plugin {
 
     @PluginMethod
     public void requestBinary(PluginCall call) {
-        final Network net = setupNetwork;
-        if (net == null && setupCallback != null) {
-            call.reject("requestBinary failed: not bound to the stick network (connection lost)");
+        final Network net;
+        try {
+            net = stickRoute();
+        } catch (NotBound e) {
+            call.reject("requestBinary failed: " + e.getMessage());
             return;
         }
         final String path = call.getString("path", "/");
@@ -448,7 +605,7 @@ public class AissNativePlugin extends Plugin {
         });
     }
 
-    /** Device auth headers (x-aiss-device/ts/nonce/sig) computed in JS; the key never crosses the bridge. */
+    /** Extra request headers from JS (none for the v1 simple link). */
     private static void applyHeaders(HttpURLConnection c, JSObject headers) {
         if (headers == null) return;
         java.util.Iterator<String> keys = headers.keys();

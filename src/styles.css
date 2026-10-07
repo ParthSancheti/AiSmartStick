@@ -78,6 +78,9 @@
   --glass-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.1);
   --glass-blur: 16px;
   --solid-surface: #ffffff;
+  /* Glass without backdrop-filter (phones, html.low-power): same tint, a little more opaque. */
+  --glass-flat: rgba(255, 255, 255, 0.66);
+  --header-fade: rgba(240, 244, 248, 0.92);
 
   --blob-1: #9333ea;
   --blob-2: #ec4899;
@@ -109,7 +112,7 @@
     --line: rgba(255, 255, 255, 0.1); --teal: #2ccfb8; --teal-ink: #62e4cf; --teal-soft: rgba(44, 207, 184, 0.16); --on-teal: #04241f;
     --amber: #f2b04a; --amber-ink: #f7c97e; --amber-soft: rgba(242, 176, 74, 0.16);
     --sos: #f0463c; --sos-deep: #c52a20; --ok: #34c46e; --surface: #13262f; --chip: #ffffff; --chip-ink: #050508; --info: #6ea0ff; --info-soft: rgba(110, 160, 255, 0.16); --focus: #2ccfb8; --disabled: rgba(255, 255, 255, 0.35);
-    --glass-bg: rgba(18, 18, 26, 0.55); --glass-border: rgba(255, 255, 255, 0.12); --glass-shadow: 0 15px 35px rgba(0,0,0,0.4); --solid-surface: #152a33;
+    --glass-bg: rgba(18, 18, 26, 0.55); --glass-border: rgba(255, 255, 255, 0.12); --glass-shadow: 0 15px 35px rgba(0,0,0,0.4); --solid-surface: #152a33; --glass-flat: rgba(22, 27, 36, 0.78); --header-fade: rgba(5, 5, 8, 0.9);
     --blob-1: #6366f1; --blob-2: #7c3aed; --blob-3: #2563eb; --blob-4: #22d3ee;
     --map-bg: #0f2029; --map-block: #152b35; --map-road: #22404b; --map-edge: #0b1a21; --map-park: #17382f; --map-water: #123845; --map-label: #7d959a;
     color-scheme: dark;
@@ -120,7 +123,7 @@
   --line: rgba(255, 255, 255, 0.1); --teal: #2ccfb8; --teal-ink: #62e4cf; --teal-soft: rgba(44, 207, 184, 0.16); --on-teal: #04241f;
   --amber: #f2b04a; --amber-ink: #f7c97e; --amber-soft: rgba(242, 176, 74, 0.16);
   --sos: #f0463c; --sos-deep: #c52a20; --ok: #34c46e; --surface: #13262f; --chip: #ffffff; --chip-ink: #050508; --info: #6ea0ff; --info-soft: rgba(110, 160, 255, 0.16); --focus: #2ccfb8; --disabled: rgba(255, 255, 255, 0.35);
-  --glass-bg: rgba(18, 18, 26, 0.55); --glass-border: rgba(255, 255, 255, 0.12); --glass-shadow: 0 15px 35px rgba(0,0,0,0.4); --solid-surface: #152a33;
+  --glass-bg: rgba(18, 18, 26, 0.55); --glass-border: rgba(255, 255, 255, 0.12); --glass-shadow: 0 15px 35px rgba(0,0,0,0.4); --solid-surface: #152a33; --glass-flat: rgba(22, 27, 36, 0.78); --header-fade: rgba(5, 5, 8, 0.9);
   --blob-1: #6366f1; --blob-2: #7c3aed; --blob-3: #2563eb; --blob-4: #22d3ee;
   --map-bg: #0f2029; --map-block: #152b35; --map-road: #22404b; --map-edge: #0b1a21; --map-park: #17382f; --map-water: #123845; --map-label: #7d959a;
   color-scheme: dark;
@@ -138,6 +141,8 @@
 :root.theme-switching *, :root.theme-switching *::before, :root.theme-switching *::after { transition: none !important; }
 
 html, body, #root { height: 100%; }
+/* The page background follows the theme (also under the theme reveal snapshot). */
+html { background-color: var(--bg); }
 html { scroll-padding-top: env(safe-area-inset-top, 0px); }
 body {
   margin: 0;
@@ -162,7 +167,7 @@ button { -webkit-user-select: none; user-select: none; touch-action: manipulatio
     backdrop-filter: blur(var(--glass-blur)) saturate(150%);
     border: 1px solid var(--glass-border);
     box-shadow: var(--glass-shadow);
-    transition: background-color 0.3s, border-color 0.3s, transform 0.2s cubic-bezier(0.18, 0.89, 0.32, 1.28), box-shadow 0.2s, filter 0.2s;
+    transition: background-color 0.2s, border-color 0.2s, transform 0.16s cubic-bezier(0.2, 0.9, 0.3, 1.2);
   }
   @media (hover: hover) {
     .glass.interactive:hover {
@@ -175,8 +180,7 @@ button { -webkit-user-select: none; user-select: none; touch-action: manipulatio
     }
   }
   .glass.interactive:active {
-    transform: scale(0.96);
-    filter: blur(1px);
+    transform: scale(0.97);
     background-color: rgba(255, 255, 255, 0.75);
   }
   @media (prefers-color-scheme: dark) {
@@ -198,6 +202,20 @@ button { -webkit-user-select: none; user-select: none; touch-action: manipulatio
   :root[data-glass="solid"] .glass::before,
   [data-contrast="high"] .glass::before { display: none; }
   [data-contrast="high"] .glass { border: 2px solid var(--ink); }
+
+  /* Phones (html.low-power, util/platform.ts): no backdrop-filter anywhere. On Android WebView every
+     blurred element is re-rendered each frame something moves underneath (the ambient background,
+     a scroll, a page transition) - that was the stutter. Same tint, slightly more opaque. */
+  :root.low-power .glass {
+    background-color: var(--glass-flat);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  :root.low-power [class*="backdrop-blur"] {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+  :root.low-power .glass-refract { -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
 
   /* Real refraction only where Chromium can render it */
   :root[data-glass="full"][data-engine="blink"] .glass-refract {
@@ -265,7 +283,7 @@ button { -webkit-user-select: none; user-select: none; touch-action: manipulatio
 }
 @keyframes shimmer { to { background-position: -120% 0; } }
 /* Ambient background (components/Atmosphere.tsx): soft light fields in slow motion. */
-.atmo-root { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; background: var(--bg); transition: background-color .45s ease; }
+.atmo-root { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; background: var(--bg); contain: strict; }
 .atmo-field {
   position: absolute; width: 95vmax; height: 95vmax; border-radius: 50%;
   will-change: transform; animation-name: atmo-drift; animation-timing-function: ease-in-out;
@@ -282,6 +300,80 @@ button { -webkit-user-select: none; user-select: none; touch-action: manipulatio
 @keyframes atmo-drift-c { 0% { transform: translate3d(0,0,0) scale(.95); } 50% { transform: translate3d(12vmax, -14vmax, 0) scale(1.1); } 100% { transform: translate3d(-10vmax, -4vmax, 0) scale(1); } }
 @media (prefers-reduced-motion: reduce) { .atmo-field { animation: none; } }
 :root[data-reduce-motion="true"] .atmo-field { animation: none; }
+/* Phones: two light fields instead of four, smaller textures (a 95vmax square at DPR 3 is ~2700px
+   per layer), same slow drift - compositor-only transforms. Paused while the app is hidden. */
+:root.low-power .atmo-c, :root.low-power .atmo-d { display: none; }
+:root.low-power .atmo-field { width: 80vmax; height: 80vmax; }
+:root.low-power .atmo-a { left: -34vmax; top: -30vmax; }
+:root.low-power .atmo-b { right: -38vmax; top: auto; bottom: -26vmax; }
+:root.page-hidden .atmo-field, :root.page-hidden .map-pulse { animation-play-state: paused; }
+/* A still copy of the background for opaque full-screen pages (no animation, one paint). */
+.atmo-still .atmo-field { animation: none; will-change: auto; }
+
+/* ── Pages (components/Layout.tsx: SubPage / PageHeader) ─────────────────────
+   One scroll container per page; the header never scrolls. */
+.page-scroll {
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.page-scroll::-webkit-scrollbar { display: none; }
+/* Content slides under the header edge with a short fade instead of a hard cut. */
+.page-header { position: relative; z-index: 20; }
+.page-header::after {
+  content: ""; position: absolute; left: 0; right: 0; top: 100%; height: 14px; pointer-events: none;
+  background: linear-gradient(to bottom, var(--header-fade), transparent);
+  opacity: var(--header-shadow, 0); transition: opacity .15s linear;
+}
+.page-header[data-scrolled="true"] { --header-shadow: 1; }
+/* Home hides under full-screen pages (UserHome.tsx): a quick fade, then out of layout work and
+   out of TalkBack. Sub-pages over it are transparent and share the one animated background. */
+.home-layer { transition: opacity .16s ease-out; }
+.home-layer[data-covered="true"] { opacity: 0; visibility: hidden; transition: opacity .16s ease-out, visibility 0s linear .17s; }
+/* Off-screen carousel slides and hidden Home stop their decorative animations. */
+.home-card:not([aria-current="true"]) *, .home-layer[data-covered="true"] * { animation-play-state: paused !important; }
+
+/* Battery page liquid edge: transform-only, no blur. */
+.battery-wave { animation: battery-wave 2.4s linear infinite; will-change: transform; }
+@keyframes battery-wave { from { transform: translate3d(0,0,0); } to { transform: translate3d(-50%,0,0); } }
+
+/* Live assistant aurora: three soft radial fields drifting (no blur filters, compositor only). */
+.live-aurora { overflow: hidden; contain: strict; background: linear-gradient(to top, #0d1b2a 0%, #101826 35%, #09090b 70%); }
+.live-aurora > span { position: absolute; left: 50%; bottom: -30%; width: 130%; height: 70%; margin-left: -65%; border-radius: 50%; will-change: transform; animation: aurora 9s ease-in-out infinite alternate; }
+.live-aurora-a { background: radial-gradient(closest-side, rgba(110,160,255,.42), transparent 75%); }
+.live-aurora-b { background: radial-gradient(closest-side, rgba(44,207,184,.42), transparent 75%); animation-duration: 12s !important; animation-direction: alternate-reverse !important; }
+.live-aurora-c { background: radial-gradient(closest-side, rgba(127,231,207,.28), transparent 75%); width: 90% !important; margin-left: -45% !important; animation-duration: 7s !important; }
+@keyframes aurora { 0% { transform: translate3d(-14%, 0, 0) scale(1, 1); } 100% { transform: translate3d(14%, -6%, 0) scale(1.1, 1.25); } }
+:root[data-reduce-motion="true"] .live-aurora > span, :root[data-reduce-motion="true"] .battery-wave { animation: none; }
+@media (prefers-reduced-motion: reduce) { .live-aurora > span, .battery-wave { animation: none; } }
+
+/* Long words (phone models, place names, Hindi strings, large system font) wrap instead of
+   pushing a box past the screen edge. */
+body { overflow-wrap: break-word; }
+/* Home stat tiles: drop the icon when the tile gets too narrow for its text (narrow phones,
+   large system font). em-based, so it follows the text size, not just the screen width. */
+.stat-tile { container-type: inline-size; }
+@container (max-width: 10.5em) { .stat-tile-icon { display: none !important; } }
+
+/* Home header: on a narrow screen / large text the logo stands alone instead of a clipped name. */
+.home-header-bar { container-type: inline-size; }
+@container (max-width: 16em) { .home-brand-name { display: none; } .home-brand-spacer { display: block; } }
+
+/* AI orb (components/AiOrb.tsx): CSS-only motion. */
+.orb-spin { animation: orb-spin var(--orb-spin, 24s) linear infinite; will-change: transform; }
+@keyframes orb-spin { to { transform: rotate(360deg); } }
+.orb-pulse { animation: orb-pulse var(--orb-pulse, 4.8s) ease-in-out infinite; will-change: transform; }
+@keyframes orb-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(var(--orb-amp, 1.03)); } }
+.orb-ripple { animation: orb-ripple 1.8s ease-out infinite; will-change: transform, opacity; }
+@keyframes orb-ripple { from { transform: scale(1); opacity: 1; } to { transform: scale(var(--orb-ripple, 1.6)); opacity: 0; } }
+:root[data-reduce-motion="true"] .orb-spin, :root[data-reduce-motion="true"] .orb-pulse, :root[data-reduce-motion="true"] .orb-ripple { animation: none; }
+@media (prefers-reduced-motion: reduce) { .orb-spin, .orb-pulse, .orb-ripple { animation: none; } }
+/* Audio page: speaking ring. */
+.audio-ring { animation: audio-ring 1.6s ease-out infinite; will-change: transform, opacity; }
+@keyframes audio-ring { from { transform: scale(1); opacity: .8; } to { transform: scale(1.6); opacity: 0; } }
+
 
 .intro-spotlight { background: radial-gradient(circle at 50% 42%, color-mix(in srgb, var(--teal) 34%, transparent), transparent 62%); }
 @keyframes aiss-drop { from { transform: translateY(-40px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }

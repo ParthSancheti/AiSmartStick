@@ -6,6 +6,8 @@ export interface AuthUser {
   displayName: string | null;
   email: string | null;
   photoURL: string | null;
+  /** The Google account name (displayName may be the name the person typed in the app). */
+  providerName?: string | null;
 }
 
 interface AuthState {

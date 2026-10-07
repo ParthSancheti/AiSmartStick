@@ -1,5 +1,6 @@
 import { Capacitor } from '@capacitor/core';
 import { AissNative } from '../native/aissNative';
+import { requestLocationPermission } from '../location/locationService';
 
 /**
  * Everything the stick needs from Android, asked once during setup while the user is looking at the
@@ -39,10 +40,23 @@ export async function requestSetupPermissions(): Promise<Record<SetupPermission,
   let location: PermState = 'unavailable';
   let nearby: PermState = 'unavailable';
   if (Capacitor.isNativePlatform()) {
+    // Location first, on its own: "Approximate" counts as allowed (AissNative's alias needs Precise).
     try {
-      const r = await AissNative.requestPermissions({ permissions: ['location', 'nearbyWifi'] });
-      location = norm(r.location);
-      nearby = norm(r.nearbyWifi);
+      location = norm(await requestLocationPermission());
+    } catch {
+      /* plugin unavailable */
+    }
+    // One dialog at a time: Android silently cancels a second concurrent permission request.
+    try {
+      const { Device } = await import('@capacitor/device');
+      const sdk = (await Device.getInfo().catch(() => null))?.androidSDKVersion ?? 33;
+      if (sdk < 33) {
+        // NEARBY_WIFI_DEVICES only exists on Android 13+; older phones use the location permission.
+        nearby = location;
+      } else {
+        const r = await AissNative.requestPermissions({ permissions: ['nearbyWifi'] });
+        nearby = norm(r.nearbyWifi);
+      }
     } catch {
       /* plugin unavailable */
     }

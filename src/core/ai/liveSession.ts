@@ -1,5 +1,9 @@
 import { GoogleGenAI, Modality, type LiveServerMessage, type Session } from '@google/genai';
-import { loopEarcon, earcon } from '../feedback/earcons';
+import { create } from 'zustand';
+import { earcon } from '../feedback/earcons';
+import { haptics } from '../feedback/haptics';
+import { startConnectingTune } from '../audio/connectingTune';
+import { useSafety } from '../store/safety';
 import { call } from '../backend/api';
 import { TOOLS } from '../../../shared/tools';
 import { toGeminiParameters } from '../../../shared/validate';
@@ -25,9 +29,42 @@ import { log } from '../log';
  * `confirm` need the user's spoken "yes" first; navigation offers are confirmed deterministically
  * by the app (core/ai/navIntent.ts), not by trusting the model.
  */
-const CONNECT_TIMEOUT_MS = 15_000;
+/** Whole connect budget (token + socket + open). The connecting tune never rings longer. */
+export const CONNECT_TIMEOUT_MS = 20_000;
+const TOKEN_TIMEOUT_MS = 15_000;
+const TIMEOUT_MSG = 'The assistant took too long to connect.';
 /** Close the mic after this long with neither user speech nor model output. */
 const IDLE_CLOSE_MS = 45_000;
+
+/** UI hint: true while the Live assistant is connecting (show "Connecting…", not "Thinking…"). */
+export const useLiveStatus = create<{ connecting: boolean }>(() => ({ connecting: false }));
+
+function phoneOffline() {
+  return useDevice.getState().internet === false || (typeof navigator !== 'undefined' && navigator.onLine === false);
+}
+
+/** Why the assistant could not start: a short on-screen label and the sentence the user hears. */
+export function startFailure(msg: string, code = '', name = ''): { label: string; spoken: string } {
+  const all = `${code} ${msg}`;
+  if (/NotAllowedError|SecurityError/.test(name) || /microphone|NotAllowedError/i.test(msg))
+    return { label: 'Microphone permission needed', spoken: 'Microphone permission is needed for the assistant. Please allow the microphone for AI SmartStick in phone settings.' };
+  if (/NotFoundError|NotReadableError/.test(name)) return { label: 'Microphone not available', spoken: 'The microphone is not available, so the assistant cannot listen.' };
+  if (/unauthenticated|app.?check|sign in/i.test(all)) return { label: 'Please sign in again', spoken: 'The assistant needs you to sign in again. Please sign in and try again.' };
+  if (/resource-exhausted|too many/i.test(all)) return { label: 'Assistant busy, try again soon', spoken: 'The assistant is busy right now. Please wait a minute and try again.' };
+  if (phoneOffline()) return { label: 'No internet', spoken: 'The phone has no internet, so the assistant cannot connect. The stick still warns you about obstacles.' };
+  if (msg === TIMEOUT_MSG || /deadline|timeout|timed out/i.test(all)) return { label: 'Connection timed out', spoken: 'The assistant took too long to connect. Please check the internet and press again.' };
+  return { label: 'Could not connect', spoken: "I couldn't reach the assistant. Please press the button to try again." };
+}
+
+export const startFailureMessage = (msg: string, code = '', name = '') => startFailure(msg, code, name).spoken;
+
+function closeQuietly(s: Session) {
+  try {
+    s.close();
+  } catch {
+    /* already closed */
+  }
+}
 
 const tools = [{ functionDeclarations: TOOLS.map((t) => ({ name: t.name, description: t.description, parameters: toGeminiParameters(t.params) as never })) }];
 
@@ -58,6 +95,7 @@ export class LiveSession {
   private session: Session | null = null;
   private mic: MicStream | null = null;
   private active = false;
+  private connecting = false;
   private generation = 0;
   private outText = '';
   private inText = '';
@@ -74,16 +112,29 @@ export class LiveSession {
     return this.active;
   }
 
+  /** True while the Live socket is being set up (the connecting tune is playing). */
+  get isConnecting() {
+    return this.active && this.connecting;
+  }
+
   async start(): Promise<boolean> {
     if (this.active) return true;
     this.active = true;
+    this.connecting = true;
     const gen = ++this.generation;
     const stale = () => gen !== this.generation;
     useAssistant.setState({ phase: 'thinking', unavailable: null, heard: '', reply: '' });
+    useLiveStatus.setState({ connecting: true });
+    // Started inside the tap / button handler, so the audio context is unlocked right here.
     this.stopTone();
-    this.stopTone = loopEarcon('connecting');
+    this.stopTone = startConnectingTune();
+    let deadline: ReturnType<typeof setTimeout> | undefined;
     try {
-      const cfg = await call<Record<string, never>, { token: string; liveModel: string }>('getLiveToken', {}, 15000);
+      // One budget for token + socket + open: the tune never rings longer than this.
+      const timeout = new Promise<never>((_, rej) => {
+        deadline = setTimeout(() => rej(new Error(TIMEOUT_MSG)), CONNECT_TIMEOUT_MS);
+      });
+      const cfg = await Promise.race([call<Record<string, never>, { token: string; liveModel: string }>('getLiveToken', {}, TOKEN_TIMEOUT_MS), timeout]);
       if (stale()) return false;
       if (!cfg?.token || !cfg.liveModel) throw new Error('The server returned no Live token.');
       const ai = new GoogleGenAI({ apiKey: cfg.token, httpOptions: { apiVersion: 'v1alpha' } });
@@ -94,6 +145,8 @@ export class LiveSession {
         opened = res;
         failed = rej;
       });
+      // A socket error can arrive before anyone awaits openPromise: never an unhandled rejection.
+      openPromise.catch(() => undefined);
       const connect = ai.live.connect({
         model: cfg.liveModel,
         config: {
@@ -111,28 +164,42 @@ export class LiveSession {
           onerror: (e: ErrorEvent) => {
             log.error('live: socket error', { error: e?.message });
             failed(new Error(e?.message || 'Live connection error'));
-            if (!stale() && this.session) this.stop('error', 'The assistant connection failed.');
+            if (!stale() && this.session && !this.connecting) this.stop('error', 'The assistant connection was lost. Press the button to talk again.', 'Connection lost');
           },
           onclose: (e: CloseEvent) => {
             failed(new Error(e?.reason || `Live connection closed (${e?.code ?? 'no code'})`));
-            if (stale() || !this.active) return;
+            if (stale() || !this.active || this.connecting) return;
             // The server closes with a reason when the model, token or config is rejected.
             log.warn('live: closed by server', { code: e?.code, reason: e?.reason });
-            this.stop('remote', e?.code && e.code !== 1000 ? `The assistant disconnected${e.reason ? `: ${e.reason}` : ''}.` : undefined);
+            this.stop('remote', e?.code && e.code !== 1000 ? `The assistant disconnected${e.reason ? `: ${e.reason}` : ''}.` : undefined, 'Assistant disconnected');
           },
         },
       });
-      const timeout = new Promise<never>((_, rej) => setTimeout(() => rej(new Error('The assistant took too long to connect.')), CONNECT_TIMEOUT_MS));
+      // A late socket (after a timeout or cancel) must be closed, never left open.
+      connect.then(
+        (s) => {
+          if (stale()) closeQuietly(s);
+        },
+        () => undefined,
+      );
       const session = await Promise.race([connect, timeout]);
       if (stale()) {
-        session.close();
+        closeQuietly(session);
         return false;
       }
       this.session = session;
       await Promise.race([openPromise, timeout]);
+      clearTimeout(deadline);
+      if (stale()) return false;
+      // Connected: the tune stops now, then the "listening" earcon (never on top of each other).
+      this.connecting = false;
       this.stopTone();
+      this.stopTone = () => {};
+      useLiveStatus.setState({ connecting: false });
 
       audioManager.setLiveSessionOpen(true);
+      earcon('listen');
+      haptics.play('listen');
       const mic = new MicStream();
       this.mic = mic;
       mic.onData = (data) => {
@@ -151,9 +218,22 @@ export class LiveSession {
     } catch (e) {
       if (stale()) return false;
       const msg = (e as Error).message || 'Could not connect to the assistant.';
-      log.error('live: start failed', { error: msg });
-      this.stop('error', /permission|NotAllowed/i.test(msg) ? 'Microphone permission is needed for the assistant.' : `I couldn't reach the assistant. ${/app.?check|unauthenticated|sign in/i.test(msg) ? 'Please sign in again.' : 'Please try again.'}`);
+      const code = String((e as { code?: string }).code ?? '');
+      const name = String((e as Error).name ?? '');
+      log.error('live: start failed', { error: msg, code, name });
+      const why = startFailure(msg, code, name);
+      this.stop('error', why.spoken, why.label);
       return false;
+    } finally {
+      clearTimeout(deadline);
+    }
+  }
+
+  /** SOS took over: a connection still being set up is abandoned (an open one keeps running). */
+  onSosStarted() {
+    if (this.active && this.connecting) {
+      log.info('live: SOS started while connecting; connection abandoned');
+      this.stop('user');
     }
   }
 
@@ -273,10 +353,13 @@ export class LiveSession {
     if (this.active && useAssistant.getState().phase === 'thinking') useAssistant.setState({ phase: 'listening' });
   }
 
-  stop(reason: StopReason = 'user', spoken?: string) {
+  /** Ends the session (or the connection attempt). Always silences the connecting tune. */
+  stop(reason: StopReason = 'user', spoken?: string, label?: string) {
     const wasActive = this.active;
     this.generation++;
     this.active = false;
+    this.connecting = false;
+    if (useLiveStatus.getState().connecting) useLiveStatus.setState({ connecting: false });
     clearTimeout(this.idleTimer);
     clearTimeout(this.wordsTimer);
     this.lastUserText = '';
@@ -297,7 +380,7 @@ export class LiveSession {
     this.pendingConfirm = null;
     this.confirmedByUser = false;
     if (reason === 'error' || (reason === 'remote' && spoken)) {
-      useAssistant.setState({ phase: 'error', unavailable: spoken ?? 'The assistant is unavailable.' });
+      useAssistant.setState({ phase: 'error', unavailable: label ?? spoken ?? 'The assistant is unavailable.' });
       if (spoken) void audioManager.say(spoken, { lang: useAssistant.getState().lang, priority: 'user' });
       setTimeout(() => useAssistant.getState().phase === 'error' && useAssistant.setState({ phase: 'idle' }), 4000);
     } else {
@@ -309,3 +392,8 @@ export class LiveSession {
 
 let confirming = false;
 export const liveSession = new LiveSession();
+
+// SOS has priority over everything: abandon a Live connection that is still being set up.
+useSafety.subscribe((s, prev) => {
+  if (prev.phase === 'idle' && s.phase !== 'idle') liveSession.onSosStarted();
+});

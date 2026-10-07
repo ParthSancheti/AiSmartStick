@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { Check, Loader2, MessageSquare, Shield, TriangleAlert } from 'lucide-react';
 import { GlassButton, cx } from '../../../components/glass';
@@ -24,6 +24,14 @@ export function SafetyNumberStep({ onSaved }: { onSaved: () => void }) {
   const [saved, setSaved] = useState(!!existing && validIndianMobile(digitsOf(existing)));
   const [smsPerm, setSmsPerm] = useState<string | null>(null);
   const [test, setTest] = useState<TestState>({ kind: 'idle' });
+  // A safety number saved with this account may be restored from the cloud just after this opens.
+  useEffect(() => {
+    const d = digitsOf(existing);
+    if (!validIndianMobile(d)) return;
+    setDigits((cur) => (cur ? cur : d));
+    setSaved((cur) => cur || !digits);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [existing]);
   const valid = validIndianMobile(digits);
   const full = `+91${digits}`;
   const pretty = digits.length > 5 ? `${digits.slice(0, 5)} ${digits.slice(5)}` : digits;

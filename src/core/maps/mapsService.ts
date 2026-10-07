@@ -89,3 +89,31 @@ export interface ReverseResult {
 export async function reverseLookup(lat: number, lng: number) {
   return call<{ lat: number; lng: number }, ReverseResult>('mapsReverse', { lat, lng }, 15000);
 }
+
+/**
+ * Cloud Function errors in words the user (and the person setting the app up) can act on.
+ * Firebase callable codes: https://firebase.google.com/docs/reference/js/functions#functionserrorcode
+ */
+export function friendlyMapsError(e: unknown): string {
+  const code = String((e as { code?: string })?.code ?? '').replace(/^functions\//, '');
+  const msg = (e as Error)?.message ?? '';
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return 'No internet connection.';
+  switch (code) {
+    case 'unavailable':
+    case 'deadline-exceeded':
+      return 'Could not reach the server. Check the internet connection.';
+    case 'unauthenticated':
+      return 'Server refused the request (sign-in or App Check). See SETUP: App Check debug token for test APKs.';
+    case 'permission-denied':
+    case 'failed-precondition':
+      return 'Server refused the request (App Check or Maps key). See SETUP.';
+    case 'not-found':
+      return 'Maps service is not deployed (firebase deploy --only functions).';
+    case 'resource-exhausted':
+      return 'Google Maps quota reached. Try again later.';
+    case 'internal':
+      return 'Google Maps server error (check MAPS_SERVER_KEY and enabled APIs).';
+    default:
+      return msg || 'Maps service unavailable.';
+  }
+}

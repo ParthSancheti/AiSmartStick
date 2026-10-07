@@ -31,7 +31,7 @@ export function StickUserApp() {
 
   return (
     <div
-      className="relative h-full w-full overflow-hidden text-ink bg-transparent"
+      className={`relative h-full w-full overflow-hidden text-ink ${hc ? 'bg-bg' : 'bg-transparent'}`}
       data-contrast={hc ? 'high' : undefined}
       style={{ ['--text-scale' as string]: textScale, zoom: textScale } as any}
     >
