@@ -441,6 +441,27 @@ public class AissNativePlugin extends Plugin {
         return null;
     }
 
+    /** Status bar icon colour: dark icons on the light theme, light icons on the dark theme. */
+    @PluginMethod
+    public void setStatusBarIcons(PluginCall call) {
+        final boolean darkIcons = Boolean.TRUE.equals(call.getBoolean("dark", false));
+        try {
+            getActivity().runOnUiThread(() -> {
+                try {
+                    android.view.Window w = getActivity().getWindow();
+                    androidx.core.view.WindowInsetsControllerCompat c = androidx.core.view.WindowCompat.getInsetsController(w, w.getDecorView());
+                    if (c != null) {
+                        c.setAppearanceLightStatusBars(darkIcons);
+                        c.setAppearanceLightNavigationBars(darkIcons);
+                    }
+                } catch (Exception ignored) {
+                }
+            });
+        } catch (Exception ignored) {
+        }
+        call.resolve();
+    }
+
     /** Android's font size setting. The WebView is pinned to 100 % (MainActivity); the app scales text itself from this. */
     @PluginMethod
     public void getFontScale(PluginCall call) {

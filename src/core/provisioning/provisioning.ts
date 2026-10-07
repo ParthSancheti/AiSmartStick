@@ -202,8 +202,9 @@ export async function provisionStick() {
     saved = true;
     diag('stick saved on this phone');
 
-    // The stick network stays bound: the live link keeps using it.
-    await attachPairedDevice(dev);
+    // The stick network stays bound: the live link keeps using it. Never wait for it here: setup is
+    // done once real data arrived and the stick is saved (the link shows Connected on Home).
+    void attachPairedDevice(dev).catch((e) => diag(`live link: ${(e as Error).message}`));
 
     // Cloud record in the background. The stick network has no internet (and Firestore writes only
     // resolve once the server acknowledges them), so setup never waits for it.

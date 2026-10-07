@@ -28,6 +28,8 @@ export interface AissNativePlugin {
   /** Wi-Fi state hint for setup. ssid needs location permission + location on; stickNetwork does not. */
   /** Android system font size (Settings → Display → Font size), e.g. 1.15. The WebView itself is pinned to 100 %. */
   getFontScale(): Promise<{ fontScale: number }>;
+  /** dark: true = dark status/navigation bar icons (light theme). */
+  setStatusBarIcons(opts: { dark: boolean }): Promise<void>;
   getCurrentWifiSsid(): Promise<{ wifiEnabled: boolean; ssid?: string | null; stickNetwork: boolean; bound: boolean; locationEnabled?: boolean }>;
   /** HTTP over the setup network specifically (process stays on mobile data for everything else). */
   setupRequest(opts: { method: 'GET' | 'POST'; path: string; body?: string; bodyBase64?: string; headers?: Record<string, string>; timeoutMs?: number }): Promise<{ status: number; body: string }>;

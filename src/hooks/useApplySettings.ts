@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useSession } from '../core/store/session';
 import { StatusBar, Style } from '@capacitor/status-bar';
+import { AissNative } from '../core/native/aissNative';
 import type { GlassTier } from '../core/types';
 
 function detectTier(): GlassTier {
@@ -32,7 +33,7 @@ export function useApplySettings() {
       const dark = theme === 'dark' || (theme === 'system' && mq.matches);
       root.dataset.theme = dark ? 'dark' : 'light';
       document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#0b1820' : '#eaf1ef');
-      if (typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform?.()) { StatusBar.setStyle({ style: dark ? Style.Dark : Style.Light }).catch(()=>{}); }
+      if (typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform?.()) { StatusBar.setStyle({ style: dark ? Style.Dark : Style.Light }).catch(()=>{}); void AissNative.setStatusBarIcons({ dark: !dark }).catch(()=>{}); }
     };
     apply();
     mq.addEventListener('change', apply);

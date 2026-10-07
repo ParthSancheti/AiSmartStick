@@ -30,6 +30,9 @@ export async function sendSms(name: string, number: string | null, body: string,
   if (!number) return 'no_number';
   // direct = send without a tap when SEND_SMS is granted; the plugin falls back to the composer truthfully.
   const direct = opts.direct ?? getSettings().smsMode === 'direct';
+  // Sending without a tap needs Android's SMS permission: ask for it right here if it is missing
+  // (a no-op when already granted), otherwise Android only lets the app open the Messages app.
+  if (direct) await AissNative.requestPermissions({ permissions: ['sms'] }).catch(() => undefined);
   let { result, error } = await AissNative.sendSms({ number, body, direct });
   if (result === 'failed' && direct) {
     // The radio refused it (no signal, no balance): the Messages app can still retry it.

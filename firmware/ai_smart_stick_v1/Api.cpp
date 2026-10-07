@@ -1,5 +1,6 @@
 #include "Api.h"
 #include <esp_http_server.h>
+#include <img_converters.h>
 #include <mbedtls/base64.h>
 #include <WiFi.h>
 #include "ArduinoJson.h"
@@ -197,6 +198,11 @@ static esp_err_t hCapture(httpd_req_t *r) {
   camBusy = true;
   camera_fb_t *fb = camera::capture();
   if (!fb) { camBusy = false; return error(r, 503, "camera_error", "capture failed"); }
+  uint8_t *jpg = fb->buf; size_t jpgLen = fb->len; bool converted = false;
+  if (fb->format != PIXFORMAT_JPEG) {
+    converted = frame2jpg(fb, 20, &jpg, &jpgLen);
+    if (!converted) { camera::release(fb); camBusy = false; return error(r, 503, "camera_error", "jpeg conversion failed"); }
+  }
   char w[8], h[8], s[12], ts[16];
   snprintf(w, 8, "%u", fb->width); snprintf(h, 8, "%u", fb->height); snprintf(s, 12, "%lu", (unsigned long)++frameSeq); snprintf(ts, 16, "%lu", millis());
   httpd_resp_set_type(r, "image/jpeg");
@@ -204,7 +210,8 @@ static esp_err_t hCapture(httpd_req_t *r) {
   httpd_resp_set_hdr(r, "x-aiss-height", h);
   httpd_resp_set_hdr(r, "x-aiss-seq", s);
   httpd_resp_set_hdr(r, "x-aiss-ts", ts);
-  esp_err_t e = httpd_resp_send(r, (const char *)fb->buf, fb->len);
+  esp_err_t e = httpd_resp_send(r, (const char *)jpg, jpgLen);
+  if (converted) free(jpg);
   camera::release(fb);   // RELEASE: the buffer returns to the driver immediately
   camBusy = false;
   return e;
@@ -386,6 +393,45 @@ static esp_err_t hRoot(httpd_req_t *r) {
   return httpd_resp_send(r, page, n);
 }
 
+// ── MJPEG live stream on port 81: GET http://192.168.4.1:81/stream ──────────
+// Same protocol as the old working sketch (sketch_sep19b): multipart/x-mixed-replace, one JPEG per part.
+// Separate server so a long-running stream never blocks /api/v1/* (telemetry keeps flowing).
+static httpd_handle_t streamServer = nullptr;
+#define STREAM_BOUNDARY "123456789000000000000987654321"
+static esp_err_t hStream(httpd_req_t *r) {
+  if (health::safeMode() || !camera::ok()) return error(r, 503, "camera_error", "camera not available");
+  httpd_resp_set_type(r, "multipart/x-mixed-replace;boundary=" STREAM_BOUNDARY);
+  httpd_resp_set_hdr(r, "Access-Control-Allow-Origin", "*");
+  char part[96];
+  while (true) {
+    camera_fb_t *fb = camera::capture();
+    if (!fb) { delay(50); continue; }
+    uint8_t *jpg = fb->buf; size_t len = fb->len; bool conv = false;
+    if (fb->format != PIXFORMAT_JPEG) { conv = frame2jpg(fb, 20, &jpg, &len); if (!conv) { camera::release(fb); continue; } }
+    int hl = snprintf(part, sizeof part, "\r\n--" STREAM_BOUNDARY "\r\nContent-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n", (unsigned)len);
+    esp_err_t e = httpd_resp_send_chunk(r, part, hl);
+    if (e == ESP_OK) e = httpd_resp_send_chunk(r, (const char *)jpg, len);
+    if (conv) free(jpg);
+    camera::release(fb);
+    if (e != ESP_OK) break;   // phone closed the stream
+    delay(30);
+  }
+  return ESP_OK;
+}
+static void startStream() {
+  if (streamServer) return;
+  httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
+  cfg.server_port = 81;
+  cfg.ctrl_port = 32769;
+  cfg.max_open_sockets = 2;
+  cfg.core_id = 0;
+  cfg.task_priority = tskIDLE_PRIORITY + 2;   // below the API server
+  if (httpd_start(&streamServer, &cfg) != ESP_OK) { Serial.println("[stream] port 81 failed"); return; }
+  httpd_uri_t u = {"/stream", HTTP_GET, hStream, nullptr};
+  httpd_register_uri_handler(streamServer, &u);
+  Serial.println("[stream] MJPEG at http://192.168.4.1:81/stream");
+}
+
 void start() {
   if (server) return;
   httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
@@ -411,5 +457,6 @@ void start() {
     {"/", HTTP_GET, hRoot, nullptr},
   };
   for (auto &u : routes) httpd_register_uri_handler(server, &u);
+  startStream();
 }
 }  // namespace api

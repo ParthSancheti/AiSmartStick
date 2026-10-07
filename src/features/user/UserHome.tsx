@@ -92,7 +92,7 @@ function ProfileMenu({ open, onClose }: { open: boolean; onClose: () => void }) 
             animate={{ opacity: 1, transform: 'translate3d(0,0,0) scale(1)' }}
             exit={{ opacity: 0, transform: 'translate3d(0,-8px,0) scale(0.96)' }}
             transition={{ duration: 0.16, ease: [0.2, 0.8, 0.2, 1] }}
-            className="glass absolute right-5 top-full z-[101] mt-2 flex w-[min(17rem,calc(100vw-40px))] origin-top-right flex-col gap-0.5 rounded-[26px] p-2 shadow-2xl"
+            className="absolute right-5 top-full z-[101] bg-surface ring-1 ring-line mt-2 flex w-[min(17rem,calc(100vw-40px))] origin-top-right flex-col gap-0.5 rounded-[26px] p-2 shadow-2xl"
           >
             {(user || profileName) && (
               <div className="min-w-0 px-4 pb-2 pt-2">
@@ -149,7 +149,7 @@ function HomeHeader({ headerRef }: { headerRef: React.Ref<HTMLElement> }) {
 
 /* ───────────────────────────── Home cards ───────────────────────────── */
 
-const tileCls = 'stat-tile flex min-h-[58px] w-full min-w-0 items-center gap-2.5 rounded-[20px] bg-surface/55 px-3 py-2 text-left ring-1 ring-line';
+const tileCls = 'stat-tile flex min-h-[48px] w-full min-w-0 items-center gap-2 rounded-[18px] bg-surface/55 px-3 py-1.5 text-left ring-1 ring-line';
 
 function StatTile({ icon, label, value, tone, onClick, ariaLabel }: { icon: ReactNode; label: string; value: string; tone: Tone | 'ink'; onClick?: () => void; ariaLabel: string }) {
   const color = tone === 'ink' ? 'text-ink' : TONE_TEXT[tone];
@@ -158,7 +158,7 @@ function StatTile({ icon, label, value, tone, onClick, ariaLabel }: { icon: Reac
       <span className={`stat-tile-icon grid h-9 w-9 shrink-0 place-items-center rounded-full bg-ink/[0.06] ${color}`}>{icon}</span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[11.5px] font-bold uppercase tracking-wider text-ink-3">{label}</span>
-        <span className={`block text-[15px] font-bold leading-tight ${color} line-clamp-2 break-words`}>{value}</span>
+        <span className={`block text-[14px] font-bold leading-tight ${color} line-clamp-2 break-words`}>{value}</span>
       </span>
     </>
   );
@@ -629,19 +629,6 @@ function WalkingPage({ onClose }: { onClose: () => void }) {
           )}
         </div>
 
-        <button
-          type="button"
-          className="pointer-events-auto flex h-[68px] w-full items-center justify-center gap-3 rounded-[26px] bg-sos text-[19px] font-bold text-white shadow-[0_10px_24px_-10px_var(--sos)] transition-transform active:scale-[0.98]"
-          onClick={(e) => {
-            e.stopPropagation();
-            startSos('button');
-          }}
-          onPointerDown={(e) => e.stopPropagation()}
-          onPointerUp={(e) => e.stopPropagation()}
-          aria-label="Trigger Emergency SOS"
-        >
-          <Phone size={24} fill="currentColor" /> Emergency SOS
-        </button>
       </div>
     </>
   );
@@ -891,6 +878,14 @@ function LiveAiSubpage({ open, onClose }: { open: boolean; onClose: () => void }
 
 function LiveAiPage({ onClose }: { onClose: () => void }) {
   const ai = useVoiceAssistant();
+  // Opening the assistant starts it: no extra tap needed.
+  const autoStarted = useRef(false);
+  useEffect(() => {
+    if (autoStarted.current) return;
+    autoStarted.current = true;
+    if (ai.phase === 'idle') void ai.start();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const sosPhase = useSafety((x) => x.phase);
   const netState = useDevice((x) => x.internet);
   const navActive = useNavView((x) => x.active);

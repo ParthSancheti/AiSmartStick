@@ -55,6 +55,8 @@ export class HttpTransport implements StickTransport {
   private retryTimer: ReturnType<typeof setTimeout> | undefined;
   private onConnected: (() => void) | null = null;
   private lastFullRequest = 0;
+  /** Connected at least once since this link started (after that, a missing stick never pops the system sheet). */
+  private hasConnected = false;
 
   constructor(private dev: StickTarget, private pollMs = DEFAULT_POLL_MS) {
     this.host = dev.host ?? SETUP_AP_HOST;
@@ -166,7 +168,11 @@ export class HttpTransport implements StickTransport {
     const n = await native();
     // Live binding / Wi-Fi joined by hand / stick seen in the last scan → (silent) connect.
     let res = await n.connectToSetupNetwork({ ssid: STICK_AP_SSID, passphrase: STICK_AP_PASSPHRASE, timeoutMs: 15_000, openWifiPanelIfOff: false, onlyIfVisible: true });
-    if (!res.connected && res.reason === 'RANGE_UNKNOWN' && foreground() && Date.now() - this.lastFullRequest > FULL_REQUEST_EVERY_MS) {
+    // A stale or throttled Wi-Fi scan often misses the stick (NOT_IN_RANGE) even when it is right here
+    // (right after setup, or at app start): until the first connection, ask Android directly
+    // (silent once approved; rate-limited).
+    const askDirect = res.reason === 'RANGE_UNKNOWN' || (res.reason === 'NOT_IN_RANGE' && !this.hasConnected);
+    if (!res.connected && askDirect && foreground() && Date.now() - this.lastFullRequest > FULL_REQUEST_EVERY_MS) {
       // Android will not say whether the stick is near (location off / no permission): ask directly.
       this.lastFullRequest = Date.now();
       res = await n.connectToSetupNetwork({ ssid: STICK_AP_SSID, passphrase: STICK_AP_PASSPHRASE, timeoutMs: 15_000, openWifiPanelIfOff: false });
@@ -236,6 +242,7 @@ export class HttpTransport implements StickTransport {
         if (!this.up()) {
           // CONNECTED only now: real data arrived.
           this.attempt = 0;
+          this.hasConnected = true;
           this.setState('connected');
           trace('connected', { deviceId: packet.deviceId ?? this.dev.deviceId });
           this.em.emit('packet', packet, Date.now());

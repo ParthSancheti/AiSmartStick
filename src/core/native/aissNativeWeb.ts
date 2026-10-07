@@ -51,6 +51,7 @@ export class AissNativeWeb extends WebPlugin implements AissNativePlugin {
   async connectToSetupNetwork(): Promise<{ connected: boolean }> {
     return this.no();
   }
+  async setStatusBarIcons(): Promise<void> {}
   async getFontScale(): Promise<{ fontScale: number }> {
     return { fontScale: 1 };
   }

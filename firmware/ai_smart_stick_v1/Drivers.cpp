@@ -247,14 +247,25 @@ bool begin() {
   c.pin_pwdn = CAM_PWDN; c.pin_reset = CAM_RESET; c.pin_xclk = CAM_XCLK; c.pin_sccb_sda = CAM_SIOD; c.pin_sccb_scl = CAM_SIOC;
   c.pin_d7 = CAM_Y9; c.pin_d6 = CAM_Y8; c.pin_d5 = CAM_Y7; c.pin_d4 = CAM_Y6; c.pin_d3 = CAM_Y5; c.pin_d2 = CAM_Y4; c.pin_d1 = CAM_Y3; c.pin_d0 = CAM_Y2;
   c.pin_vsync = CAM_VSYNC; c.pin_href = CAM_HREF; c.pin_pclk = CAM_PCLK;
-  c.xclk_freq_hz = 20000000; c.ledc_timer = LEDC_TIMER_0; c.ledc_channel = LEDC_CHANNEL_0;
-  c.pixel_format = PIXFORMAT_JPEG;      // the sensor encodes; no RGB→JPEG conversion on the CPU
-  c.frame_size = FRAMESIZE_VGA;         // 640×480 is enough for vision; bounded memory
-  c.jpeg_quality = 12;
-  c.fb_count = psramFound() ? 2 : 1;
+  c.xclk_freq_hz = 10000000; c.ledc_timer = LEDC_TIMER_0; c.ledc_channel = LEDC_CHANNEL_0;
+  c.pixel_format = PIXFORMAT_JPEG;      // try sensor JPEG first (cheap)
+  c.frame_size = FRAMESIZE_QVGA;
+  c.jpeg_quality = 15;
+  c.fb_count = 1;
   c.fb_location = psramFound() ? CAMERA_FB_IN_PSRAM : CAMERA_FB_IN_DRAM;
   c.grab_mode = CAMERA_GRAB_LATEST;     // never serve a stale buffered frame
   inited = esp_camera_init(&c) == ESP_OK;
+  if (!inited) {
+    // Proven configuration from the old working sketch (sketch_sep19b): RGB565 QVGA @ 10 MHz,
+    // converted to JPEG with frame2jpg when served.
+    esp_camera_deinit();
+    c.pixel_format = PIXFORMAT_RGB565;
+    c.jpeg_quality = 20;
+    c.fb_location = CAMERA_FB_IN_DRAM;
+    c.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
+    inited = esp_camera_init(&c) == ESP_OK;
+  }
+  Serial.printf("[camera] init %s\n", inited ? "ok" : "FAILED");
   ecu::setError(ecu::E_CAMERA_INIT, !inited);
   failures = 0;
   return inited;
@@ -263,7 +274,7 @@ bool ok() { return inited; }
 camera_fb_t *capture() {
   if (!inited) return nullptr;
   camera_fb_t *fb = esp_camera_fb_get();
-  if (!fb || fb->format != PIXFORMAT_JPEG || fb->len < 1000) {
+  if (!fb || fb->len < 1000) {
     if (fb) esp_camera_fb_return(fb);
     ecu::setError(ecu::E_CAMERA_CAPTURE, true);
     if (++failures >= 3) { esp_camera_deinit(); inited = false; begin(); }   // recover instead of rebooting
