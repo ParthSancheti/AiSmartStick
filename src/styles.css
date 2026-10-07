@@ -264,20 +264,26 @@ button { -webkit-user-select: none; user-select: none; touch-action: manipulatio
   100% { transform: scale(2.6); opacity: 0; }
 }
 @keyframes shimmer { to { background-position: -120% 0; } }
-/* Onboarding atmosphere: layered radial light (cheap: no blur filters), drifting slowly. */
-.intro-atmo {
-  background:
-    radial-gradient(60% 45% at 22% 18%, var(--teal-soft), transparent 70%),
-    radial-gradient(55% 40% at 82% 62%, color-mix(in srgb, var(--info) 18%, transparent), transparent 70%),
-    radial-gradient(80% 60% at 50% 110%, color-mix(in srgb, var(--teal) 14%, transparent), transparent 70%),
-    var(--bg);
-  background-size: 140% 140%;
-  animation: intro-drift 18s ease-in-out infinite alternate;
+/* Ambient background (components/Atmosphere.tsx): soft light fields in slow motion. */
+.atmo-root { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; background: var(--bg); transition: background-color .45s ease; }
+.atmo-field {
+  position: absolute; width: 95vmax; height: 95vmax; border-radius: 50%;
+  will-change: transform; animation-name: atmo-drift; animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite; animation-direction: alternate;
 }
+.atmo-a { left: -45vmax; top: -40vmax; background: radial-gradient(closest-side, color-mix(in srgb, var(--teal) 30%, transparent), transparent 72%); }
+.atmo-b { right: -50vmax; top: -10vmax; background: radial-gradient(closest-side, color-mix(in srgb, var(--info) 26%, transparent), transparent 72%); animation-name: atmo-drift-b; }
+.atmo-c { left: -30vmax; bottom: -55vmax; background: radial-gradient(closest-side, color-mix(in srgb, var(--teal) 22%, transparent), transparent 72%); animation-name: atmo-drift-c; }
+.atmo-d { right: -40vmax; bottom: -45vmax; background: radial-gradient(closest-side, color-mix(in srgb, var(--mint, var(--teal)) 18%, transparent), transparent 72%); animation-name: atmo-drift-b; }
+:root[data-theme="dark"] .atmo-field { opacity: .9; }
+:root[data-theme="light"] .atmo-field { opacity: .75; }
+@keyframes atmo-drift { 0% { transform: translate3d(0,0,0) scale(1); } 50% { transform: translate3d(14vmax, 9vmax, 0) scale(1.12); } 100% { transform: translate3d(4vmax, 20vmax, 0) scale(.94); } }
+@keyframes atmo-drift-b { 0% { transform: translate3d(0,0,0) scale(1.05); } 50% { transform: translate3d(-16vmax, 12vmax, 0) scale(.92); } 100% { transform: translate3d(-6vmax, -10vmax, 0) scale(1.1); } }
+@keyframes atmo-drift-c { 0% { transform: translate3d(0,0,0) scale(.95); } 50% { transform: translate3d(12vmax, -14vmax, 0) scale(1.1); } 100% { transform: translate3d(-10vmax, -4vmax, 0) scale(1); } }
+@media (prefers-reduced-motion: reduce) { .atmo-field { animation: none; } }
+:root[data-reduce-motion="true"] .atmo-field { animation: none; }
+
 .intro-spotlight { background: radial-gradient(circle at 50% 42%, color-mix(in srgb, var(--teal) 34%, transparent), transparent 62%); }
-@keyframes intro-drift { from { background-position: 0% 0%; } to { background-position: 100% 60%; } }
-@media (prefers-reduced-motion: reduce) { .intro-atmo { animation: none; } }
-:root[data-reduce-motion="true"] .intro-atmo { animation: none; }
 @keyframes aiss-drop { from { transform: translateY(-40px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 
 @media (prefers-reduced-motion: reduce) {

@@ -72,7 +72,8 @@ export function UserOnboarding() {
   const setupIdx = SETUP.indexOf(step);
 
   return (
-    <AppScreen className="bg-bg text-ink">
+    // Transparent: the app-wide ambient background (StickUserApp) shows through on every step.
+    <AppScreen className="text-ink">
       <AnimatePresence mode="popLayout" initial={false} custom={dir}>
         <motion.div
           key={step}
@@ -123,7 +124,6 @@ function SignIn({ onBack, onDemo }: { onBack: () => void; onDemo: () => void }) 
   useBackHandler(true, onBack);
   return (
     <SafeAreaContent className="px-6" bottomInset={false}>
-      <div className="intro-atmo pointer-events-none absolute inset-0 -z-10" aria-hidden />
       <div className="grid flex-1 place-items-center">
         <div className="flex flex-col items-center gap-6">
           <motion.div initial={{ scale: 0.85, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: 'spring', stiffness: 220, damping: 18 }} className="relative">

@@ -69,7 +69,7 @@ export function AudioSubpage({ open, onClose }: { open: boolean; onClose: () => 
         >
           <Atmosphere variant="user" />
 
-          <div className="px-4 pb-8 flex-1 flex flex-col overflow-y-auto no-scrollbar" style={{ paddingTop: 'calc(var(--island, var(--sat)) + 12px)' }}>
+          <div className="px-4 pb-8 flex-1 flex flex-col overflow-y-auto no-scrollbar" style={{ paddingTop: 'calc(var(--island, var(--sat)) + 14px)' }}>
             <div className="mb-5 mt-8 flex items-center gap-4 z-10 shrink-0">
               <button onClick={onClose} className="h-12 w-12 glass interactive rounded-full flex items-center justify-center text-ink shrink-0" aria-label="Back">
                 <ChevronLeft size={24} />

@@ -23,7 +23,7 @@ export function SafeAreaContent({ children, className = '', bottomInset = true, 
     <div 
       className={`flex-1 flex flex-col overflow-y-auto no-scrollbar ${className}`}
       style={{
-        paddingTop: 'calc(var(--island, var(--sat)) + 24px)',
+        paddingTop: 'calc(var(--island, var(--sat)) + 14px)',
         paddingBottom: bottomInset ? 'calc(var(--sab) + 16px)' : 0
       }}
       {...props}
@@ -41,7 +41,7 @@ export function FloatingHeader({ children, className = '' }: { children: ReactNo
   return (
     <div 
       className={`absolute top-0 left-0 right-0 z-50 pointer-events-none px-4 pb-4 flex flex-col ${className}`}
-      style={{ paddingTop: 'calc(var(--island, var(--sat)) + 32px)' }}
+      style={{ paddingTop: 'calc(var(--island, var(--sat)) + 14px)' }}
     >
       {children}
     </div>

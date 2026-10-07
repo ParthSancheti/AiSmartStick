@@ -44,6 +44,8 @@ export function SafetyNumberStep({ onSaved }: { onSaved: () => void }) {
         setSmsPerm('unavailable');
       }
     }
+    // Let the contact know right away (and prove the number works): sent automatically on save.
+    await sendTest();
   };
 
   const sendTest = async () => {
@@ -105,11 +107,11 @@ export function SafetyNumberStep({ onSaved }: { onSaved: () => void }) {
             </p>
           )}
           <button type="button" disabled={test.kind === 'sending'} onClick={() => void sendTest()} className="mt-3 flex h-11 items-center gap-2 rounded-full bg-ink/5 px-4 text-[14px] font-bold text-ink disabled:opacity-60">
-            {test.kind === 'sending' ? <Loader2 size={16} className="animate-spin" /> : <MessageSquare size={16} />} Send a test message
+            {test.kind === 'sending' ? <Loader2 size={16} className="animate-spin" /> : <MessageSquare size={16} />} {test.kind === 'idle' ? 'Send a message' : 'Send again'}
           </button>
           {test.kind !== 'idle' && test.kind !== 'sending' && (
             <p className={cx('mt-2 text-[13.5px] font-semibold', test.kind === 'failed' ? 'text-sos' : test.kind === 'composer' ? 'text-amber-ink' : 'text-ok')} role="status">
-              {test.kind === 'sent' && 'Handed to your phone’s SMS service. Ask them if it arrived.'}
+              {test.kind === 'sent' && 'Message sent to your safety contact from this phone.'}
               {test.kind === 'composer' && 'Messages app opened. It is not sent until you press Send there.'}
               {test.kind === 'failed' && `Not sent: ${test.why}`}
             </p>

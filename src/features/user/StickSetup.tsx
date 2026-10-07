@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Check, Loader2, Radar, RotateCcw, Wifi, WifiOff, Link2 } from 'lucide-react';
 import { GlassButton, cx } from '../../components/glass';
+import { Atmosphere } from '../../components/Atmosphere';
 import { AppScreen, SafeAreaContent, ScreenHeader } from '../../components/Layout';
 import { STICK_AP_SSID } from '../../../shared/deviceProtocol';
 import { cancelProvisioning, provPhase, searchForStick, useProvisioning, type ProvPhase } from '../../core/provisioning/provisioning';
@@ -56,7 +57,8 @@ export function StickSetup({ onDone, onBack, onSkip, skipLabel = 'Cancel', title
   const current = phase === 'error' ? null : phase;
 
   return (
-    <AppScreen className="z-[90] bg-[var(--bg)] text-ink">
+    <AppScreen className="z-[90] text-ink">
+      <Atmosphere />
       <SafeAreaContent className="px-6 pb-8">
         <ScreenHeader title={title} onBack={onBack} />
 

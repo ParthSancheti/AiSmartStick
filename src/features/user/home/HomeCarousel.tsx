@@ -4,8 +4,8 @@ import { cx } from '../../../components/glass';
 /**
  * Home hero carousel. Native scroll-snap (smooth, momentum, and every card stays in the DOM for
  * TalkBack), with per-frame depth written straight to the elements — no React render per frame:
- *   active card: full scale, full opacity, lifted shadow
- *   neighbours:  slightly smaller and dimmer, pushed back
+ *   one full-size card at a time (neighbours sit just off-screen and slide in with the swipe)
+ *   the outgoing / incoming card shrinks and dims slightly while it moves
  *   [data-parallax] layers inside a card trail the swipe for depth.
  */
 export function HomeCarousel({ children, label = 'Highlights' }: { children: ReactNode; label?: string }) {
@@ -25,8 +25,8 @@ export function HomeCarousel({ children, label = 'Highlights' }: { children: Rea
       const center = c.offsetLeft + c.offsetWidth / 2;
       const d = Math.max(-1, Math.min(1, (center - mid) / c.offsetWidth));
       const a = Math.abs(d);
-      c.style.transform = `scale(${1 - 0.07 * a}) translateZ(0)`;
-      c.style.opacity = String(1 - 0.38 * a);
+      c.style.transform = `scale(${1 - 0.06 * a}) translateZ(0)`;
+      c.style.opacity = String(1 - 0.45 * a);
       c.style.setProperty('--lift', String(1 - a));
       c.querySelectorAll<HTMLElement>('[data-parallax]').forEach((p) => {
         const k = Number(p.dataset.parallax) || 28;
@@ -67,11 +67,11 @@ export function HomeCarousel({ children, label = 'Highlights' }: { children: Rea
 
   return (
     <section className="-mx-5 mb-6 shrink-0" aria-roledescription="carousel" aria-label={label}>
-      <div ref={track} className="home-carousel no-scrollbar flex snap-x snap-mandatory gap-3 overflow-x-auto overscroll-x-contain px-[7%] pb-3 pt-1">
+      <div ref={track} className="home-carousel no-scrollbar flex snap-x snap-mandatory gap-5 overflow-x-auto overscroll-x-contain px-5 pb-3 pt-1">
         {items.map((child, i) => (
           <div
             key={i}
-            className="home-card relative w-[86%] shrink-0 snap-center snap-always will-change-transform"
+            className="home-card relative w-full shrink-0 snap-center snap-always will-change-transform"
             aria-roledescription="slide"
             aria-label={`${i + 1} of ${items.length}`}
             aria-current={i === active ? 'true' : undefined}

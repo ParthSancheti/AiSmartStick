@@ -42,15 +42,9 @@ export function IntroStory({ onDone, initial = 0 }: { onDone: () => void; initia
 
   // 0 … 2 as the track moves; drives parallax, the dots and the background.
   const progress = useTransform(x, (v) => -v / Math.max(1, w));
-  const bgX = useTransform(progress, [0, 2], ['0%', '-18%']);
 
   return (
     <div className="relative flex h-full flex-col overflow-hidden" ref={wrap}>
-      {/* Atmosphere: one oversized gradient plane, drifting with the story */}
-      <motion.div aria-hidden className="pointer-events-none absolute inset-y-0 left-0 w-[140%]" style={{ x: bgX }}>
-        <div className="intro-atmo absolute inset-0" />
-      </motion.div>
-
       <motion.div
         className="relative flex flex-1 touch-pan-y"
         style={{ x, width: w * SLIDES.length }}

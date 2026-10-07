@@ -127,7 +127,7 @@ function TopNav() {
   useBackHandler(menuOpen, () => setMenuOpen(false));
 
   return (
-    <div className="relative z-50 mb-6 pt-8">
+    <div className="relative z-50 mb-5 pt-5">
       <motion.div
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
@@ -198,7 +198,7 @@ function AiChatSubpage({ open, onClose }: { open: boolean; onClose: () => void }
         >
           <Atmosphere variant="user" />
           {historyOpen ? (
-            <div className="px-4 pb-8 flex-1 flex flex-col overflow-y-auto no-scrollbar" style={{ paddingTop: 'calc(var(--island, var(--sat)) + 12px)' }}>
+            <div className="px-4 pb-8 flex-1 flex flex-col overflow-y-auto no-scrollbar" style={{ paddingTop: 'calc(var(--island, var(--sat)) + 14px)' }}>
               <div className="mb-5 mt-8 flex items-center justify-between gap-4 z-10 shrink-0">
                 <h1 className="text-[28px] font-bold tracking-[-0.02em] text-ink pl-2">History</h1>
                 <button onClick={() => setHistoryOpen(false)} aria-label="Close history" className="h-12 w-12 glass interactive rounded-full flex items-center justify-center text-ink shrink-0">
@@ -230,7 +230,7 @@ function AiChatSubpage({ open, onClose }: { open: boolean; onClose: () => void }
               </div>
             </div>
           ) : (
-            <div className="px-4 pb-8 flex-1 flex flex-col overflow-y-auto no-scrollbar" style={{ paddingTop: 'calc(var(--island, var(--sat)) + 12px)' }}>
+            <div className="px-4 pb-8 flex-1 flex flex-col overflow-y-auto no-scrollbar" style={{ paddingTop: 'calc(var(--island, var(--sat)) + 14px)' }}>
               <div className="mb-5 mt-8 flex items-center justify-between gap-4 z-10 shrink-0">
                 <div className="flex items-center gap-4">
                   <button onClick={onClose} aria-label="Back" className="h-12 w-12 glass interactive rounded-full flex items-center justify-center text-ink shrink-0">
@@ -502,7 +502,7 @@ function StickDetailsSubpage({ open, onClose }: { open: boolean; onClose: () => 
           className="absolute inset-0 z-50 bg-bg flex flex-col overflow-hidden"
         >
           <Atmosphere variant="user" />
-          <div className="pt-[calc(var(--sat)+16px)] px-4 flex items-center gap-4 z-10 shrink-0">
+          <div className="pt-[calc(var(--island,var(--sat))+14px)] px-4 flex items-center gap-4 z-10 shrink-0">
             <button onClick={onClose} aria-label="Back" className="h-12 w-12 glass interactive rounded-full flex items-center justify-center text-ink shrink-0">
               <ChevronLeft size={24} />
             </button>
@@ -583,7 +583,7 @@ function HealthSubpage({ open, onClose }: { open: boolean; onClose: () => void }
           className="absolute inset-0 z-50 bg-bg flex flex-col overflow-hidden"
         >
           <Atmosphere variant="user" />
-          <div className="pt-[calc(var(--sat)+16px)] px-4 flex items-center gap-4 z-10 shrink-0">
+          <div className="pt-[calc(var(--island,var(--sat))+14px)] px-4 flex items-center gap-4 z-10 shrink-0">
             <button onClick={onClose} aria-label="Back" className="h-12 w-12 glass interactive rounded-full flex items-center justify-center text-ink shrink-0">
               <ChevronLeft size={24} />
             </button>
@@ -648,7 +648,7 @@ function BatterySubpage({ open, onClose }: { open: boolean; onClose: () => void 
           className="absolute inset-0 z-[60] bg-bg flex flex-col overflow-hidden"
         >
           <Atmosphere variant="user" />
-          <div className="pt-[calc(var(--sat)+16px)] px-4 flex items-center gap-4 z-10 shrink-0">
+          <div className="pt-[calc(var(--island,var(--sat))+14px)] px-4 flex items-center gap-4 z-10 shrink-0">
             <button onClick={onClose} aria-label="Back" className="h-12 w-12 glass interactive rounded-full flex items-center justify-center text-ink shrink-0">
               <ChevronLeft size={24} />
             </button>
@@ -970,7 +970,7 @@ export function UserHome() {
         <div className="glass rounded-[36px] p-5 flex border border-glass-border shadow-2xl relative overflow-hidden h-full min-h-[260px]">
           <div className="absolute inset-0 bg-gradient-to-br from-teal/5 to-info/10 pointer-events-none" />
 
-          <button onClick={() => (linkState === 'unpaired' ? openSetup() : setStickDetailsOpen(true))} aria-label="Stick diagnostics" className="w-[140px] shrink-0 flex flex-col items-center justify-center relative interactive rounded-[20px] p-2 hover:bg-glass-bg transition-colors">
+          <button onClick={() => (linkState === 'unpaired' ? openSetup() : setStickDetailsOpen(true))} aria-label="Stick diagnostics" className="w-[160px] shrink-0 flex flex-col items-center justify-center relative interactive rounded-[20px] p-2 hover:bg-glass-bg transition-colors">
              <span data-parallax="18"><StickVisual height={200} /></span>
              <p className="absolute bottom-1 font-bold text-[14px] tracking-widest text-ink uppercase opacity-90 drop-shadow-md">{BRAND.name}</p>
           </button>
