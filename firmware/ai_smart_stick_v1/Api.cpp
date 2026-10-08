@@ -235,7 +235,7 @@ static esp_err_t hCapture(httpd_req_t *r) {
   if (!fb) { camUnlock(); return error(r, 503, "camera_error", "capture failed"); }
   uint8_t *jpg = fb->buf; size_t jpgLen = fb->len; bool converted = false;
   if (fb->format != PIXFORMAT_JPEG) {
-    converted = frame2jpg(fb, 20, &jpg, &jpgLen);
+    converted = camera::toJpeg(fb, &jpg, &jpgLen);
     if (!converted) { camera::release(fb); camUnlock(); return error(r, 503, "camera_error", "jpeg conversion failed"); }
   }
   char w[8], h[8], s[12], ts[16];
@@ -320,6 +320,8 @@ static esp_err_t hCommand(httpd_req_t *r) {
     camera_fb_t *fb = camLocked ? camera::capture() : nullptr;
     res["camera"]["ok"] = fb != nullptr;
     if (fb) { res["camera"]["bytes"] = fb->len; res["camera"]["width"] = fb->width; camera::release(fb); }
+    res["camera"]["sensorPid"] = camera::sensorPid();
+    res["camera"]["format"] = camera::jpeg() ? "jpeg" : "rgb565";
     if (camLocked) camUnlock();
     res["heapFree"] = ESP.getFreeHeap();
     res["psram"] = psramFound();
@@ -484,7 +486,9 @@ static esp_err_t hStream(httpd_req_t *r) {
     }
     misses = 0;
     uint8_t *jpg = fb->buf; size_t len = fb->len; bool conv = false;
-    if (fb->format != PIXFORMAT_JPEG) { conv = frame2jpg(fb, 20, &jpg, &len); if (!conv) { camera::release(fb); camUnlock(); continue; } }
+    if (fb->format != PIXFORMAT_JPEG) { conv = camera::toJpeg(fb, &jpg, &len); if (!conv) { camera::release(fb); camUnlock(); continue; } }
+    // The JPEG copy is ours: hand the raw buffer back so the sensor fills the next frame while we send.
+    if (conv) { camera::release(fb); fb = nullptr; }
     int hl = snprintf(part, sizeof part, "\r\n--" STREAM_BOUNDARY "\r\nContent-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n", (unsigned)len);
     esp_err_t e = httpd_resp_send_chunk(r, part, hl);
     if (e == ESP_OK) e = httpd_resp_send_chunk(r, (const char *)jpg, len);

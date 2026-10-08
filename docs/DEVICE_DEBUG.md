@@ -4,9 +4,34 @@
 
 Your stick was fine. It sent correct data the whole time. The bug was one line in the app, in src/core/transport/httpTransport.ts: it loaded the Android plugin with `import(...).then((m) => m.AissNative)`. A Capacitor plugin treats every name as a native method, even `.then`. Because of that, the Promise never finished, and Home's live link waited forever before it sent its first request. Setup reaches the plugin by a different, direct path, so all four setup steps passed. After that, Home stayed on "Connecting…", and it did the same on every app start. A new test that uses the real Capacitor code (tests/stick-e2e.test.ts) showed exactly your problem before the fix ("link=connecting, provisioning=completed"). It passes now.
 
+## Camera fix (round 5, firmware 1.2.1)
+
+Your log showed two problems:
+- "JPEG format is not supported on this sensor". Your ESP32-CAM is a clone. Its camera chip is not an OV2640, so it cannot make JPEG by itself.
+- "frame buffer malloc failed". The backup setting (RGB565) asked for the 150 KB picture memory in the small internal RAM. That memory is too small for it.
+
+What the firmware does now (same idea as your old sketch_sep19b):
+- The camera starts first, before Wi-Fi and the sensors, while memory is still free.
+- It always starts in RGB565, 320x240, 10 MHz, 1 buffer. The buffer goes in PSRAM.
+- Without PSRAM it tries 160x120 and then 96x96 in internal RAM.
+- Each frame becomes a JPEG on the stick (frame2jpg), for /api/v1/capture and :81/stream. Without PSRAM it uses a converter that needs little memory.
+- Only a real OV2640/OV3660/OV5640 is switched to sensor JPEG.
+
+How to check:
+1. Arduino IDE → Tools → Board: "AI Thinker ESP32-CAM". If your board menu has "PSRAM", set it to Enabled. Partition scheme: "Huge APP" (or the default). Flash.
+2. In Serial Monitor (115200), right after boot you must see:
+   - `[camera] psram=yes heap=… largest=…`
+   - `[camera] try RGB565 320x240 in PSRAM: ok (0x0)`
+   - `[camera] init ok sensor PID=0x… format=RGB565->JPEG`
+   - `[boot] … fw 1.2.1 …`
+3. Join the phone or a laptop to the SmartStick_AI Wi-Fi. Open `http://192.168.4.1:81/stream` in Chrome: you must see live video. `http://192.168.4.1/api/v1/capture` must show one picture.
+4. If it still fails, send me every `[camera]` line. `psram=NO` means the board setting is wrong, or the board has no PSRAM.
+
+These lines are harmless and can be ignored: "No core dump partition found" and "GPIO isr service already installed".
+
 ## Test on the phone
 
-1. Prepare on the PC: run `npm run doctor:fix`, then `npm run apk:install` (phone on USB). Run `cd functions && npm run build && firebase deploy --only functions`. Flash firmware 1.2.0 with Arduino IDE and open Serial Monitor at 115200 baud. Keep mobile data ON on the phone.
+1. Prepare on the PC: run `npm run doctor:fix`, then `npm run apk:install` (phone on USB). Run `cd functions && npm run build && firebase deploy --only functions`. Flash firmware 1.2.1 with Arduino IDE and open Serial Monitor at 115200 baud. Keep mobile data ON on the phone.
 2. Setup: if the stick is already saved, forget it first (Settings → Stick & hardware → Forget). Run stick setup. If Android shows a 'Connect to device' box, allow it. All four steps must turn green.
 3. Home connected: within about 10 s the stick card must show connected with real live numbers: battery, distance and zone. Move your hand in front of the distance sensor; the number must change. Serial Monitor must show '[HTTP] GET /api/v1/telemetry 200 …' lines.
 4. Restart: close the app fully and open it again. Home must reconnect by itself, without setup. Then turn the stick off for 10 s and on again. The status must say what it is doing (it must not stay on a silent 'Connecting') and connect again.
@@ -37,10 +62,10 @@ PROJECT
 - App: React + Vite + TypeScript + zustand inside Capacitor 8 (Android WebView).
 - Native plugins: android/app/src/main/java/in/aismartstick/app/AissNativePlugin.java (joins the stick Wi-Fi and makes HTTP requests through that network; also SMS) and AissLocationPlugin.java (LocationManager GPS).
 - Firebase Auth, Firestore and Cloud Functions (folder functions/).
-- Stick: ESP32-CAM. Firmware: firmware/ai_smart_stick_v1, Arduino-ESP32 core 2.0.x, version 1.2.0.
+- Stick: ESP32-CAM. Firmware: firmware/ai_smart_stick_v1, Arduino-ESP32 core 2.0.x, version 1.2.1. Camera: clone sensor without JPEG, so RGB565 + frame2jpg (Drivers.cpp camera::begin / toJpeg).
 - The stick is ALWAYS its own Wi-Fi access point: SSID "SmartStick_AI", password "Stick@1234", IP 192.168.4.1. No auth (REQUIRE_AUTH 0).
 - Stick endpoints, port 80:
-  - GET http://192.168.4.1/api/v1/device: JSON, who the stick is (fw 1.2.0).
+  - GET http://192.168.4.1/api/v1/device: JSON, who the stick is (fw 1.2.1).
   - GET /api/v1/telemetry: JSON sensor packet. These are the Home numbers: battery, distance, zone, pitch.
   - GET /api/v1/status and GET /api/v1/config: JSON.
   - GET /api/v1/capture: one camera JPEG.

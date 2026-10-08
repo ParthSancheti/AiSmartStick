@@ -1,5 +1,7 @@
 #include "Drivers.h"
 #include <Wire.h>
+#include <esp_heap_caps.h>
+#include <img_converters.h>
 #include "Ecu.h"
 
 // ═════════════════════════ Motor ═════════════════════════
@@ -241,41 +243,87 @@ uint32_t heldMs() { return state ? millis() - pressAt : 0; }
 // ═════════════════════════ Camera ═════════════════════════
 namespace camera {
 static bool inited = false;
+static bool jpegMode = false;
+static uint16_t pid = 0;
 static uint8_t failures = 0;
-bool begin() {
-  camera_config_t c = {};
+static uint32_t lastReturnAt = 0;
+
+static void baseConfig(camera_config_t &c) {
+  c = {};
   c.pin_pwdn = CAM_PWDN; c.pin_reset = CAM_RESET; c.pin_xclk = CAM_XCLK; c.pin_sccb_sda = CAM_SIOD; c.pin_sccb_scl = CAM_SIOC;
   c.pin_d7 = CAM_Y9; c.pin_d6 = CAM_Y8; c.pin_d5 = CAM_Y7; c.pin_d4 = CAM_Y6; c.pin_d3 = CAM_Y5; c.pin_d2 = CAM_Y4; c.pin_d1 = CAM_Y3; c.pin_d0 = CAM_Y2;
   c.pin_vsync = CAM_VSYNC; c.pin_href = CAM_HREF; c.pin_pclk = CAM_PCLK;
   c.xclk_freq_hz = 10000000; c.ledc_timer = LEDC_TIMER_0; c.ledc_channel = LEDC_CHANNEL_0;
-  c.pixel_format = PIXFORMAT_JPEG;      // try sensor JPEG first (cheap)
-  c.frame_size = FRAMESIZE_QVGA;
-  c.jpeg_quality = 15;
-  c.fb_count = 1;
-  c.fb_location = psramFound() ? CAMERA_FB_IN_PSRAM : CAMERA_FB_IN_DRAM;
-  c.grab_mode = CAMERA_GRAB_LATEST;     // never serve a stale buffered frame
-  inited = esp_camera_init(&c) == ESP_OK;
-  if (!inited) {
-    // Proven configuration from the old working sketch (sketch_sep19b): RGB565 QVGA @ 10 MHz,
-    // converted to JPEG with frame2jpg when served.
-    esp_camera_deinit();
-    c.pixel_format = PIXFORMAT_RGB565;
-    c.jpeg_quality = 20;
-    c.fb_location = CAMERA_FB_IN_DRAM;
-    c.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
-    inited = esp_camera_init(&c) == ESP_OK;
+}
+
+static const char *fmtName(framesize_t f) {
+  return f == FRAMESIZE_QVGA ? "320x240" : f == FRAMESIZE_QQVGA ? "160x120" : f == FRAMESIZE_96X96 ? "96x96" : "?";
+}
+
+// Only these sensors encode JPEG themselves. Clone boards often carry another sensor (GC2145, GC0308,
+// BF3005, ...) that rejects PIXFORMAT_JPEG, so every board starts in RGB565 like the old working sketch
+// (sketch_sep19b) and frames are converted with toJpeg when served.
+static bool sensorHasJpeg(uint16_t id) { return id == 0x26 || id == 0x3660 || id == 0x5640; }
+
+static bool tryInit(pixformat_t f, framesize_t size, bool psram) {
+  camera_config_t c;
+  baseConfig(c);
+  c.pixel_format = f;
+  c.frame_size = size;
+  c.jpeg_quality = f == PIXFORMAT_JPEG ? 15 : 20;
+  c.fb_count = f == PIXFORMAT_JPEG && psram ? 2 : 1;
+  c.fb_location = psram ? CAMERA_FB_IN_PSRAM : CAMERA_FB_IN_DRAM;
+  c.grab_mode = c.fb_count > 1 ? CAMERA_GRAB_LATEST : CAMERA_GRAB_WHEN_EMPTY;
+  esp_err_t err = esp_camera_init(&c);
+  Serial.printf("[camera] try %s %s in %s: %s (0x%x)\n", f == PIXFORMAT_JPEG ? "JPEG" : "RGB565", fmtName(size),
+                psram ? "PSRAM" : "DRAM", err == ESP_OK ? "ok" : "failed", (unsigned)err);
+  if (err == ESP_OK) { jpegMode = f == PIXFORMAT_JPEG; return true; }
+  esp_camera_deinit();
+  return false;
+}
+
+bool begin() {
+  const bool psram = psramFound();
+  Serial.printf("[camera] psram=%s heap=%u largest=%u\n", psram ? "yes" : "NO", (unsigned)ESP.getFreeHeap(),
+                (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+  // RGB565 QVGA needs one 150 KB buffer: PSRAM when the board has it (and it is enabled in the board
+  // settings), otherwise smaller frames that fit internal RAM.
+  inited = (psram && tryInit(PIXFORMAT_RGB565, FRAMESIZE_QVGA, true)) ||
+           tryInit(PIXFORMAT_RGB565, FRAMESIZE_QQVGA, false) ||
+           tryInit(PIXFORMAT_RGB565, FRAMESIZE_96X96, false);
+  pid = 0;
+  if (inited) {
+    sensor_t *sen = esp_camera_sensor_get();
+    pid = sen ? sen->id.PID : 0;
+    // A genuine OV2640/OV3660/OV5640 makes its own JPEG: cheaper and sharper. Back to RGB565 if that fails.
+    if (psram && sensorHasJpeg(pid)) {
+      esp_camera_deinit();
+      inited = tryInit(PIXFORMAT_JPEG, FRAMESIZE_QVGA, true) || tryInit(PIXFORMAT_RGB565, FRAMESIZE_QVGA, true);
+    }
   }
-  Serial.printf("[camera] init %s\n", inited ? "ok" : "FAILED");
+  Serial.printf("[camera] init %s sensor PID=0x%x format=%s\n", inited ? "ok" : "FAILED", (unsigned)pid,
+                inited ? (jpegMode ? "JPEG" : "RGB565->JPEG") : "-");
+  if (!inited && !psram) Serial.println("[camera] no PSRAM: in Arduino IDE pick Board 'AI Thinker ESP32-CAM' (PSRAM Enabled)");
   ecu::setError(ecu::E_CAMERA_INIT, !inited);
   failures = 0;
+  lastReturnAt = 0;
   return inited;
 }
 bool ok() { return inited; }
+bool jpeg() { return jpegMode; }
+uint16_t sensorPid() { return pid; }
 camera_fb_t *capture() {
   if (!inited) return nullptr;
   camera_fb_t *fb = esp_camera_fb_get();
+  // With one buffer the driver fills it right after the last release and then holds it: a snapshot
+  // after a pause would be old. Drop that frame and take the next one (the stream never pauses).
+  if (fb && !jpegMode && millis() - lastReturnAt > 500) {
+    esp_camera_fb_return(fb);
+    fb = esp_camera_fb_get();
+  }
   if (!fb || fb->len < 1000) {
     if (fb) esp_camera_fb_return(fb);
+    lastReturnAt = millis();
     ecu::setError(ecu::E_CAMERA_CAPTURE, true);
     if (++failures >= 3) { esp_camera_deinit(); inited = false; begin(); }   // recover instead of rebooting
     return nullptr;
@@ -284,7 +332,32 @@ camera_fb_t *capture() {
   ecu::setError(ecu::E_CAMERA_CAPTURE, false);
   return fb;
 }
-void release(camera_fb_t *fb) { if (fb) esp_camera_fb_return(fb); }
+void release(camera_fb_t *fb) { if (fb) { esp_camera_fb_return(fb); lastReturnAt = millis(); } }
+
+struct JpgBuf { uint8_t *p; size_t cap, len; };
+static size_t jpgOut(void *arg, size_t, const void *data, size_t n) {
+  JpgBuf *b = (JpgBuf *)arg;
+  if (b->len + n > b->cap) {
+    size_t cap = b->cap * 2 > b->len + n ? b->cap * 2 : b->len + n;
+    uint8_t *q = (uint8_t *)realloc(b->p, cap);
+    if (!q) return 0;
+    b->p = q; b->cap = cap;
+  }
+  memcpy(b->p + b->len, data, n);
+  b->len += n;
+  return n;
+}
+bool toJpeg(camera_fb_t *fb, uint8_t **out, size_t *len) {
+  // frame2jpg needs a 128 KB work buffer: fine in PSRAM, impossible in internal RAM. Without PSRAM
+  // the encoder writes into a buffer that grows only as far as the (small) JPEG needs.
+  if (psramFound()) return frame2jpg(fb, 20, out, len);
+  JpgBuf b = {(uint8_t *)malloc(8192), 8192, 0};
+  if (!b.p) return false;
+  if (!frame2jpg_cb(fb, 20, jpgOut, &b) || !b.len) { free(b.p); return false; }
+  *out = b.p;
+  *len = b.len;
+  return true;
+}
 void powerDown() { if (inited) { esp_camera_deinit(); inited = false; } pinMode(CAM_PWDN, OUTPUT); digitalWrite(CAM_PWDN, HIGH); }
 void powerUp() { if (!inited) { digitalWrite(CAM_PWDN, LOW); begin(); } }
 }  // namespace camera

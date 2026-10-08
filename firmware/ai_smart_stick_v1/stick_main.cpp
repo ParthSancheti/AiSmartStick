@@ -100,6 +100,12 @@ void setup() {
   // A hold that began at power-on must never turn into a click or the 3 s SOS hold.
   if (heldAtBoot) button::suppressUntilRelease();
 
+  // Camera before Wi-Fi and the other drivers, like the old working sketch: its frame buffer is
+  // allocated while memory is still free and in one piece.
+  if (health::safeMode()) S.mode = ecu::Mode::SafeMode;   // camera stays off, safety + telemetry run
+  else camera::begin();
+  S.camOk = camera::ok();
+
   WiFi.mode(WIFI_STA);
   identity::load();
   if (bootReset) { identity::factoryReset(); motor::play("sos", motor::FEEDBACK); }
@@ -108,9 +114,6 @@ void setup() {
   ultrasonic::begin();
   imu::begin();
   battery::begin();
-  if (health::safeMode()) S.mode = ecu::Mode::SafeMode;   // camera stays off, safety + telemetry run
-  else camera::begin();
-  S.camOk = camera::ok();
 
   net::startSetupAp();
   Serial.printf("[%s] Dashcam AP started.\n", identity::deviceId());

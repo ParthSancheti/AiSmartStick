@@ -7,7 +7,7 @@
 #pragma once
 #include <stdint.h>
 
-#define FW_VERSION        "1.2.0"
+#define FW_VERSION        "1.2.1"
 #define DEVICE_MODEL      "AISS-ESP32CAM-1"
 #define PROTOCOL_VERSION  1
 

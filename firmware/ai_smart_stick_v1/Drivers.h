@@ -54,9 +54,14 @@ uint32_t heldMs();
 namespace camera {
 bool begin();
 bool ok();
-/** Grabs the sensor's JPEG. Caller MUST call release(fb). Re-initialises after repeated failures. */
+/** Sensor JPEG on OV2640/OV3660/OV5640, RGB565 on other sensors (serve via toJpeg).
+ *  Caller MUST call release(fb). Re-initialises after repeated failures. */
 camera_fb_t *capture();
+bool jpeg();
+uint16_t sensorPid();
 void release(camera_fb_t *fb);
+/** RGB565 frame -> JPEG (caller free()s *out). Works with and without PSRAM. */
+bool toJpeg(camera_fb_t *fb, uint8_t **out, size_t *len);
 void powerDown();
 void powerUp();
 }
