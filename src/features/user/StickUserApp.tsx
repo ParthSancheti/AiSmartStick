@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { AnimatePresence } from 'motion/react';
 import { useSession } from '../../core/store/session';
 import { useSafety } from '../../core/store/safety';
@@ -12,6 +13,8 @@ import { PocketShield } from './PocketShield';
 import { UserSettings } from './UserSettings';
 import { CallOverlay, UserBanner } from './UserOverlays';
 import { StickSetup } from './StickSetup';
+import { closeLocationTest, LocationTestHost } from './LocationTest';
+import { closeConnectionTest, ConnectionTestHost } from './Diagnostics';
 import { useRuntime } from '../../core/runtime/mode';
 import { useAuth } from '../../core/auth/authStore';
 
@@ -26,7 +29,16 @@ export function StickUserApp() {
   const textScale = useSession((s) => s.settings.textScale);
   const sos = useSafety((s) => s.phase);
   const pocket = useUI((s) => s.pocket);
+  const inCall = useUI((s) => !!s.call);
   usePocketMode(pocket);
+  // The Location / Connection test pages sit above setup and settings; an SOS, an incoming call or
+  // pocket mode must never be hidden under them, so those close the test pages.
+  const urgent = sos !== 'idle' || inCall || pocket;
+  useEffect(() => {
+    if (!urgent) return;
+    closeLocationTest();
+    closeConnectionTest();
+  }, [urgent]);
   useResumeLastPage(onboarded);
 
   return (
@@ -41,6 +53,9 @@ export function StickUserApp() {
       <CallOverlay />
       <UserSettings />
       {onboarded && stickSetup && <StickSetup title="Set up SmartStick" onDone={() => useUI.setState({ stickSetup: false })} onBack={() => useUI.setState({ stickSetup: false })} />}
+      {/* Inside this root (text size, high contrast); one host each for the whole app. */}
+      <LocationTestHost />
+      <ConnectionTestHost />
       <AnimatePresence>{pocket && <PocketShield key="pocket" />}</AnimatePresence>
       <AnimatePresence>{onboarded && sos !== 'idle' && <UserSos key="sos" />}</AnimatePresence>
     </div>

@@ -355,7 +355,7 @@ body { overflow-wrap: break-word; }
 /* Home stat tiles: drop the icon when the tile gets too narrow for its text (narrow phones,
    large system font). em-based, so it follows the text size, not just the screen width. */
 .stat-tile { container-type: inline-size; }
-@container (max-width: 10.5em) { .stat-tile-icon { display: none !important; } }
+@container (max-width: 9em) { .stat-tile-icon { display: none !important; } }
 
 /* Home header: on a narrow screen / large text the logo stands alone instead of a clipped name. */
 .home-header-bar { container-type: inline-size; }
@@ -365,7 +365,19 @@ body { overflow-wrap: break-word; }
 /* Home stick card: with very large text (or a very narrow phone) the stick picture makes room for the
    status tiles instead of squeezing "Connected" into "Conn-ecte-d". The Stick tile opens the same page. */
 .stick-card { container-type: inline-size; }
+/* Medium widths (larger text on a normal phone): the column goes back to its old width so the tiles
+   keep whole words, but the stick stays bigger than the old fixed 168 px picture (it may overhang
+   its narrow column into the gap, as before). */
+@container (max-width: 17em) {
+  .stick-card-visual { width: 28% !important; min-width: 80px !important; max-width: 120px !important; }
+  .stick-card-visual > [aria-hidden]:first-child { height: 186px !important; width: 104px !important; }
+}
 @container (max-width: 11.5em) { .stick-card-visual { display: none !important; } }
+
+/* Home rows (Audio output, Distance walked, Assistant chat): with very large text the round icon
+   steps aside so words are not broken letter by letter. */
+.action-row { container-type: inline-size; }
+@container (max-width: 14em) { .action-row-icon { display: none !important; } }
 
 /* AI orb (components/AiOrb.tsx): CSS-only motion. */
 .orb-spin { animation: orb-spin var(--orb-spin, 24s) linear infinite; will-change: transform; }

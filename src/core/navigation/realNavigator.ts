@@ -1,6 +1,7 @@
 import type { Fix } from '../location/locationService';
-import { haversineM, onFix, useLocation, LOCATION_STALE_MS } from '../location/locationService';
-import { walkingRoute, type PlaceResult, type RouteResult } from '../maps/mapsService';
+import { ensureLocation, haversineM, onFix, useLocation, LOCATION_STALE_MS } from '../location/locationService';
+import type { PlaceResult, RouteResult } from '../maps/mapsService';
+import { routeWalking } from '../maps/destinationSearch';
 import { emptyNav, maneuverFrom, useNavView } from './navView';
 import { logEvent } from '../store/activity';
 import { announce } from '../ai/voiceOut';
@@ -51,6 +52,46 @@ interface Active {
 let active: Active | null = null;
 let unsubFix: (() => void) | null = null;
 
+/**
+ * Destination chosen while there is no live GPS position yet (indoors, GPS just started): the
+ * route starts by itself from the first good fix. Shown as an active route "waiting for GPS".
+ */
+let pending: PlaceResult | null = null;
+let pendingUnsub: (() => void) | null = null;
+let pendingTimer: ReturnType<typeof setInterval> | undefined;
+let pendingStarting = false;
+let pendingLastTry = 0;
+let pendingSince = 0;
+/** A fix this rough is still a fine start point for a walking route (Wi-Fi/cell positions are ~30–100 m). */
+const START_ACCURACY_M = 100;
+/**
+ * After waiting this long, a rougher fix is accepted (a phone with only cell/Wi-Fi positions never
+ * gets to 100 m; the route is recomputed as the position improves / the user goes off route).
+ */
+const SETTLE_AFTER_MS = 30_000;
+const SETTLED_ACCURACY_M = 500;
+const PENDING_RETRY_MS = 20_000;
+export const WAITING_FOR_GPS_TEXT = 'Waiting for your GPS position. Directions start automatically.';
+export const NEED_PRECISE_TEXT = 'Precise location is needed for walking directions. Turn on Precise location for this app.';
+
+/** Whether this fix is good enough to start the pending route now. */
+export function pendingFixUsable(accuracyM: number, waitedMs: number) {
+  return accuracyM <= START_ACCURACY_M || (waitedMs >= SETTLE_AFTER_MS && accuracyM <= SETTLED_ACCURACY_M);
+}
+
+const freshFix = () => {
+  const f = useLocation.getState().fix;
+  return f && Date.now() - f.ts <= LOCATION_STALE_MS ? f : null;
+};
+
+function clearPending() {
+  pending = null;
+  pendingUnsub?.();
+  pendingUnsub = null;
+  clearInterval(pendingTimer);
+  pendingTimer = undefined;
+}
+
 function project(p: { lat: number; lng: number }, a: [number, number], b: [number, number]) {
   const k = Math.cos((p.lat * Math.PI) / 180) * 111320;
   const ax = a[1] * k, ay = a[0] * 110540, bx = b[1] * k, by = b[0] * 110540, px = p.lng * k, py = p.lat * 110540;
@@ -83,8 +124,10 @@ export async function startRealNavigation(place: PlaceResult) {
   const fix = useLocation.getState().fix;
   // A cached position (location off, indoors for long) would route from the wrong place.
   if (!fix || Date.now() - fix.ts > LOCATION_STALE_MS) throw new Error('location-unavailable');
-  const route = await walkingRoute({ origin: { lat: fix.lat, lng: fix.lng }, destination: { placeId: place.placeId } });
+  // Cloud Function (Routes API), else the in-app Maps DirectionsService.
+  const route = await routeWalking({ lat: fix.lat, lng: fix.lng }, place);
   if (!route.path.length) throw new Error('no-route');
+  clearPending();
   active = build(place, route);
   unsubFix?.();
   unsubFix = onFix(onLocation);
@@ -118,6 +161,8 @@ export function stopRealNavigation(reason: 'user' | 'arrived' = 'user') {
   unsubFix?.();
   unsubFix = null;
   if (active && reason === 'user') logEvent({ kind: 'navigation', severity: 'info', title: `Stopped directions to ${active.place.name}` });
+  else if (pending && reason === 'user') logEvent({ kind: 'navigation', severity: 'info', title: `Cancelled directions to ${pending.name}` });
+  clearPending();
   active = null;
   saveActive(null);
   useNavView.setState(emptyNav());
@@ -130,7 +175,7 @@ export async function reroute() {
   a.lastReroute = Date.now();
   useNavView.setState({ rerouting: true, state: 'REROUTING' });
   try {
-    const route = await walkingRoute({ origin: { lat: fix.lat, lng: fix.lng }, destination: { placeId: a.place.placeId } });
+    const route = await routeWalking({ lat: fix.lat, lng: fix.lng }, a.place);
     if (active !== a) return; // stopped (or restarted) while the route was being computed
     active = build(a.place, route);
     useNavView.setState({ path: route.path, totalM: route.distanceM, remainingM: route.distanceM, etaSec: route.durationS, offRoute: false, rerouting: false, error: null, state: 'NAVIGATING' });
@@ -216,14 +261,94 @@ function onLocation(fix: Fix) {
 }
 
 export const realNavActive = () => active !== null;
-export const currentDestination = () => active?.place ?? null;
+export const currentDestination = () => active?.place ?? pending ?? null;
+/** Destination set while waiting for the first GPS fix (null when none). */
+export const pendingDestination = () => pending;
+
+export type NavStart = { status: 'started'; route: RouteResult } | { status: 'waiting_for_gps' };
+
+/**
+ * Every "go there" entry point (map search, assistant, voice yes): starts walking directions now
+ * when there is a live position, otherwise sets the destination and starts them by itself as soon
+ * as GPS delivers one. Route errors (no route, maps down) are thrown only when starting now.
+ */
+export async function navigateTo(place: PlaceResult, opts: { announce?: boolean } = {}): Promise<NavStart> {
+  const fix = freshFix();
+  if (fix && fix.accuracyM <= START_ACCURACY_M) return { status: 'started', route: await startRealNavigation(place) };
+  armNavigation(place, opts);
+  return { status: 'waiting_for_gps' };
+}
+
+/**
+ * Destination set, directions start from the first good fix (see navigateTo). announce:false when
+ * the assistant model says it itself (otherwise the user hears the same sentence twice).
+ */
+export function armNavigation(place: PlaceResult, opts: { announce?: boolean } = {}) {
+  unsubFix?.();
+  unsubFix = null;
+  active = null;
+  clearPending();
+  pending = place;
+  pendingLastTry = 0;
+  pendingSince = Date.now();
+  saveActive(place);
+  const needPrecise = useLocation.getState().precise === false;
+  useNavView.setState({
+    ...emptyNav(),
+    state: 'ROUTE_READY',
+    active: true,
+    source: 'real',
+    destination: { name: place.name, placeId: place.placeId, lat: place.lat, lng: place.lng },
+    next: { text: 'Waiting for GPS', maneuver: 'straight', inM: null },
+    error: needPrecise ? NEED_PRECISE_TEXT : WAITING_FOR_GPS_TEXT,
+    updatedAt: Date.now(),
+  });
+  logEvent({ kind: 'navigation', severity: 'info', title: `Destination set: ${place.name}`, detail: 'Directions start when GPS has a position' });
+  if (opts.announce !== false) {
+    announce(
+      needPrecise
+        ? { en: `Destination set: ${place.name}. Walking directions need Precise location. Please turn on Precise location for this app.`, hi: `मंज़िल तय: ${place.name}। रास्ते के लिए Precise location चालू करें।` }
+        : { en: `Destination set: ${place.name}. Directions will start as soon as GPS finds your position.`, hi: `मंज़िल तय: ${place.name}। GPS मिलते ही रास्ता बताना शुरू करूँगी।` },
+      { nav: true, dedupeKey: 'nav-wait' },
+    );
+  }
+  void ensureLocation({ request: false }).catch(() => undefined);
+  const tryStart = () => void startPending();
+  pendingUnsub = onFix(tryStart);
+  pendingTimer = setInterval(tryStart, 3000);
+  tryStart();
+}
+
+async function startPending() {
+  const place = pending;
+  const fix = freshFix();
+  if (place && !pendingStarting) {
+    // Keep the waiting text honest: an Approximate-only grant needs the user to act.
+    const err = useNavView.getState().error;
+    const want = useLocation.getState().precise === false ? NEED_PRECISE_TEXT : WAITING_FOR_GPS_TEXT;
+    if ((err === WAITING_FOR_GPS_TEXT || err === NEED_PRECISE_TEXT) && err !== want) useNavView.setState({ error: want, updatedAt: Date.now() });
+  }
+  if (!place || pendingStarting || !fix || !pendingFixUsable(fix.accuracyM, Date.now() - pendingSince)) return;
+  if (pendingLastTry && Date.now() - pendingLastTry < PENDING_RETRY_MS) return;
+  pendingStarting = true;
+  pendingLastTry = Date.now();
+  try {
+    await startRealNavigation(place);
+  } catch (e) {
+    if (pending !== place) return; // cancelled meanwhile
+    const m = (e as Error)?.message;
+    useNavView.setState({ error: m === 'no-route' ? 'No walking route found to this place.' : 'Could not get walking directions yet. Trying again…', updatedAt: Date.now() });
+  } finally {
+    pendingStarting = false;
+  }
+}
 
 /** After a restart: resume directions to the saved destination from the current position (route recomputed). */
 export async function resumeSavedNavigation() {
   const place = savedNavigation();
-  if (!place || active) return false;
+  if (!place || active || pending) return false;
   try {
-    await startRealNavigation(place);
+    await navigateTo(place);
     logEvent({ kind: 'navigation', severity: 'info', title: `Resumed directions to ${place.name}` });
     return true;
   } catch {

@@ -30,12 +30,25 @@ export interface AissNativePlugin {
   getFontScale(): Promise<{ fontScale: number }>;
   /** dark: true = dark status/navigation bar icons (light theme). */
   setStatusBarIcons(opts: { dark: boolean }): Promise<void>;
-  getCurrentWifiSsid(): Promise<{ wifiEnabled: boolean; ssid?: string | null; stickNetwork: boolean; bound: boolean; locationEnabled?: boolean }>;
-  /** HTTP over the setup network specifically (process stays on mobile data for everything else). */
-  setupRequest(opts: { method: 'GET' | 'POST'; path: string; body?: string; bodyBase64?: string; headers?: Record<string, string>; timeoutMs?: number }): Promise<{ status: number; body: string }>;
+  /**
+   * requested = a "Connect to device" request is registered; connecting = it is still waiting for
+   * Android; processBound = the whole app runs over the stick Wi-Fi (setProcessBinding).
+   */
+  getCurrentWifiSsid(): Promise<{ wifiEnabled: boolean; ssid?: string | null; stickNetwork: boolean; bound: boolean; requested?: boolean; connecting?: boolean; processBound?: boolean; locationEnabled?: boolean; sdk?: number }>;
+  /**
+   * HTTP to http://192.168.4.1 over the stick network (process stays on mobile data for everything else).
+   * route 'default' = skip the stick binding and use the process default network (fallback path).
+   * via = the route actually used: bound | wifi (joined by hand) | default | process.
+   */
+  setupRequest(opts: { method: 'GET' | 'POST'; path: string; body?: string; bodyBase64?: string; headers?: Record<string, string>; timeoutMs?: number; route?: 'auto' | 'default' }): Promise<{ status: number; body: string; via?: string }>;
   /** GET returning the raw response bytes base64-encoded (camera JPEG). Same network binding and headers as setupRequest. */
-  requestBinary(opts: { path: string; headers?: Record<string, string>; timeoutMs?: number }): Promise<{ status: number; body: string; contentType?: string }>;
+  requestBinary(opts: { path: string; headers?: Record<string, string>; timeoutMs?: number; route?: 'auto' | 'default' }): Promise<{ status: number; body: string; contentType?: string; via?: string }>;
   releaseSetupNetwork(): Promise<void>;
+  /**
+   * Last-resort fallback: bindProcessToNetwork(stick network) — ALL app traffic (WebView included)
+   * goes over the stick Wi-Fi; maps / assistant / Firebase stop while it is on. on: false releases it.
+   */
+  setProcessBinding(opts: { on: boolean }): Promise<{ bound: boolean; reason?: string }>;
   /** Listen for the stick's UDP discovery broadcast on the hotspot. */
   startDiscovery(opts: { port: number }): Promise<void>;
   stopDiscovery(): Promise<void>;

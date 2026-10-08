@@ -38,6 +38,8 @@ export interface StickTransport {
   send(cmd: DeviceCommand, opts?: { commandId?: string; ttlMs?: number }): Promise<CommandAck>;
   /** Pushes a new firmware binary to the stick. */
   pushOTA?(blob: Blob, sha256: string): Promise<void>;
+  /** Retry right now when waiting out a reconnect backoff (app back in the foreground). */
+  nudge?(): void;
 }
 
 export class Emitter<T extends { [K in keyof T]: (...args: never[]) => void }> {

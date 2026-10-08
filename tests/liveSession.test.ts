@@ -26,7 +26,11 @@ vi.mock('../src/core/audio/audioManager', () => ({
 }));
 
 vi.mock('../src/core/ai/executor', () => ({ executeAction: vi.fn() }));
-vi.mock('../src/core/navigation/realNavigator', () => ({ startRealNavigation: vi.fn() }));
+vi.mock('../src/core/navigation/realNavigator', () => {
+  const startRealNavigation = vi.fn();
+  // navigateTo = start now (a live fix is assumed here); the waiting-for-GPS path is tested in navigation.test.ts.
+  return { startRealNavigation, navigateTo: vi.fn(async (p: unknown) => ({ status: 'started', route: await startRealNavigation(p) })) };
+});
 vi.mock('../src/core/feedback/earcons', () => ({ loopEarcon: vi.fn(() => () => {}), earcon: vi.fn() }));
 
 /** Every tune start gets its own stop spy; `events` records the order of tune/earcon sounds. */

@@ -33,8 +33,11 @@ export interface RouteResult {
   steps: RouteStepResult[];
 }
 
-export async function searchPlaces(input: { query?: string; category?: string; lat: number; lng: number; radiusM?: number }) {
-  return call<typeof input, { places: PlaceResult[] }>('mapsSearch', input, 15000);
+/** lat/lng are optional: without a position Google searches India-wide (distanceM is then null). */
+export async function searchPlaces(input: { query?: string; category?: string; lat?: number | null; lng?: number | null; radiusM?: number }) {
+  const { lat, lng, ...rest } = input;
+  const data = lat != null && lng != null ? { ...rest, lat, lng } : rest;
+  return call<typeof data, { places: PlaceResult[] }>('mapsSearch', data, 15000);
 }
 
 export async function placeDetails(placeId: string, sessionToken?: string) {
@@ -47,8 +50,10 @@ export interface Suggestion {
   secondary: string | null;
 }
 
-export async function autocomplete(input: string, lat: number, lng: number, sessionToken: string) {
-  return call<{ input: string; lat: number; lng: number; sessionToken: string }, { suggestions: Suggestion[] }>('mapsAutocomplete', { input, lat, lng, sessionToken }, 10000);
+/** lat/lng only bias the results; null = no position yet (search still works). */
+export async function autocomplete(input: string, lat: number | null | undefined, lng: number | null | undefined, sessionToken: string) {
+  const data = lat != null && lng != null ? { input, lat, lng, sessionToken } : { input, sessionToken };
+  return call<typeof data, { suggestions: Suggestion[] }>('mapsAutocomplete', data, 10000);
 }
 
 export async function walkingRoute(input: { origin: { lat: number; lng: number }; destination: { lat: number; lng: number } | { placeId: string } }) {

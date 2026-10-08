@@ -13,6 +13,8 @@ import { doc, setDoc } from 'firebase/firestore';
 import { fb } from '../firebase/app';
 import { paths } from '../../../shared/firestoreSchema';
 import { wait } from '../util';
+import { explainPacket } from '../telemetry/pipeline';
+import { looksLikeStick } from '../transport/stickHttp';
 
 /**
  * Stick setup, v1 SIMPLE LINK (firmware 1.2+): no keys, no provisioning.
@@ -76,10 +78,13 @@ export const useProvisioning = create<ProvState>(() => ({
 }));
 
 const set = (p: Partial<ProvState>) => useProvisioning.setState(p);
-const diag = (line: string) =>
+const diag = (line: string) => {
+  // Also in logcat (Capacitor/Console) as "[SMARTSTICK] setup: …".
+  console.info(`[SMARTSTICK] setup: ${line}`);
   useProvisioning.setState((s) => ({
     diagnostics: [...s.diagnostics, `${new Date().toLocaleTimeString()}  ${line}`].slice(-60),
   }));
+};
 
 export const OLD_FIRMWARE_SETUP_MESSAGE = `This stick still runs the old secure firmware. Flash firmware ${MIN_STICK_FIRMWARE} on the stick (Arduino IDE, firmware/ai_smart_stick_v1), switch it on again, then tap Try again.`;
 
@@ -173,7 +178,11 @@ export async function provisionStick() {
       diag(`asking Android to join ${STICK_AP_SSID} (approve "Connect" if Android asks)`);
       let res: Awaited<ReturnType<typeof AissNative.connectToSetupNetwork>>;
       try {
-        res = await AissNative.connectToSetupNetwork({ ssid: STICK_AP_SSID, passphrase: STICK_AP_PASSPHRASE, timeoutMs: 45_000 });
+        // Android answers within its own 45 s; the JS cap only guards a callback that never comes.
+        res = await withTimeout(AissNative.connectToSetupNetwork({ ssid: STICK_AP_SSID, passphrase: STICK_AP_PASSPHRASE, timeoutMs: 45_000 }), 55_000, 'Android Wi-Fi join').catch((e: Error) => {
+          if (/timed out/.test(e.message)) return { connected: false, reason: 'UNAVAILABLE' };
+          throw e;
+        });
       } catch (e) {
         throw new SetupError('other', `Android could not start the Wi-Fi connection: ${(e as Error).message}`);
       }
@@ -230,11 +239,14 @@ export async function provisionStick() {
 
 /** Sends GET over whatever reaches the stick (binding, Wi-Fi joined by hand, or default route). */
 async function get(path: string, timeoutMs: number) {
-  return AissNative.setupRequest({ method: 'GET', path, timeoutMs });
+  // The plugin applies timeoutMs to connect and read; the JS cap guards a call that never settles.
+  return withTimeout(AissNative.setupRequest({ method: 'GET', path, timeoutMs }), timeoutMs + 3000, `GET ${path}`);
 }
 
 function parseDevice(status: number, body: string): DeviceInfoPacket {
-  if (status === 401 || status === 403) throw new SetupError('old_firmware', OLD_FIRMWARE_SETUP_MESSAGE);
+  // A router / captive portal at 192.168.4.1 can answer 403 with a web page: that is "not a stick",
+  // never "old firmware" (the firmware's 401 is JSON: {"error":"unauthorized"}).
+  if ((status === 401 || status === 403) && looksLikeStick(status, body)) throw new SetupError('old_firmware', OLD_FIRMWARE_SETUP_MESSAGE);
   if (status !== 200) throw new SetupError('not_a_stick', `Something at ${SETUP_AP_HOST} answered HTTP ${status}, but it is not a SmartStick.`);
   let info: DeviceInfoPacket;
   try {
@@ -284,11 +296,21 @@ async function readTelemetry(check: () => void): Promise<TelemetryPacket> {
     check();
     try {
       const r = await get(DEVICE_API.telemetry, 3000);
-      if (r.status === 401 || r.status === 403) throw new SetupError('old_firmware', OLD_FIRMWARE_SETUP_MESSAGE);
+      if ((r.status === 401 || r.status === 403) && looksLikeStick(r.status, r.body)) throw new SetupError('old_firmware', OLD_FIRMWARE_SETUP_MESSAGE);
       if (r.status === 200) {
-        const p = JSON.parse(r.body) as TelemetryPacket;
-        if (p && typeof p.seq === 'number') return p;
-        last = 'malformed telemetry';
+        let p: TelemetryPacket | null = null;
+        try {
+          p = JSON.parse(r.body) as TelemetryPacket;
+        } catch {
+          last = `telemetry is not JSON (${r.body.length} bytes)`;
+        }
+        if (p && typeof p.seq === 'number') {
+          const why = explainPacket(p);
+          // Setup still completes (the link is real), but the reason is in the log at once.
+          if (why) diag(`warning: the app will reject this telemetry: ${why}`);
+          return p;
+        }
+        if (p) last = 'malformed telemetry (no seq)';
       } else last = `HTTP ${r.status}`;
     } catch (e) {
       if (e instanceof SetupError) throw e;

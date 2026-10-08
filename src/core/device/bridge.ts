@@ -1,3 +1,5 @@
+import { Capacitor } from '@capacitor/core';
+import { App as CapApp } from '@capacitor/app';
 import type { ButtonPattern, LinkState } from '../types';
 import type { StickTransport } from '../transport/types';
 import { MockTransport } from '../transport/mockTransport';
@@ -23,6 +25,33 @@ import { configurePipeline, ingestPacket, resetPipeline, setImuCalibration, star
  */
 let transport: StickTransport | null = null;
 let unsubs: (() => void)[] = [];
+
+/** Foreground again: a link waiting out its reconnect backoff retries at once. */
+function watchForeground(t: StickTransport): () => void {
+  if (typeof document === 'undefined' || !t.nudge) return () => {};
+  const onVis = () => {
+    if (document.visibilityState === 'visible') t.nudge?.();
+  };
+  document.addEventListener('visibilitychange', onVis);
+  // Android: the WebView may not fire visibilitychange on every resume; appStateChange does.
+  let handle: { remove: () => Promise<void> } | null = null;
+  let gone = false;
+  if (Capacitor.isNativePlatform()) {
+    CapApp.addListener('appStateChange', ({ isActive }) => {
+      if (isActive) t.nudge?.();
+    })
+      .then((h) => {
+        if (gone) void h.remove();
+        else handle = h;
+      })
+      .catch(() => undefined);
+  }
+  return () => {
+    gone = true;
+    document.removeEventListener('visibilitychange', onVis);
+    void handle?.remove().catch(() => undefined);
+  };
+}
 const buttonListeners = new Set<(p: ButtonPattern) => boolean | void>();
 
 export const getTransport = () => transport;
@@ -47,12 +76,17 @@ export async function connectStick(t: StickTransport) {
     onFall: () => {
       if (useSession.getState().userOnboarded && getSettings().sosTriggers.fall) startSos('fall');
     },
-    onRejected: (reason) => useDevice.setState({ linkDetail: reason }),
+    // Shown on Home / Stick details / Connection test; cleared when data is accepted again.
+    onRejected: (reason) => {
+      if (reason) useDevice.setState({ linkDetail: reason });
+      else if (useDevice.getState().linkDetail?.startsWith('Stick data rejected')) useDevice.setState({ linkDetail: null });
+    },
   });
   unsubs = [
     t.on('packet', (p, at) => ingestPacket(p, at)),
     t.on('link', (s, d) => onLink(s, d)),
     t.on('identity', (id) => useDevice.setState({ identity: id })),
+    watchForeground(t),
   ];
   startStalenessWatch();
   startDeviceConfigSync();

@@ -47,10 +47,11 @@ interface GPlace {
   primaryType?: string;
 }
 
-const toPlace = (p: GPlace, from: { lat: number; lng: number }) => {
+/** distanceM is null when the phone sent no position (search works without GPS). */
+const toPlace = (p: GPlace, from: { lat: number; lng: number } | null) => {
   const lat = p.location?.latitude ?? 0;
   const lng = p.location?.longitude ?? 0;
-  return { placeId: p.id, name: p.displayName?.text ?? 'Unnamed place', address: p.formattedAddress ?? null, lat, lng, distanceM: Math.round(haversineM(from, { lat, lng })), openNow: p.currentOpeningHours?.openNow ?? null, primaryType: p.primaryType ?? null };
+  return { placeId: p.id, name: p.displayName?.text ?? 'Unnamed place', address: p.formattedAddress ?? null, lat, lng, distanceM: from ? Math.round(haversineM(from, { lat, lng })) : null, openNow: p.currentOpeningHours?.openNow ?? null, primaryType: p.primaryType ?? null };
 };
 
 function point(d: Record<string, unknown>) {
@@ -60,11 +61,34 @@ function point(d: Record<string, unknown>) {
   return { lat, lng };
 }
 
+/** Optional search bias: absent → null (India-wide search); present but invalid → error. */
+export function optionalPoint(d: Record<string, unknown>) {
+  if (d.lat == null && d.lng == null) return null;
+  return point(d);
+}
+
+const CATEGORY_TEXT: Record<string, string> = {
+  mall: 'shopping mall',
+  pharmacy: 'pharmacy',
+  hospital: 'hospital',
+  bus_stop: 'bus stop',
+  atm: 'ATM',
+  cafe: 'cafe',
+  restaurant: 'restaurant',
+  salon: 'hair salon',
+  supermarket: 'supermarket',
+  police: 'police station',
+  train_station: 'railway station',
+};
+
+const byDistance = (a: { distanceM: number | null }, b: { distanceM: number | null }) => (a.distanceM ?? Infinity) - (b.distanceM ?? Infinity);
+
 export const mapsSearch = onCall({ ...CALLABLE, secrets: [MAPS_SERVER_KEY] }, async (req) => {
   const uid = requireAuth(req);
   await quota(uid, 'maps', 30, 800);
   const d = (req.data ?? {}) as Record<string, unknown>;
-  const from = point(d);
+  // The phone may have no GPS fix yet: then search India-wide (results unsorted, distanceM null).
+  const from = optionalPoint(d);
   const radius = Math.min(Math.max(num(d.radiusM) ?? 3000, 100), 20000);
   const category = str(d.category, 40);
   const query = str(d.query, 120);
@@ -72,18 +96,20 @@ export const mapsSearch = onCall({ ...CALLABLE, secrets: [MAPS_SERVER_KEY] }, as
   if (category === 'home') {
     const home = await homeLocation(uid);
     if (!home) return { places: [] };
-    return { places: [{ placeId: home.placeId, name: 'Home', address: home.address, lat: home.lat, lng: home.lng, distanceM: Math.round(haversineM(from, home)), openNow: null, primaryType: 'home' }] };
+    return { places: [{ placeId: home.placeId, name: 'Home', address: home.address, lat: home.lat, lng: home.lng, distanceM: from ? Math.round(haversineM(from, home)) : null, openNow: null, primaryType: 'home' }] };
   }
   let places: GPlace[] = [];
-  if (category && TYPES[category]) {
+  const bias = from ? { locationBias: { circle: { center: { latitude: from.lat, longitude: from.lng }, radius } } } : {};
+  if (category && TYPES[category] && from) {
     const r = await gpost<{ places?: GPlace[] }>(`${PLACES}/places:searchNearby`, { includedTypes: TYPES[category], maxResultCount: 8, rankPreference: 'DISTANCE', locationRestriction: { circle: { center: { latitude: from.lat, longitude: from.lng }, radius } } }, PLACE_FIELDS);
     places = r.places ?? [];
-  } else if (query) {
-    const r = await gpost<{ places?: GPlace[] }>(`${PLACES}/places:searchText`, { textQuery: query, maxResultCount: 8, locationBias: { circle: { center: { latitude: from.lat, longitude: from.lng }, radius } } }, PLACE_FIELDS);
+  } else if (query || (category && CATEGORY_TEXT[category])) {
+    const textQuery = query || CATEGORY_TEXT[category];
+    const r = await gpost<{ places?: GPlace[] }>(`${PLACES}/places:searchText`, { textQuery, maxResultCount: 8, regionCode: 'in', ...bias }, PLACE_FIELDS);
     places = r.places ?? [];
   } else throw new HttpsError('invalid-argument', 'Give a category or a query.');
-  const out = places.map((p) => toPlace(p, from)).sort((a, b) => a.distanceM - b.distanceM);
-  return { places: out };
+  const out = places.map((p) => toPlace(p, from));
+  return { places: from ? out.sort(byDistance) : out };
 });
 
 /** Places Autocomplete (New). A session token groups keystrokes + the final details call for billing. */
@@ -93,11 +119,12 @@ export const mapsAutocomplete = onCall({ ...CALLABLE, secrets: [MAPS_SERVER_KEY]
   const d = (req.data ?? {}) as Record<string, unknown>;
   const input = str(d.input, 120);
   if (input.length < 2) return { suggestions: [] };
-  const from = point(d);
+  // Bias around the phone when it knows where it is; otherwise India-wide (never refuse to search).
+  const from = optionalPoint(d);
   const token = str(d.sessionToken, 64);
   const r = await gpost<{ suggestions?: { placePrediction?: { placeId: string; text?: { text: string }; structuredFormat?: { mainText?: { text: string }; secondaryText?: { text: string } } } }[] }>(
     `${PLACES}/places:autocomplete`,
-    { input, locationBias: { circle: { center: { latitude: from.lat, longitude: from.lng }, radius: 5000 } }, includedRegionCodes: ['in'], ...(token ? { sessionToken: token } : {}) },
+    { input, ...(from ? { locationBias: { circle: { center: { latitude: from.lat, longitude: from.lng }, radius: 5000 } }, origin: { latitude: from.lat, longitude: from.lng } } : {}), includedRegionCodes: ['in'], ...(token ? { sessionToken: token } : {}) },
     'suggestions.placePrediction.placeId,suggestions.placePrediction.text.text,suggestions.placePrediction.structuredFormat',
   );
   return {

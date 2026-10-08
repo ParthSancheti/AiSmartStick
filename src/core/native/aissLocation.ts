@@ -34,6 +34,24 @@ export interface NativeLocationStatus {
   running: boolean;
 }
 
+export interface NativeLocationDiagnostics extends NativePermission {
+  sdk: number;
+  /** The phone's Location switch. */
+  enabled: boolean;
+  /** JS asked for updates (start called, not stopped). */
+  wanted: boolean;
+  /** A listener is registered with LocationManager right now. */
+  running: boolean;
+  backgroundAllowed: boolean;
+  /** Positions handed to JS since the app started. */
+  delivered: number;
+  lastDeliveredAt: number | null;
+  lastProvider: string | null;
+  lastError: string | null;
+  activeProviders: string[];
+  providers: { name: string; enabled: boolean; lastAgeMs: number | null; lastAccuracy: number | null; error?: string }[];
+}
+
 export interface AissLocationPlugin {
   checkPermission(): Promise<NativePermission>;
   /** FINE + COARSE in one dialog; an "Approximate" answer counts as granted. upgrade=true asks again for Precise. */
@@ -44,6 +62,10 @@ export interface AissLocationPlugin {
   start(opts: { intervalMs: number }): Promise<NativeLocationStatus & { started: boolean; reason?: 'permission' | 'no_provider' }>;
   stop(): Promise<void>;
   getLastKnown(): Promise<{ fix: NativeFix | null }>;
+  /** One fresh fix within timeoutMs (GPS/network/fused), else the freshest cached one. Newer APKs only. */
+  getCurrent(opts: { timeoutMs: number }): Promise<{ fix: NativeFix | null; fresh: boolean; reason: 'fresh' | 'timeout' | 'permission' | 'off' | 'no_provider' }>;
+  /** Everything the Location test page shows. Newer APKs only. */
+  getDiagnostics(): Promise<NativeLocationDiagnostics>;
   addListener(event: 'location', cb: (f: NativeFix) => void): Promise<PluginListenerHandle>;
   addListener(event: 'status', cb: (s: NativeLocationStatus) => void): Promise<PluginListenerHandle>;
 }

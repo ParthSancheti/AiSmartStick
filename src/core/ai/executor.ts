@@ -5,9 +5,11 @@ import { useDevice, isLinked } from '../store/device';
 import { useSession, getSettings } from '../store/session';
 import { useSafety } from '../store/safety';
 import { logEvent } from '../store/activity';
-import { useLocation, freshnessLabel } from '../location/locationService';
-import { searchPlaces, reverseLookup, type PlaceResult } from '../maps/mapsService';
-import { startRealNavigation, stopRealNavigation, reroute as realReroute } from '../navigation/realNavigator';
+import { useLocation, freshnessLabel, acquireFix, LOCATION_STALE_MS } from '../location/locationService';
+import { reverseLookup, type PlaceResult } from '../maps/mapsService';
+import { findPlaces, placeById, searchBias } from '../maps/destinationSearch';
+import { messageWithLocation, wantsLocation } from '../location/shareLocation';
+import { stopRealNavigation, reroute as realReroute } from '../navigation/realNavigator';
 import { useNavView } from '../navigation/navView';
 import { useSafetyEval } from '../safety/safetyRuntime';
 import { startSos, cancelSos, safetyContact } from '../safety/sos';
@@ -83,6 +85,35 @@ function placeOut(p: PlaceResult) {
   return { placeId: p.placeId, name: p.name, address: p.address, distanceM: p.distanceM == null ? null : Math.round(p.distanceM), openNow: p.openNow };
 }
 
+/** What the model may say about GPS: a missing fix never blocks choosing a destination. */
+function gpsNote() {
+  const f = useLocation.getState().fix;
+  if (f && Date.now() - f.ts <= LOCATION_STALE_MS) return 'live';
+  return f ? 'last known position (distances approximate)' : 'no position yet (distances unknown)';
+}
+
+const WAIT_GPS_INSTRUCTION = 'Tell the user the destination is set and walking directions will start automatically as soon as GPS finds their position. Do not say the location or maps are unavailable.';
+const WAIT_PRECISE_INSTRUCTION = 'Tell the user the destination is set, but walking directions need Precise location: ask them to turn on Precise location for this app (the map shows a "Use precise" button). Directions start by themselves once it is on. Do not say maps are unavailable.';
+/** What the model should say while the destination waits for a usable position (honest about an Approximate-only grant). */
+const waitInstruction = () => (useLocation.getState().precise === false ? WAIT_PRECISE_INSTRUCTION : WAIT_GPS_INSTRUCTION);
+
+/** Starts directions to `p` now, or sets it and waits for the first GPS fix. Never starts twice. */
+async function goTo(a: Action, p: PlaceResult): Promise<ToolResult> {
+  chosen = p;
+  if (navigatingTo(p.placeId)) {
+    // The user's "yes" already started it (deterministic confirmation path). Never start twice.
+    const n = useNavView.getState();
+    const waiting = !n.path.length && n.remainingM == null;
+    return ok(a, { destination: p.name, alreadyNavigating: true, directions: waiting ? 'waiting_for_gps' : 'started', remainingM: n.remainingM == null ? null : Math.round(n.remainingM), next: n.next?.text ?? null, ...(waiting ? { instruction: waitInstruction() } : {}) });
+  }
+  // The model speaks the result itself (waitInstruction): no second, overlapping announcement.
+  const r = await startNavigationTo(p, { announce: false });
+  if ('waitingForGps' in r && r.waitingForGps) return ok(a, { destination: placeOut(p), directions: 'waiting_for_gps', instruction: waitInstruction() });
+  const route = r.started ? r.route : null;
+  const n = useNavView.getState();
+  return ok(a, { destination: p.name, directions: 'started', distanceM: route ? Math.round(route.distanceM) : n.totalM, durationMin: route ? Math.max(1, Math.round(route.durationS / 60)) : null, firstInstruction: route?.steps[0]?.instruction ?? n.next?.text ?? null });
+}
+
 /**
  * Audit: every executed tool call is recorded with the conversation by the backend
  * (toolCalls/toolResults on the model message). Actions with side effects are also written to
@@ -146,47 +177,52 @@ async function executeActionInner(a: Action): Promise<ToolResult> {
       }
       // ── NAVIGATION ──
       case 'navigation.getCurrentLocation': {
-        const f = useLocation.getState().fix!;
+        // Actively asks for a fresh position (up to 6 s) instead of failing on an empty store.
+        const { fix: f, fresh } = await acquireFix({ maxAgeMs: 60_000, timeoutMs: 6000 });
+        if (!f) return fail(a, useLocation.getState().permission === 'denied' ? 'Location permission is denied.' : 'No GPS position yet. Ask the user to move near a window or outdoors.');
+        if (!fresh) return ok(a, { live: false, accuracyM: Math.round(f.accuracyM), freshness: freshnessLabel(f.ts), address: null, note: 'Only an old position is known; say how old it is.' });
         let rev: Awaited<ReturnType<typeof reverseLookup>> | null = null;
         if (d.internet) rev = await reverseLookup(f.lat, f.lng).catch(() => null);
         return ok(a, { accuracyM: Math.round(f.accuracyM), freshness: freshnessLabel(f.ts), address: rev?.address ?? null, nearestPlace: rev?.landmark ?? null });
       }
       case 'navigation.searchPlace':
       case 'navigation.findNearestPlace': {
-        const f = useLocation.getState().fix!;
-        const r = await searchPlaces({ query: (args.query as string) || undefined, category: (args.category as string) || undefined, lat: f.lat, lng: f.lng, radiusM: 3000 });
+        // No GPS needed: the newest position of any age only biases the search.
+        const r = await findPlaces({ query: (args.query as string) || undefined, category: (args.category as string) || undefined, bias: searchBias(), radiusM: 3000 });
         lastPlaces = r.places;
-        if (!r.places.length) return ok(a, { places: [], note: 'No matching places found nearby.' });
+        if (!r.places.length) return ok(a, { places: [], note: r.biased ? 'No matching places found nearby.' : 'No matching places found.' });
         // App rule: the best match that is not known to be closed. It becomes the OFFER: if the user
         // says yes, the app starts walking directions to exactly this place (core/ai/navIntent.ts).
         const pick = spec.type === 'navigation.findNearestPlace' ? (r.places.find((p) => p.openNow !== false) ?? r.places[0]) : r.places[0];
         chosen = pick;
         offerDestination(pick);
+        const gps = gpsNote();
         return ok(a, {
           offered: placeOut(pick),
           alternatives: r.places.filter((p) => p !== pick).slice(0, 3).map(placeOut),
-          instruction: 'Tell the user the offered place name and distance, then ask if they want to go there. If they say yes, call start_navigation with this placeId. Do not search again.',
+          gps,
+          instruction: `Tell the user the offered place name${pick.distanceM != null ? ' and distance' : ''}, then ask if they want to go there. If they say yes, call start_navigation with this placeId. Do not search again.${gps === 'live' ? '' : ' GPS has no live position yet: that is fine, directions start automatically once it does. Never say the location is unavailable.'}`,
         });
       }
       case 'navigation.setDestination': {
-        const p = lastPlaces.find((x) => x.placeId === args.placeId);
-        if (!p) return fail(a, 'That place id did not come from a recent search. Search again first.');
-        chosen = p;
-        offerDestination(p);
-        return ok(a, { destination: placeOut(p) });
+        const id = (args.placeId as string | undefined)?.trim();
+        const query = (args.query as string | undefined)?.trim();
+        let p: PlaceResult | null = id ? (lastPlaces.find((x) => x.placeId === id) ?? (pendingOffer()?.placeId === id ? pendingOffer() : null) ?? (chosen?.placeId === id ? chosen : null)) : null;
+        // A real Google place id the model kept from earlier: look it up instead of refusing.
+        if (!p && id) p = await placeById(id).catch(() => null);
+        if (!p && query) {
+          const r = await findPlaces({ query, bias: searchBias() });
+          lastPlaces = r.places;
+          p = r.places[0] ?? null;
+          if (!p) return fail(a, `No place called "${query}" was found. Ask the user for the name or address again.`);
+        }
+        if (!p) return fail(a, id ? 'That place could not be found. Search for it with search_place first.' : 'Give a placeId from a search, or the place name as query.');
+        return goTo(a, p);
       }
       case 'navigation.startNavigation': {
         const p = (args.placeId ? lastPlaces.find((x) => x.placeId === args.placeId) : null) ?? pendingOffer() ?? chosen;
         if (!p) return fail(a, 'No destination chosen. Search for a place first.');
-        if (navigatingTo(p.placeId)) {
-          // The user's "yes" already started it (deterministic confirmation path). Never start twice.
-          const n = useNavView.getState();
-          return ok(a, { destination: p.name, alreadyNavigating: true, remainingM: n.remainingM == null ? null : Math.round(n.remainingM), next: n.next?.text ?? null });
-        }
-        const r = await startNavigationTo(p);
-        const route = r.started ? r.route : null;
-        const n = useNavView.getState();
-        return ok(a, { destination: p.name, distanceM: route ? Math.round(route.distanceM) : n.totalM, durationMin: route ? Math.max(1, Math.round(route.durationS / 60)) : null, firstInstruction: route?.steps[0]?.instruction ?? n.next?.text ?? null });
+        return goTo(a, p);
       }
       case 'navigation.stopNavigation':
         stopRealNavigation('user');
@@ -226,12 +262,16 @@ async function executeActionInner(a: Action): Promise<ToolResult> {
       }
       case 'communication.sendSmsToGuardian': {
         const c = safetyContact();
-        const r = await sendSms(c.name, c.phone, String(args.text));
+        // Help / "where I am" texts carry the position as a plain Maps link (the receiver may not have the app).
+        const sos = useSafety.getState().phase === 'active' || useSafety.getState().phase === 'countdown';
+        const addLocation = c.phone != null && (sos || wantsLocation(String(args.text)));
+        const body = addLocation ? (await messageWithLocation(String(args.text), { timeoutMs: 6000 })).text : String(args.text);
+        const r = await sendSms(c.name, c.phone, body);
         if (r === 'no_number') return fail(a, 'No safety phone number is saved. The user can add one in Settings.');
         if (r === 'failed') return fail(a, 'The text could not be sent (no mobile network or SMS balance). Do not say it was sent.');
         const meaning =
           r === 'sent' ? 'The mobile network accepted the SMS.' : r === 'queued' ? 'The SMS was handed to the phone; delivery is not confirmed yet.' : r === 'demo' ? 'Demo mode: nothing was sent.' : 'The message composer is open; the user must press send. Do not say it was sent.';
-        return ok(a, { result: r, meaning });
+        return ok(a, { result: r, meaning, locationIncluded: addLocation && /maps\.google\.com/.test(body) });
       }
       // ── AUDIO ──
       case 'audio.speak':
@@ -271,7 +311,8 @@ async function executeActionInner(a: Action): Promise<ToolResult> {
   } catch (e) {
     const msg = (e as Error).message;
     if (msg === 'stick-offline') return fail(a, 'The stick is not connected.');
-    if (msg === 'location-unavailable') return fail(a, 'No GPS position yet.');
+    if (msg === 'location-unavailable') return fail(a, 'No live GPS position yet. The destination can still be set: call set_destination or start_navigation again.');
+    if (msg === 'no-route') return fail(a, 'Google found no walking route to that place.');
     return fail(a, msg || 'Tool failed');
   }
 }

@@ -13,7 +13,7 @@ import { onStickButton } from '../device/bridge';
 import { startRecognition, abortRecognition } from '../voice/recognition';
 import { loopEarcon } from '../feedback/earcons';
 import { reverseLookup } from '../maps/mapsService';
-import { freshnessLabel } from '../location/locationService';
+import { freshnessLabel, acquireFix } from '../location/locationService';
 import { firebaseConfigured } from '../runtime/env';
 import { TOOL_BY_NAME } from '../../../shared/tools';
 import { isAffirmative, isNegative } from './navIntent';
@@ -152,6 +152,8 @@ export async function realUtterance(text: string, lang: ReplyLang, source: 'voic
 
 /** Double press: "Where am I?" — straight from GPS + Maps, no model round trip. */
 export async function realWhereAmI(lang: ReplyLang) {
+  // No fix in the store yet: actively ask the phone for one (up to 6 s) before giving up.
+  if (!useLocation.getState().fix) await acquireFix({ maxAgeMs: 60_000, timeoutMs: 6000 }).catch(() => undefined);
   const l = useLocation.getState();
   const d = useDevice.getState();
   if (!l.fix) return speakReply(lang === 'hi' ? 'अभी GPS लोकेशन नहीं मिली है।' : l.permission === 'denied' ? 'Location permission is off, so I cannot tell where you are.' : 'I do not have a GPS position yet. Please wait a moment.', lang);

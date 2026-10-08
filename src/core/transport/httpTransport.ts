@@ -1,9 +1,11 @@
 import { DEVICE_API, MIN_STICK_FIRMWARE, PROTOCOL_VERSION, SETUP_AP_HOST, STICK_AP_PASSPHRASE, STICK_AP_SSID, type CommandAck, type CommandEnvelope, type DeviceCommand, type DeviceInfoPacket, type TelemetryPacket } from '../../../shared/deviceProtocol';
 import { toB64 } from '../device/crypto';
+import { AissNative } from '../native/aissNative';
 import type { PairedDevice } from '../device/pairedDevice';
 import { trace } from '../device/deviceTrace';
 import { log } from '../log';
 import { Emitter, MAX_TELEMETRY_BYTES, newCommandId, toEnvelopeParts, validateJpeg, type CapturedFrame, type StickEvents, type StickTransport } from './types';
+import { isNativeApp, stickBinary, stickLog, stickRequest, useStickRoute, withTimeout, type StickPath } from './stickHttp';
 
 /**
  * Real transport, v1 SIMPLE LINK (firmware 1.2+, REQUIRE_AUTH 0): plain unsigned HTTP to the stick's
@@ -17,6 +19,9 @@ import { Emitter, MAX_TELEMETRY_BYTES, newCommandId, toEnvelopeParts, validateJp
  * 1 s … 30 s) → disconnected. auth_failed = the stick still runs the old secure firmware (401);
  * protocol_mismatch = another protocol version. Both are terminal until the user acts.
  * "Connected" is only ever shown after a real telemetry packet arrived.
+ *
+ * NEVER STUCK: every await has a timeout (the plugin, the join, each request); while connecting,
+ * `linkDetail` always says which step is running or what failed last.
  */
 type State = 'idle' | 'connecting' | 'connected' | 'degraded' | 'reconnecting' | 'disconnected' | 'auth_failed' | 'protocol_mismatch';
 
@@ -30,19 +35,36 @@ class LinkError extends Error {}
 interface RawResponse {
   status: number;
   text: string;
+  path?: StickPath;
+  via?: string;
+}
+
+/** Live numbers for the Connection test / diagnostics. */
+export interface LinkStats {
+  state: State;
+  detail: string | null;
+  packets: number;
+  lastPacketAt: number | null;
+  lastError: string | null;
+  connectedAt: number | null;
+  path: StickPath | null;
+  via: string | null;
 }
 
 /** What the transport needs. Old records (with a keyB64 from the HMAC era) are accepted as they are. */
 export type StickTarget = Pick<PairedDevice, 'deviceId' | 'host'> & Partial<PairedDevice>;
 
-const isNative = () => typeof window !== 'undefined' && (window as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor?.isNativePlatform?.() === true;
-const native = () => import('../native/aissNative').then((m) => m.AissNative);
+// The plugin is imported statically (see stickHttp.ts): a Promise resolved WITH a Capacitor plugin
+// object never settles — the Proxy treats `.then` as a native method. That kept Home on "Connecting…".
+const isNative = isNativeApp;
 const foreground = () => typeof document === 'undefined' || document.visibilityState !== 'hidden';
 
 /** Telemetry poll period. Safety never waits on it (obstacle → motor runs on the stick). */
 export const DEFAULT_POLL_MS = 500;
 /** A request that may show Android's "Connect to device" sheet is made at most this often on reconnects. */
 const FULL_REQUEST_EVERY_MS = 120_000;
+/** Hard cap for Android's join call (it has its own 15 s timeout; this only guards a lost callback). */
+const JOIN_CAP_MS = 20_000;
 
 export class HttpTransport implements StickTransport {
   readonly kind = 'http' as const;
@@ -57,6 +79,8 @@ export class HttpTransport implements StickTransport {
   private lastFullRequest = 0;
   /** Connected at least once since this link started (after that, a missing stick never pops the system sheet). */
   private hasConnected = false;
+  private detail: string | null = null;
+  private stats = { packets: 0, lastPacketAt: null as number | null, lastError: null as string | null, connectedAt: null as number | null, path: null as StickPath | null, via: null as string | null };
 
   constructor(private dev: StickTarget, private pollMs = DEFAULT_POLL_MS) {
     this.host = dev.host ?? SETUP_AP_HOST;
@@ -89,8 +113,23 @@ export class HttpTransport implements StickTransport {
     return this.state;
   }
 
+  getStats(): LinkStats {
+    return { state: this.state, detail: this.detail, ...this.stats };
+  }
+
   async connect() {
     await this.restart();
+  }
+
+  /**
+   * App back in the foreground (or the stick may be back): skip the pending backoff and try now,
+   * instead of waiting up to ~36 s with Home on "Reconnecting…" while the stick already answers.
+   */
+  nudge() {
+    if (!this.ctrl) return; // disconnect() was called: stay down
+    if (this.state !== 'reconnecting' && this.state !== 'disconnected') return;
+    this.attempt = 0;
+    void this.restart();
   }
 
   disconnect() {
@@ -104,10 +143,20 @@ export class HttpTransport implements StickTransport {
     return this.state === 'connected' || this.state === 'degraded';
   }
 
+  /** Emits on a state change AND on a new detail line (so "Connecting…" always says what it is doing). */
   private setState(s: State, detail?: string) {
-    if (s === this.state) return;
+    const d = detail ?? null;
+    if (s === this.state && d === this.detail) return;
+    const changed = s !== this.state;
     this.state = s;
+    this.detail = d;
+    if (changed) stickLog(`link ${s}${d ? `: ${d}` : ''}`);
     if (s !== 'idle') this.em.emit('link', s, detail);
+  }
+
+  private fail(msg: string) {
+    this.stats.lastError = msg;
+    stickLog(`link error: ${msg}`);
   }
 
   private scheduleRetry(signal: AbortSignal, detail: string) {
@@ -115,7 +164,8 @@ export class HttpTransport implements StickTransport {
     const base = Math.min(30_000, 1000 * 2 ** Math.min(this.attempt, 5));
     const wait = base * (0.8 + Math.random() * 0.4);
     this.attempt++;
-    this.setState(this.attempt > 6 ? 'disconnected' : 'reconnecting', detail);
+    this.fail(detail);
+    this.setState(this.attempt > 6 ? 'disconnected' : 'reconnecting', `${detail} · retrying in ${Math.round(wait / 1000)} s`);
     clearTimeout(this.retryTimer);
     this.retryTimer = setTimeout(() => !signal.aborted && void this.restart(), wait);
   }
@@ -130,11 +180,29 @@ export class HttpTransport implements StickTransport {
       this.setState('connecting', 'Waiting for the stick');
       return;
     }
-    if (this.state !== 'reconnecting' && this.state !== 'disconnected') this.setState('connecting');
+    const stage = (detail: string) => this.setState(this.state === 'reconnecting' || this.state === 'disconnected' ? this.state : 'connecting', detail);
+    stage(`Joining ${STICK_AP_SSID}…`);
     try {
-      await this.ensureStickNetwork();
+      let joinError: LinkError | null = null;
+      try {
+        await this.ensureStickNetwork();
+      } catch (e) {
+        if (!(e instanceof LinkError)) throw e;
+        joinError = e;
+      }
       if (signal.aborted) return;
-      await this.readIdentity(signal);
+      stage(joinError ? 'Trying other ways to reach the stick…' : 'Asking the stick who it is…');
+      try {
+        await this.readIdentity(signal);
+      } catch (e) {
+        // Android did not bind the stick Wi-Fi: the probe above went over the fallback paths
+        // (default route / WebView). Report the join problem, which is the actionable one.
+        if (joinError && !(e instanceof AuthError) && !(e instanceof ProtocolError)) throw joinError;
+        throw e;
+      }
+      if (joinError) stickLog(`reached the stick without a binding (${useStickRoute.getState().preferred ?? 'fallback'})`);
+      if (signal.aborted) return;
+      stage('Waiting for the first sensor packet…');
     } catch (e) {
       if (signal.aborted) return;
       if (e instanceof AuthError) return this.failAuth('device 401');
@@ -142,7 +210,7 @@ export class HttpTransport implements StickTransport {
         this.setState('protocol_mismatch', e.message);
         return;
       }
-      this.scheduleRetry(signal, e instanceof LinkError ? e.message : 'The stick is not answering');
+      this.scheduleRetry(signal, e instanceof LinkError ? e.message : `The stick is not answering (${(e as Error).message.slice(0, 90)})`);
       return;
     }
     if (signal.aborted) return;
@@ -165,15 +233,11 @@ export class HttpTransport implements StickTransport {
    */
   private async ensureStickNetwork() {
     if (!isNative()) return;
-    const real = await native();
     // Android's join call must never hang the link: after 20 s it counts as "not reached" and the
-    // normal retry/backoff takes over.
+    // normal retry/backoff takes over. A rejected call (plugin error) counts as "not reached" too.
     const n = {
-      connectToSetupNetwork: (o: Parameters<typeof real.connectToSetupNetwork>[0]) =>
-        Promise.race([
-          real.connectToSetupNetwork(o),
-          new Promise<{ connected: false; reason: 'TIMEOUT' }>((r) => setTimeout(() => r({ connected: false, reason: 'TIMEOUT' }), 20_000)),
-        ]),
+      connectToSetupNetwork: (o: Parameters<typeof AissNative.connectToSetupNetwork>[0]): Promise<{ connected: boolean; reason?: string; via?: string }> =>
+        withTimeout(AissNative.connectToSetupNetwork(o), JOIN_CAP_MS, 'Android Wi-Fi join').catch((e: Error) => ({ connected: false, reason: e.message.includes('timed out') ? 'TIMEOUT' : `ERROR ${e.message.slice(0, 80)}` })),
     };
     // Live binding / Wi-Fi joined by hand / stick seen in the last scan → (silent) connect.
     let res = await n.connectToSetupNetwork({ ssid: STICK_AP_SSID, passphrase: STICK_AP_PASSPHRASE, timeoutMs: 15_000, openWifiPanelIfOff: false, onlyIfVisible: true });
@@ -186,6 +250,7 @@ export class HttpTransport implements StickTransport {
       this.lastFullRequest = Date.now();
       res = await n.connectToSetupNetwork({ ssid: STICK_AP_SSID, passphrase: STICK_AP_PASSPHRASE, timeoutMs: 15_000, openWifiPanelIfOff: false });
     }
+    stickLog(`join ${res.connected ? `ok (${res.via ?? 'request'})` : `failed (${res.reason ?? 'no reason'})`}`);
     if (!res.connected) {
       const msg =
         res.reason === 'WIFI_DISABLED'
@@ -197,23 +262,20 @@ export class HttpTransport implements StickTransport {
     }
   }
 
-  /** Plain request: no keys, no signatures (firmware 1.2 REQUIRE_AUTH 0). */
+  /**
+   * Plain request: no keys, no signatures (firmware 1.2 REQUIRE_AUTH 0). Goes over the fallback chain
+   * (bound stick Wi-Fi → default route → WebView), see stickHttp.ts.
+   */
   private async request(method: 'GET' | 'POST', path: string, opts: { body?: unknown; signal?: AbortSignal; timeoutMs?: number } = {}): Promise<RawResponse> {
     const body = opts.body === undefined ? '' : JSON.stringify(opts.body);
     let res: RawResponse;
-    if (isNative()) {
-      try {
-        const r = await (await native()).setupRequest({ method, path, body: body || undefined, timeoutMs: opts.timeoutMs ?? 2000 });
-        res = { status: r.status, text: r.body };
-      } catch (err) {
-        throw new Error(`Native request failed: ${(err as Error).message}`);
-      }
-    } else {
-      const headers: Record<string, string> = body ? { 'content-type': 'application/json' } : {};
-      const timeout = AbortSignal.timeout(opts.timeoutMs ?? 2000);
-      const signal = opts.signal ? AbortSignal.any([opts.signal, timeout]) : timeout;
-      const r = await fetch(`http://${this.host}${path}`, { method, headers, body: body || undefined, signal });
-      res = { status: r.status, text: await r.text() };
+    try {
+      const r = await stickRequest(method, path, { body: body || undefined, signal: opts.signal, timeoutMs: opts.timeoutMs ?? 2000, host: this.host ?? SETUP_AP_HOST });
+      res = { status: r.status, text: r.text, path: r.path, via: r.via };
+      this.stats.path = r.path;
+      this.stats.via = r.via ?? null;
+    } catch (err) {
+      throw new Error(isNative() ? `Native request failed: ${(err as Error).message}` : (err as Error).message);
     }
     if (res.status === 401 || res.status === 403) throw new AuthError('auth');
     if (res.status >= 400 && res.status !== 409 && res.status !== 503) throw new Error(`HTTP ${res.status}`);
@@ -235,6 +297,13 @@ export class HttpTransport implements StickTransport {
     this.em.emit('identity', { deviceId: info.deviceId, model: info.model, firmware: info.firmware, protocolVersion: info.protocolVersion });
   }
 
+  /** A fallback path (default route / WebView) reached the stick in the last 10 s. */
+  private fallbackWorks() {
+    const r = useStickRoute.getState().results;
+    const fresh = (p: StickPath) => !!r[p]?.ok && Date.now() - r[p]!.at < 10_000;
+    return fresh('native-default') || fresh('webview');
+  }
+
   private async poll(signal: AbortSignal) {
     while (!signal.aborted) {
       const started = performance.now();
@@ -243,15 +312,24 @@ export class HttpTransport implements StickTransport {
         if (signal.aborted) return;
         if (res.status !== 200) throw new Error(`HTTP ${res.status}`);
         if (res.text.length > MAX_TELEMETRY_BYTES) throw new Error('telemetry too large');
-        const packet = JSON.parse(res.text) as TelemetryPacket;
-        if (!packet || typeof packet !== 'object' || typeof packet.seq !== 'number') throw new Error('malformed telemetry');
+        let packet: TelemetryPacket;
+        try {
+          packet = JSON.parse(res.text) as TelemetryPacket;
+        } catch {
+          throw new Error(`telemetry is not JSON (${res.text.length} bytes: ${res.text.slice(0, 40)})`);
+        }
+        if (!packet || typeof packet !== 'object' || typeof packet.seq !== 'number') throw new Error('malformed telemetry (no seq)');
         trace('packet_received', { seq: packet.seq });
         const latency = performance.now() - started;
         this.misses = 0;
+        this.stats.packets++;
+        this.stats.lastPacketAt = Date.now();
         if (!this.up()) {
           // CONNECTED only now: real data arrived.
           this.attempt = 0;
           this.hasConnected = true;
+          this.stats.connectedAt = Date.now();
+          stickLog(`first telemetry packet #${packet.seq} (${res.text.length} B via ${res.path}${res.via ? `/${res.via}` : ''})`);
           this.setState('connected');
           trace('connected', { deviceId: packet.deviceId ?? this.dev.deviceId });
           this.em.emit('packet', packet, Date.now());
@@ -266,11 +344,13 @@ export class HttpTransport implements StickTransport {
         if (signal.aborted) return;
         if (e instanceof AuthError) return this.failAuth('telemetry 401');
         // The phone lost the stick's Wi-Fi (Android reports it at once): re-bind now, not after 6 misses.
-        if (/not bound/i.test((e as Error).message)) {
+        if (/not bound/i.test((e as Error).message) && !this.fallbackWorks()) {
           this.scheduleRetry(signal, 'Reconnecting to the stick’s Wi-Fi');
           return;
         }
         this.misses++;
+        this.fail(`telemetry: ${(e as Error).message.slice(0, 120)}`);
+        if (!this.up()) this.setState(this.state, `Waiting for the first sensor packet… (${(e as Error).message.slice(0, 80)})`);
         if (this.misses === 2 && this.up()) this.setState('degraded', 'Missed telemetry');
         if (this.misses >= (this.up() ? 6 : 4)) {
           // Stale connection: re-bind the network and start over with backoff.
@@ -288,22 +368,9 @@ export class HttpTransport implements StickTransport {
     trace('frame_requested');
     // Exposure time ≈ request start (the stick captures on request); download + decode come after.
     const capturedAt = Date.now();
-    let status: number;
-    let blob: Blob | null = null;
-    if (isNative()) {
-      const res = await (await native()).requestBinary({ path: DEVICE_API.capture, timeoutMs: opts.timeoutMs ?? 6000 });
-      status = res.status;
-      if (status < 400 && res.body) {
-        const bin = atob(res.body);
-        const bytes = new Uint8Array(bin.length);
-        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-        blob = new Blob([bytes], { type: 'image/jpeg' });
-      }
-    } else {
-      const r = await fetch(`http://${this.host}${DEVICE_API.capture}`, { signal: AbortSignal.timeout(opts.timeoutMs ?? 6000) });
-      status = r.status;
-      if (r.ok) blob = await r.blob();
-    }
+    const res = await stickBinary(DEVICE_API.capture, { timeoutMs: opts.timeoutMs ?? 6000, host: this.host ?? SETUP_AP_HOST });
+    const status = res.status;
+    const blob: Blob | null = status < 400 && res.bytes && res.bytes.length ? new Blob([res.bytes as BlobPart], { type: 'image/jpeg' }) : null;
     if (status === 401 || status === 403) {
       trace('frame_rejected', { error: 'capture 401 (old firmware)' });
       throw new Error('camera: unauthorized (old firmware)');
@@ -345,7 +412,7 @@ export class HttpTransport implements StickTransport {
     const body = new Uint8Array(await blob.arrayBuffer());
     const headers = { 'x-aiss-content-sha256': sha256.toLowerCase() };
     if (isNative()) {
-      const r = await (await native()).setupRequest({ method: 'POST', path, bodyBase64: toB64(body), headers, timeoutMs: 120_000 });
+      const r = await withTimeout(AissNative.setupRequest({ method: 'POST', path, bodyBase64: toB64(body), headers, timeoutMs: 120_000 }), 125_000, 'OTA upload');
       if (r.status >= 400) throw new Error(`OTA failed: HTTP ${r.status}`);
       return;
     }

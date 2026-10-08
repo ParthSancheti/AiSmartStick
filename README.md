@@ -34,6 +34,19 @@ npm run build:demo       # demo build → dist-demo/
 npm run functions:build  # Cloud Functions
 ```
 
+### Release: redeploy the Cloud Functions with every APK that changes `shared/tools.ts` or `functions/`
+The APK alone is not enough for the text assistant and server-side Maps:
+```bash
+cd functions && npm run build && firebase deploy --only functions
+```
+* `assistantTurn` validates the model's tool calls against its **own** copy of `shared/tools.ts`.
+  Until it is redeployed, `set_destination {query}` ("AI, take me to City Hospital") is rejected in
+  text chat, and the old prompt still says maps need GPS.
+* `mapsSearch` / `mapsAutocomplete` accept a search **without** GPS (no lat/lng) only after the deploy.
+  Before it, destination search without a fix uses only the in-app browser-key fallback.
+* Voice mode (Gemini Live, `src/core/ai/liveSession.ts`) uses the app's own `shared/tools.ts` and works
+  with the new APK alone.
+
 ## Docs
 * [INTEGRATION_STATUS.md](INTEGRATION_STATUS.md): what is real, what is demo-only, known issues, test results
 * [DEVICE_PROTOCOL.md](DEVICE_PROTOCOL.md): stick ↔ phone protocol v1 (provisioning, HMAC auth, telemetry)

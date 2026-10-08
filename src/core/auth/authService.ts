@@ -13,7 +13,7 @@ import { isDemo } from '../runtime/mode';
  * token which signs in the web SDK (capacitor.config: skipNativeAuth = true), so Firestore,
  * Functions and App Check all see the same user.
  */
-export function startAuth(onSignedIn: (uid: string) => void, onSignedOut: () => void) {
+export function startAuth(onSignedIn: (uid: string) => void, onSignedOut: () => void, onUid?: (uid: string) => void) {
   if (isDemo()) {
     useAuth.setState({ status: 'signedIn', user: { uid: 'demo-user', displayName: 'Demo user', email: null, photoURL: null }, role: null, profile: null });
     onSignedIn('demo-user');
@@ -29,6 +29,13 @@ export function startAuth(onSignedIn: (uid: string) => void, onSignedOut: () => 
         return;
       }
       useAuth.setState({ status: 'signedIn', user: { uid: u.uid, displayName: u.displayName, email: u.email, photoURL: u.photoURL, providerName: u.displayName }, error: null });
+      // As soon as the uid is known (before the Firestore profile, which can take ~10 s to fall back
+      // to the cache while the phone's only Wi-Fi is the stick's): the stick link needs only the uid.
+      try {
+        onUid?.(u.uid);
+      } catch {
+        /* never blocks sign-in */
+      }
       try {
         const profile = await loadOrCreateProfile(u.uid, u.displayName, u.email, u.photoURL);
         const cur = useAuth.getState().user;

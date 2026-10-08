@@ -14,8 +14,10 @@ import { useAssistant } from '../store/assistant';
 import { userSurfaceActive } from '../surfaces';
 import { isDemo } from '../runtime/mode';
 import { createSosEvent, stopSosWatch, updateSosEvent } from '../sync/userSync';
-import { sendSms } from '../phone';
+import { sendSms, SOS_SMS_PERMISSION_WAIT_MS } from '../phone';
 import { useLocation } from '../location/locationService';
+import { messageWithLocation } from '../location/shareLocation';
+import { log } from '../log';
 
 let countTimer: ReturnType<typeof setInterval> | undefined;
 let resetTimer: ReturnType<typeof setTimeout> | undefined;
@@ -82,6 +84,15 @@ export function startSos(trigger: SosTrigger) {
 
 let currentSosId: string | null = null;
 
+/**
+ * The SOS text as sent by SMS. The receiver may not have the app, so the old default's "My live
+ * location is shared in the AI SmartStick app." is dropped: the text itself carries the Maps link.
+ */
+export function smsMessage(setting: string) {
+  const m = setting.replace(/\s*My live location is shared in the AI SmartStick app\.?/i, '').trim();
+  return m || 'Emergency! I need help.';
+}
+
 function activate() {
   const trigger = useSafety.getState().trigger ?? 'button';
   if (isDemo()) {
@@ -113,6 +124,8 @@ async function activateReal(trigger: SosTrigger) {
   });
   const loc = useLocation.getState().fix;
   logEvent({ kind: 'safety', severity: 'critical', title: 'SOS sent', detail: `${TRIGGER_LABEL[trigger]}${loc ? '' : '. Location was not available'}` });
+  // The SMS must carry a position: start getting a fresh one now, in parallel with the cloud write.
+  const smsText = messageWithLocation(smsMessage(getSettings().sosMessage));
   const result = await createSosEvent(sosId, trigger);
   // The cloud alert only reaches someone through a linked guardian app. Without one, "synced" means
   // nobody was told: the Safety Number must get an SMS either way.
@@ -123,10 +136,13 @@ async function activateReal(trigger: SosTrigger) {
   }
   // Cloud not confirmed (stays queued in the offline cache) or no guardian app: SMS now.
   const g = safetyContact();
-  const where = loc ? ` Location: https://maps.google.com/?q=${loc.lat.toFixed(6)},${loc.lng.toFixed(6)}` : '';
-  const body = `${getSettings().sosMessage}${where}`;
+  // "<message>. Location: https://maps.google.com/?q=lat,lng (accuracy 12 m, just now)" — a plain link the
+  // receiver can open without the app. No position at all → "Location unavailable" (never invented).
+  const { text: body, fresh } = await smsText;
+  log.safety('SOS SMS text ready', { withLocation: /maps\.google\.com/.test(body), fresh });
   try {
-    const r = await sendSms(g.name, g.phone, body, { direct: true });
+    // Never stuck on an unanswered SMS permission dialog: after a few seconds the plugin sends or opens the composer.
+    const r = await sendSms(g.name, g.phone, body, { direct: true, permissionWaitMs: SOS_SMS_PERMISSION_WAIT_MS });
     if (r === 'sent' || r === 'queued') {
       useSafety.setState({ delivery: 'sms' });
       announce(P.sosSms, { high: true });

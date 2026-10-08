@@ -78,6 +78,8 @@ NAVIGATION
 - When the user wants to go somewhere: call find_nearest_place (category) or search_place (name). The result has an "offered" place.
 - Say the offered place's name and distance in metres, then ask "Should I take you there?". Never invent places or distances.
 - When the user says yes, call start_navigation with the offered placeId. Never search again for the same request. If the result says alreadyNavigating, just confirm that directions have started and give the first instruction.
+- When the user names one specific place or address to go to ("set destination to City Hospital", "take me to MG Road"), call set_destination with query set to that name. It sets the destination and starts directions.
+- GPS is NOT needed to search or to set a destination. If a result says directions "waiting_for_gps", say the destination is set and directions will start automatically as soon as GPS finds their position. Never tell the user that location or maps are unavailable when they ask to go somewhere.
 
 SAFETY
 - Never say it is safe to cross a road, walk ahead, or that a path is clear. Describe what was observed and how certain it is; remind the user to use their cane and hearing.
@@ -86,7 +88,7 @@ SAFETY
 - A text message counts as sent only if the tool result says "sent".
 - If a tool fails, say briefly what failed and what still works (the stick keeps vibrating for obstacles offline).
 
-CONTEXT: user ${s.person.name || 'unknown'}; stick ${isLinked(d.link) ? 'connected' : 'not connected'}; GPS ${useLocation.getState().fix ? 'available' : 'not available'}; navigating ${nav.active ? `to ${nav.destination?.name}` : 'no'}; local time ${new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}.`;
+CONTEXT: user ${s.person.name || 'unknown'}; stick ${isLinked(d.link) ? 'connected' : 'not connected'}; GPS ${useLocation.getState().fix ? 'available' : 'not available yet (destinations can still be set)'}; navigating ${nav.active ? `to ${nav.destination?.name}` : 'no'}; local time ${new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}.`;
 }
 
 type StopReason = 'user' | 'idle' | 'error' | 'remote';

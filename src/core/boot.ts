@@ -104,6 +104,16 @@ function bootReal() {
   };
   let relUnsub: (() => void) | null = null;
   let wasSignedIn = false;
+  // The uid the stick link was started for (started early from the uid, before the profile loads).
+  let deviceUid: string | null = null;
+  const startDeviceFor = (uid: string) => {
+    if (deviceUid === uid) return;
+    deviceUid = uid;
+    void startRealDevice();
+  };
+  // GPS as soon as the app opens (never a dialog), not only after sign-in and the Firestore profile
+  // load, which can be slow or stall while the phone is on the stick's Wi-Fi.
+  const earlyLocation: Promise<void> = isUserApp() ? startLocation({ request: false }) : Promise.resolve();
   startAuth(
     (uid) => {
       wasSignedIn = true;
@@ -111,9 +121,12 @@ function bootReal() {
       startSettingsSync(uid);
       watchRelationship(uid, userSide ? 'user' : 'guardian');
       if (userSide) {
-        void startRealDevice();
+        startDeviceFor(uid);
         // Android shows one permission dialog at a time: ask for notifications only after location.
-        void startLocation().finally(() => void registerPush(uid, 'user'));
+        // After the quiet early start: this is the one start that may show the permission dialog
+        // (a no-op when GPS already runs).
+        const settled = Promise.race([earlyLocation, new Promise<void>((r) => setTimeout(r, 15_000))]);
+        void settled.then(() => startLocation()).finally(() => void registerPush(uid, 'user'));
         onFix(walkFix);
         // Directions that were running when the app/process died resume from the first fresh fix.
         const offResume = onFix(() => {
@@ -127,6 +140,12 @@ function bootReal() {
         visionEngine.start();
         guidanceEngine.start();
       } else {
+        // Started early from the uid but this account turned out to be a guardian: no stick here.
+        if (deviceUid) {
+          deviceUid = null;
+          disconnectStick();
+          useDevice.setState({ link: 'unpaired', identity: null, linkDetail: null });
+        }
         relUnsub?.();
         relUnsub = useRelationship.subscribe((r, prev) => {
           if (r.rel && r.rel.relationshipId !== prev.rel?.relationshipId) startRealFeed(r.rel);
@@ -140,6 +159,7 @@ function bootReal() {
     () => {
       // Signed out: nothing from the previous account may stay on screen.
       if (useAuth.getState().status === 'signedOut' && wasSignedIn) void clearLocalAccountData();
+      deviceUid = null;
       stopUserSync();
       stopSosWatch();
       // The previous account's stick link, GPS, directions and voice session end with it.
@@ -159,6 +179,10 @@ function bootReal() {
       stopFeed();
       relUnsub?.();
       relUnsub = null;
+    },
+    (uid) => {
+      // The stick link starts from the uid alone (profile load can stall offline for ~10 s).
+      if (isUserApp()) startDeviceFor(uid);
     },
   );
 }

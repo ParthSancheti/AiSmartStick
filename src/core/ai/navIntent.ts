@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { PlaceResult } from '../maps/mapsService';
-import { startRealNavigation } from '../navigation/realNavigator';
+import { navigateTo } from '../navigation/realNavigator';
 import { useNavView } from '../navigation/navView';
 import { log } from '../log';
 
@@ -83,14 +83,22 @@ export function navigatingTo(placeId: string) {
   return (n.active && n.destination?.placeId === placeId) || (useNavIntent.getState().starting && useNavIntent.getState().offer?.placeId === placeId);
 }
 
-/** Starts navigation to `place` unless a route to it is already running. */
-export async function startNavigationTo(place: PlaceResult) {
+/**
+ * Starts navigation to `place` unless a route to it is already running. Without a live GPS fix
+ * the destination is still set and directions start by themselves from the first fix
+ * (waitingForGps) — "location unavailable" never stops the user from choosing where to go.
+ */
+export async function startNavigationTo(place: PlaceResult, opts: { announce?: boolean } = {}) {
   if (navigatingTo(place.placeId)) return { started: false as const, alreadyNavigating: true as const };
   useNavIntent.setState({ starting: true });
   try {
-    const route = await startRealNavigation(place);
+    const r = await navigateTo(place, opts);
+    if (r.status === 'waiting_for_gps') {
+      log.info('voice navigation: destination set, waiting for GPS', { placeId: place.placeId });
+      return { started: false as const, waitingForGps: true as const };
+    }
     log.info('voice navigation started', { placeId: place.placeId });
-    return { started: true as const, route };
+    return { started: true as const, route: r.route };
   } finally {
     useNavIntent.setState({ starting: false, offer: null, offeredAt: 0 });
   }

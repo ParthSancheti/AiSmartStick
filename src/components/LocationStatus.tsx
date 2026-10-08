@@ -3,6 +3,7 @@ import { Loader2, LocateOff, MapPinOff, RotateCcw, Settings, Crosshair } from 'l
 import { Capacitor } from '@capacitor/core';
 import { ensureLocation, locationProblem, runLocationAction, useLocation } from '../core/location/locationService';
 import { cx } from './glass';
+import { openLocationTest } from '../features/user/LocationTest';
 
 /**
  * Why there is no GPS position, in words, with the one action that fixes it. Also (re)starts GPS
@@ -18,6 +19,7 @@ export function LocationStatus({ className = '', wantPrecise = false }: { classN
   }, []);
   const native = Capacitor.isNativePlatform();
   const p = locationProblem(s, { native, wantPrecise });
+  // The Location test page itself is rendered by StickUserApp's host, so it stays open when this hides.
   if (!p) return null;
 
   const searching = p.kind === 'searching';
@@ -35,7 +37,12 @@ export function LocationStatus({ className = '', wantPrecise = false }: { classN
   return (
     <div className={cx('glass flex min-w-0 items-center gap-3 rounded-[18px] px-4 py-3 text-[13.5px] font-semibold text-ink', className)} role="status" aria-live="polite">
       <span className="shrink-0">{icon}</span>
-      <span className="min-w-0 flex-1 break-words leading-snug">{p.text}</span>
+      <span className="min-w-0 flex-1 break-words leading-snug">
+        {p.text}
+        <button type="button" onClick={openLocationTest} className="ml-1.5 inline font-bold text-teal-ink underline underline-offset-2">
+          Test location
+        </button>
+      </span>
       {p.action && (
         <button
           type="button"

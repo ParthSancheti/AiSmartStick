@@ -27,6 +27,7 @@ import android.net.wifi.WifiNetworkSpecifier;
 import android.os.Build;
 import android.provider.Settings;
 import android.util.Base64;
+import android.util.Log;
 import android.telephony.SmsManager;
 
 import androidx.security.crypto.EncryptedSharedPreferences;
@@ -82,9 +83,17 @@ import java.util.concurrent.Executors;
 )
 public class AissNativePlugin extends Plugin {
     private static final String SETUP_HOST = "http://192.168.4.1";
+    private static final String TAG = "AissNative";
     private final ExecutorService io = Executors.newCachedThreadPool();
-    private ConnectivityManager.NetworkCallback setupCallback;
+    // Written on the plugin thread, read on the ConnectivityManager callback thread: volatile.
+    private volatile ConnectivityManager.NetworkCallback setupCallback;
     private volatile Network setupNetwork;
+    /** The network Android handed us for the "Connect to device" request (vs. one joined by hand). */
+    private volatile Network requestedNetwork;
+    /** "Use stick Wi-Fi for the whole app" (bindProcessToNetwork). Off unless the user turns it on. */
+    private volatile boolean processBindWanted;
+    private volatile Network processBoundTo;
+    private volatile long lastRequestLogAt;
     private String setupSsid;
     private DatagramSocket discoverySocket;
     private WifiManager.MulticastLock multicastLock;
@@ -107,6 +116,14 @@ public class AissNativePlugin extends Plugin {
             }
         }
         return false;
+    }
+
+    /** "[SMARTSTICK] …" lines in logcat (tag AissNative; `npm run logcat` shows them). */
+    private static void log(String msg) {
+        try {
+            Log.i(TAG, "[SMARTSTICK] " + msg);
+        } catch (Throwable ignored) {
+        }
     }
 
     private Intent appDetails() {
@@ -244,6 +261,7 @@ public class AissNativePlugin extends Plugin {
                 resolveConnect(call, true, null, "bound");
                 return;
             }
+            if (connecting) log("connect: a request is already in flight, waiting for it");
             // A request for the same network is in flight: wait for it instead of cancelling it
             // (cancelling would leave the first caller's promise pending forever).
             if (connecting && ssid.equals(setupSsid)) {
@@ -257,12 +275,15 @@ public class AissNativePlugin extends Plugin {
             // Joined by hand (or Android kept an earlier connection): use it directly, no dialog.
             setupNetwork = existing;
             setupSsid = ssid;
+            log("connect: using the Wi-Fi already on 192.168.4.x (joined by hand)");
+            applyProcessBinding();
             resolveConnect(call, true, null, "existing");
             return;
         }
 
         if (Build.VERSION.SDK_INT < 29) {
             // Android 9 and older have no WifiNetworkSpecifier: the user joins SmartStick_AI in Wi-Fi settings.
+            log("connect: Android " + Build.VERSION.SDK_INT + " has no WifiNetworkSpecifier (join by hand)");
             resolveConnect(call, false, "UNSUPPORTED", null);
             return;
         }
@@ -270,10 +291,12 @@ public class AissNativePlugin extends Plugin {
         if (onlyIfVisible) {
             Boolean visible = ssidVisible(ssid);
             if (!Boolean.TRUE.equals(visible)) {
+                log("connect: last scan " + (visible == null ? "unknown" : "does not show " + ssid) + ", not asking Android now");
                 resolveConnect(call, false, visible == null ? "RANGE_UNKNOWN" : "NOT_IN_RANGE", null);
                 return;
             }
         }
+        log("connect: asking Android to join " + ssid + " (timeout " + timeout + " ms)");
 
         releaseSetup();
 
@@ -297,6 +320,9 @@ public class AissNativePlugin extends Plugin {
             public void onAvailable(Network network) {
                 if (setupCallback != this) return;
                 setupNetwork = network;
+                requestedNetwork = network;
+                log("network available: stick Wi-Fi bound");
+                applyProcessBinding();
                 JSObject event = new JSObject();
                 event.put("event", "WIFI_CONNECTED");
                 event.put("ip", "192.168.4.1");
@@ -307,6 +333,7 @@ public class AissNativePlugin extends Plugin {
             @Override
             public void onUnavailable() {
                 if (setupCallback != this) return;
+                log("network unavailable: Android did not join (not found, declined or timed out)");
                 settleConnect(false, "UNAVAILABLE");
             }
 
@@ -314,6 +341,9 @@ public class AissNativePlugin extends Plugin {
             public void onLost(Network network) {
                 if (setupCallback != this) return;
                 if (network.equals(setupNetwork)) setupNetwork = null;
+                if (network.equals(requestedNetwork)) requestedNetwork = null;
+                log("network lost: stick Wi-Fi gone (out of range / stick off)");
+                applyProcessBinding();
                 JSObject event = new JSObject();
                 event.put("event", "WIFI_LOST");
                 event.put("ip", "192.168.4.1");
@@ -335,6 +365,7 @@ public class AissNativePlugin extends Plugin {
                 connectWaiters.remove(call);
             }
             releaseSetup();
+            log("connect: requestNetwork failed: " + e);
             if (e instanceof SecurityException) resolveConnect(call, false, "PERMISSION_DENIED", null);
             else call.reject("Could not request the stick network: " + e.getMessage());
         }
@@ -402,10 +433,17 @@ public class AissNativePlugin extends Plugin {
             if (rs == null || rs.isEmpty()) return null;
             long nowUs = android.os.SystemClock.elapsedRealtime() * 1000L;
             long newest = 0;
+            boolean staleMatch = false;
             for (ScanResult r : rs) {
                 if (r.timestamp > newest) newest = r.timestamp;
-                if (r.SSID != null && ssid.equals(r.SSID.replace("\"", ""))) return Boolean.TRUE;
+                if (r.SSID != null && ssid.equals(r.SSID.replace("\"", ""))) {
+                    // Only a recent sighting counts: Android throttles scans, so the cache can list a
+                    // stick that was switched off minutes ago.
+                    if (nowUs - r.timestamp <= 45_000_000L) return Boolean.TRUE;
+                    staleMatch = true;
+                }
             }
+            if (staleMatch) return null;
             // Results older than 45 s say nothing about a stick that was just switched on.
             if (nowUs - newest > 45_000_000L) return null;
             return Boolean.FALSE;
@@ -429,6 +467,10 @@ public class AissNativePlugin extends Plugin {
      * binding was requested but lost: that would only time out.
      */
     private Network stickRoute() throws NotBound {
+        // A hand-joined network has no callback: release a binding to a network that is gone at once,
+        // or the whole app would keep pointing at a dead network (no internet).
+        Network pb = processBoundTo;
+        if (pb != null && !alive(pb)) applyProcessBinding();
         Network net = setupNetwork;
         if (net != null && alive(net)) return net;
         Network found = findStickWifi();
@@ -439,6 +481,64 @@ public class AissNativePlugin extends Plugin {
         if (net != null) setupNetwork = null;
         if (setupCallback != null || net != null) throw new NotBound();
         return null;
+    }
+
+    /** The stick network right now (bound or joined by hand), or null. */
+    private Network currentStickNetwork() {
+        Network n = setupNetwork;
+        if (n != null && alive(n)) return n;
+        return findStickWifi();
+    }
+
+    /** Keeps bindProcessToNetwork in step with the wish and the current stick network. */
+    private synchronized void applyProcessBinding() {
+        try {
+            ConnectivityManager cm = (ConnectivityManager) getContext().getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (cm == null) return;
+            Network target = processBindWanted ? currentStickNetwork() : null;
+            Network cur = processBoundTo;
+            if (target == null && cur == null) return;
+            if (target != null && target.equals(cur)) return;
+            cm.bindProcessToNetwork(target);
+            processBoundTo = target;
+            log(target != null ? "whole app now runs over the stick Wi-Fi" : "whole app back on the normal network");
+        } catch (Exception e) {
+            log("process binding failed: " + e);
+        }
+    }
+
+    /**
+     * LAST-RESORT fallback (off by default): ALL app traffic, the WebView included, goes over the
+     * stick Wi-Fi. Maps, the assistant and Firebase stop while it is on (the stick has no internet).
+     */
+    @PluginMethod
+    public void setProcessBinding(PluginCall call) {
+        boolean on = Boolean.TRUE.equals(call.getBoolean("on", false));
+        processBindWanted = on;
+        applyProcessBinding();
+        JSObject r = new JSObject();
+        boolean bound = processBoundTo != null;
+        // A failed attempt leaves no pending wish: otherwise the whole app would silently move to the
+        // stick Wi-Fi (no internet) the next time it appears while the switch shows OFF.
+        if (on && !bound) processBindWanted = false;
+        r.put("bound", bound);
+        if (on && !bound) r.put("reason", "NO_STICK_NETWORK");
+        call.resolve(r);
+    }
+
+    /** bound = the "Connect to device" network, wifi = joined by hand, process / default = default route. */
+    private String viaOf(Network net) {
+        if (net == null) return processBoundTo != null ? "process" : "default";
+        return net.equals(requestedNetwork) ? "bound" : "wifi";
+    }
+
+    /** Telemetry is polled twice a second: log its failures at most every 5 s, everything else always. */
+    private void logRequest(String what, String path) {
+        long now = System.currentTimeMillis();
+        boolean noisy = path != null && path.startsWith("/api/v1/telemetry");
+        if (noisy && now - lastRequestLogAt < 5000) return;
+        if (noisy) lastRequestLogAt = now;
+        log(what);
     }
 
     /** Status bar icon colour: dark icons on the light theme, light icons on the dark theme. */
@@ -496,7 +596,11 @@ public class AissNativePlugin extends Plugin {
         if (ssid != null) r.put("ssid", ssid);
         r.put("stickNetwork", findStickWifi() != null);
         r.put("bound", setupNetwork != null);
+        r.put("requested", setupCallback != null);
+        r.put("connecting", connecting);
+        r.put("processBound", processBoundTo != null);
         r.put("locationEnabled", locationEnabled());
+        r.put("sdk", Build.VERSION.SDK_INT);
         call.resolve(r);
     }
 
@@ -513,15 +617,20 @@ public class AissNativePlugin extends Plugin {
 
     @PluginMethod
     public void setupRequest(PluginCall call) {
+        final String path = call.getString("path", "/");
+        // route "default": skip the stick binding and use the process default network (fallback path:
+        // the phone's Wi-Fi IS the stick and mobile data is off, or the whole app is bound to it).
+        final boolean defaultRoute = "default".equals(call.getString("route", "auto"));
         final Network net;
         try {
-            net = stickRoute();
+            net = defaultRoute ? null : stickRoute();
         } catch (NotBound e) {
+            logRequest("GET " + path + ": not bound (stick Wi-Fi lost)", path);
             call.reject("Setup request failed: " + e.getMessage());
             return;
         }
+        final String via = viaOf(net);
         final String method = call.getString("method", "GET");
-        final String path = call.getString("path", "/");
         final String body = call.getString("body");
         final String bodyBase64 = call.getString("bodyBase64");
         final JSObject headers = call.getObject("headers", new JSObject());
@@ -571,8 +680,11 @@ public class AissNativePlugin extends Plugin {
                 JSObject r = new JSObject();
                 r.put("status", status);
                 r.put("body", out.toString("UTF-8"));
+                r.put("via", via);
+                if (!path.startsWith("/api/v1/telemetry") || status != 200) logRequest(method + " " + path + " " + status + " " + out.size() + "B via " + via, path);
                 call.resolve(r);
             } catch (Exception e) {
+                logRequest(method + " " + path + " failed via " + via + ": " + e, path);
                 call.reject("Setup request failed: " + e.getMessage());
             } finally {
                 if (c != null) c.disconnect();
@@ -582,14 +694,16 @@ public class AissNativePlugin extends Plugin {
 
     @PluginMethod
     public void requestBinary(PluginCall call) {
+        final String path = call.getString("path", "/");
+        final boolean defaultRoute = "default".equals(call.getString("route", "auto"));
         final Network net;
         try {
-            net = stickRoute();
+            net = defaultRoute ? null : stickRoute();
         } catch (NotBound e) {
             call.reject("requestBinary failed: " + e.getMessage());
             return;
         }
-        final String path = call.getString("path", "/");
+        final String via = viaOf(net);
         final JSObject headers = call.getObject("headers", new JSObject());
         final int timeout = call.getInt("timeoutMs", 8000);
         io.execute(() -> {
@@ -610,6 +724,8 @@ public class AissNativePlugin extends Plugin {
                     JSObject r = new JSObject();
                     r.put("status", status);
                     r.put("body", "");
+                    r.put("via", via);
+                    log("GET " + path + " " + status + " via " + via);
                     call.resolve(r);
                     return;
                 }
@@ -630,8 +746,10 @@ public class AissNativePlugin extends Plugin {
                 r.put("status", status);
                 r.put("body", base64Image);
                 r.put("contentType", c.getContentType());
+                r.put("via", via);
                 call.resolve(r);
             } catch (Exception e) {
+                log("GET " + path + " failed via " + via + ": " + e);
                 call.reject("requestBinary failed: " + e.getMessage());
             } finally {
                 if (c != null) c.disconnect();
@@ -652,7 +770,10 @@ public class AissNativePlugin extends Plugin {
 
     @PluginMethod
     public void releaseSetupNetwork(PluginCall call) {
+        log("release: stick Wi-Fi released by the app");
+        processBindWanted = false;
         releaseSetup();
+        applyProcessBinding();
         call.resolve();
     }
 
@@ -666,6 +787,7 @@ public class AissNativePlugin extends Plugin {
         }
         setupCallback = null;
         setupNetwork = null;
+        requestedNetwork = null;
         setupSsid = null;
     }
 
@@ -1086,7 +1208,9 @@ public class AissNativePlugin extends Plugin {
     @Override
     protected void handleOnDestroy() {
         stopDiscoveryInternal();
+        processBindWanted = false;
         releaseSetup();
+        applyProcessBinding();
         main.removeCallbacksAndMessages(null);
         io.shutdownNow();
         // User closed the app (swiped away / back out): don't leave an orphaned foreground service.

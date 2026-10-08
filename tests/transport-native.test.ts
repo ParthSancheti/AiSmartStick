@@ -146,6 +146,8 @@ describe('HttpTransport over the native bridge (Android path, v1 simple link)', 
   it('stick out of range → reconnecting (no system sheet), then connects when it is back', async () => {
     const { HttpTransport } = await import('../src/core/transport/httpTransport');
     // Scan does not see it, and the one direct request (before the first connection) times out too.
+    // (Nothing is bound: a failed join with a live binding cannot happen — Java answers "bound" first.)
+    nat.bound = false;
     nat.connectQueue = [{ connected: false, reason: 'NOT_IN_RANGE' }, { connected: false, reason: 'UNAVAILABLE' }];
     const t = new HttpTransport(dev, 40);
     const links: [string, string | undefined][] = [];

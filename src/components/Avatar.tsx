@@ -1,34 +1,82 @@
 import { useEffect, useId, useState } from 'react';
 import { useAuth, initialsOf } from '../core/auth/authStore';
-import { cacheProfilePhoto, effectivePhoto, setCustomPhoto, usePhotoCache } from '../core/profile/photoCache';
+import { cacheProfilePhoto, photoCandidates, rememberAccount, setCustomPhoto, usePhotoCache } from '../core/profile/photoCache';
 import { useProfileName } from '../core/profile/profile';
 
-/** The account's photo as every screen shows it: picked photo → Google photo (local copy first) → null. */
-export function useProfilePhotoSrc(): string | null {
-  const url = useAuth((s) => s.user?.photoURL ?? null);
+/**
+ * Every image the account avatar may show, best first (core/profile/photoCache.ts photoCandidates):
+ * picked photo → Google photo (local copy first). Read synchronously from the phone's storage, so
+ * the first frame after an app start already has it, also before Firebase restored the session.
+ */
+export function useProfilePhotoCandidates(): string[] {
+  const user = useAuth((s) => s.user);
+  const status = useAuth((s) => s.status);
   const cached = usePhotoCache((s) => s.cached);
   const custom = usePhotoCache((s) => s.custom);
+  const last = usePhotoCache((s) => s.last);
+  const uid = user?.uid ?? null;
+  const url = user?.photoURL ?? null;
+  const name = user?.displayName ?? null;
   useEffect(() => {
-    void cacheProfilePhoto(url);
-  }, [url]);
-  return effectivePhoto(url, cached, custom);
+    if (!uid) return;
+    rememberAccount(uid, url, name);
+    void cacheProfilePhoto(url, uid);
+    // A download that failed offline is retried when the phone is back online.
+    const retry = () => void cacheProfilePhoto(url, uid);
+    window.addEventListener('online', retry);
+    return () => window.removeEventListener('online', retry);
+  }, [uid, url, name]);
+  return photoCandidates(user, status, { cached, custom, last });
+}
+
+/** The account's photo as every screen shows it (first candidate), or null. */
+export function useProfilePhotoSrc(): string | null {
+  return useProfilePhotoCandidates()[0] ?? null;
+}
+
+/** Neutral person silhouette: shown when there is no photo and no name yet (never a "?"). */
+function PersonGlyph({ size }: { size: number }) {
+  return (
+    <svg width={size * 0.56} height={size * 0.56} viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <circle cx="12" cy="8" r="4.2" />
+      <path d="M3.6 20.4c.9-4.1 4.3-6.6 8.4-6.6s7.5 2.5 8.4 6.6c.1.6-.3 1.1-.9 1.1H4.5c-.6 0-1-.5-.9-1.1z" />
+    </svg>
+  );
 }
 
 /**
  * Profile picture of the signed-in account: the photo picked in the app first, then the locally
- * cached Google photo (instant, offline), the network URL until it is cached, and initials of the
- * account's name (the edited one) when there is no photo or it fails to load. Always a circle.
+ * cached Google photo (instant, offline), the network URL until it is cached, then initials of the
+ * account's name (the edited one), and a person icon when not even a name is known. Always a circle.
  */
 export function AccountAvatar({ size = 40, className = '' }: { size?: number; className?: string }) {
-  const src = useProfilePhotoSrc();
-  const name = useProfileName();
-  const [broken, setBroken] = useState(false);
-  useEffect(() => setBroken(false), [src]);
-  if (src && !broken)
-    return <img src={src} alt="" referrerPolicy="no-referrer" draggable={false} onError={() => setBroken(true)} className={`block shrink-0 rounded-full object-cover ${className}`} style={{ width: size, height: size }} />;
+  const candidates = useProfilePhotoCandidates();
+  const profileName = useProfileName();
+  const lastName = usePhotoCache((s) => s.last?.name ?? '');
+  const authStatus = useAuth((s) => s.status);
+  const name = profileName || (authStatus !== 'signedOut' ? lastName : '');
+  const key = candidates.join('|');
+  const [failed, setFailed] = useState<{ key: string; n: number }>({ key, n: 0 });
+  const n = failed.key === key ? failed.n : 0;
+  const src = candidates[n];
+  if (src)
+    return (
+      <img
+        key={src}
+        src={src}
+        alt=""
+        referrerPolicy="no-referrer"
+        draggable={false}
+        decoding="sync"
+        onError={() => setFailed({ key, n: n + 1 })}
+        className={`block shrink-0 rounded-full object-cover ${className}`}
+        style={{ width: size, height: size }}
+      />
+    );
+  const initials = name ? initialsOf(name) : '';
   return (
     <span className={`grid shrink-0 place-items-center rounded-full bg-teal-soft font-bold text-teal-ink ${className}`} style={{ width: size, height: size, fontSize: size * 0.38 }} aria-hidden>
-      {initialsOf(name || null)}
+      {initials || <PersonGlyph size={size} />}
     </span>
   );
 }

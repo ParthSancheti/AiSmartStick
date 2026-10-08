@@ -87,7 +87,7 @@ export const defaultSettings: Settings = {
   simSpeed: 6,
   sosTriggers: { button: true, voice: true, fall: true },
   sosCancelSec: 5,
-  sosMessage: 'Emergency! I need help. My live location is shared in the AI SmartStick app.',
+  sosMessage: 'Emergency! I need help.',
   siren: true,
   lowBatteryAt: 20,
   locationSharing: true,

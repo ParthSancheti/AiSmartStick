@@ -137,3 +137,77 @@ describe('Walking Navigation State Machine', () => {
     expect(useNavView.getState().active).toBe(false);
   });
 });
+
+describe('destination without a live GPS fix (assistant / map search)', () => {
+  beforeEach(() => {
+    stopRealNavigation('user');
+    vi.clearAllMocks();
+  });
+
+  test('sets the destination, says so, and starts directions by itself from the first fix', async () => {
+    const { navigateTo, pendingDestination, WAITING_FOR_GPS_TEXT } = await import('../src/core/navigation/realNavigator');
+    useLocation.setState({ fix: null });
+    const r = await navigateTo(dest);
+    expect(r.status).toBe('waiting_for_gps');
+    expect(walkingRoute).not.toHaveBeenCalled();
+    expect(pendingDestination()?.placeId).toBe('p_end');
+    expect(useNavView.getState()).toMatchObject({ active: true, source: 'real', error: WAITING_FOR_GPS_TEXT, destination: { name: 'End Point' } });
+    expect(vi.mocked(announce).mock.calls.some(([l]) => /Destination set: End Point/.test((l as any).en))).toBe(true);
+    expect(savedNavigation()?.placeId).toBe('p_end'); // survives an app restart too
+
+    vi.mocked(walkingRoute).mockResolvedValueOnce(route() as any);
+    useLocation.setState({ fix: { lat: 0, lng: 0, accuracyM: 25, ts: Date.now(), speedMps: 0 } as any });
+    walkTo(0, 0);
+    await vi.waitFor(() => expect(useNavView.getState().path.length).toBeGreaterThan(0));
+    expect(walkingRoute).toHaveBeenCalledTimes(1);
+    expect(pendingDestination()).toBeNull();
+    expect(realNavActive()).toBe(true);
+    expect(useNavView.getState().error).toBeNull();
+  });
+
+  test('a phone with only cell / Wi-Fi positions is not stuck: a rougher fix is accepted after waiting', async () => {
+    const { pendingFixUsable } = await import('../src/core/navigation/realNavigator');
+    expect(pendingFixUsable(60, 0)).toBe(true);
+    expect(pendingFixUsable(300, 5_000)).toBe(false);
+    expect(pendingFixUsable(300, 30_000)).toBe(true);
+    expect(pendingFixUsable(1800, 120_000)).toBe(false); // Approximate grant: "Use precise" is offered instead
+  });
+
+  test('Approximate-only grant: says Precise location is needed instead of "waiting for GPS"', async () => {
+    const { navigateTo, NEED_PRECISE_TEXT } = await import('../src/core/navigation/realNavigator');
+    useLocation.setState({ fix: { lat: 0, lng: 0, accuracyM: 1800, ts: Date.now(), speedMps: 0 } as any, precise: false });
+    try {
+      expect((await navigateTo(dest)).status).toBe('waiting_for_gps');
+      expect(useNavView.getState()).toMatchObject({ active: true, error: NEED_PRECISE_TEXT });
+    } finally {
+      useLocation.setState({ precise: null });
+    }
+  });
+
+  test('a stale cached position is not used as the route start', async () => {
+    const { navigateTo } = await import('../src/core/navigation/realNavigator');
+    useLocation.setState({ fix: { lat: 0, lng: 0, accuracyM: 5, ts: Date.now() - 10 * 60_000, speedMps: 0 } as any });
+    expect((await navigateTo(dest)).status).toBe('waiting_for_gps');
+    expect(walkingRoute).not.toHaveBeenCalled();
+  });
+
+  test('with a live fix it starts at once', async () => {
+    const { navigateTo } = await import('../src/core/navigation/realNavigator');
+    vi.mocked(walkingRoute).mockResolvedValueOnce(route() as any);
+    useLocation.setState({ fix: { lat: 0, lng: 0, accuracyM: 5, ts: Date.now(), speedMps: 1 } as any });
+    expect((await navigateTo(dest)).status).toBe('started');
+  });
+
+  test('End route while waiting cancels it: a later fix starts nothing', async () => {
+    const { navigateTo, pendingDestination } = await import('../src/core/navigation/realNavigator');
+    useLocation.setState({ fix: null });
+    await navigateTo(dest);
+    stopRealNavigation('user');
+    expect(pendingDestination()).toBeNull();
+    expect(useNavView.getState().active).toBe(false);
+    useLocation.setState({ fix: { lat: 0, lng: 0, accuracyM: 5, ts: Date.now(), speedMps: 1 } as any });
+    walkTo(0, 0);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(walkingRoute).not.toHaveBeenCalled();
+  });
+});

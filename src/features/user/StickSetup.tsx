@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Check, ChevronDown, Loader2, Radar, RotateCcw, Settings2, Wifi, WifiOff, Link2 } from 'lucide-react';
+import { Activity, Check, ChevronDown, Loader2, Radar, RotateCcw, Settings2, Wifi, WifiOff, Link2 } from 'lucide-react';
 import { GlassButton, cx } from '../../components/glass';
 import { Atmosphere } from '../../components/Atmosphere';
 import { AppScreen, ScreenHeader } from '../../components/Layout';
@@ -8,6 +8,7 @@ import { STICK_AP_PASSPHRASE, STICK_AP_SSID } from '../../../shared/deviceProtoc
 import { cancelProvisioning, provPhase, searchForStick, useProvisioning, type ProvPhase, type ProvStep } from '../../core/provisioning/provisioning';
 import { AissNative } from '../../core/native/aissNative';
 import { useDevice, isLinked } from '../../core/store/device';
+import { ConnectionTest } from './ConnectionTest';
 
 const PHASES: { id: Exclude<ProvPhase, 'error' | 'idle'>; label: string; detail: string }[] = [
   { id: 'scanning', label: 'Scanning', detail: `Looking for ${STICK_AP_SSID}` },
@@ -39,6 +40,7 @@ export function StickSetup({ onDone, onBack, onSkip, skipLabel = 'Cancel', title
   const phase = provPhase(step);
   const finished = useRef(false);
   const [showDetails, setShowDetails] = useState(false);
+  const [showTest, setShowTest] = useState(false);
 
   useEffect(() => {
     finished.current = false;
@@ -126,7 +128,15 @@ export function StickSetup({ onDone, onBack, onSkip, skipLabel = 'Cancel', title
                     <Settings2 size={18} className="mr-2" /> Open app settings
                   </GlassButton>
                 )}
+                <GlassButton className="h-12 w-full rounded-[20px] text-[15px] font-semibold" aria-expanded={showTest} onClick={() => setShowTest((v) => !v)}>
+                  <Activity size={18} className="mr-2" /> {showTest ? 'Hide connection test' : 'Run connection test'}
+                </GlassButton>
               </div>
+              {showTest && (
+                <div className="mt-4">
+                  <ConnectionTest />
+                </div>
+              )}
             </>
           ) : (
             <>

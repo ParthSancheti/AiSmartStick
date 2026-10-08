@@ -40,6 +40,8 @@ const { platform, resumeCbs, native, status, plugin, geo } = vi.hoisted(() => {
     })),
     stop: vi.fn(async () => undefined),
     getLastKnown: vi.fn(async () => ({ fix: native.lastKnown })),
+    getCurrent: vi.fn(async () => ({ fix: native.lastKnown, fresh: false, reason: "timeout" })),
+    getDiagnostics: vi.fn(async () => ({})),
     addListener: vi.fn(async (ev: string, cb: (d: any) => void) => {
       if (!native.listeners.has(ev)) native.listeners.set(ev, new Set());
       native.listeners.get(ev)!.add(cb);
@@ -61,6 +63,9 @@ const { platform, resumeCbs, native, status, plugin, geo } = vi.hoisted(() => {
       return "w1";
     }),
     clearWatch: vi.fn(async () => undefined),
+    getCurrentPosition: vi.fn(async (): Promise<any> => {
+      throw new Error("no fix");
+    }),
   };
   return {
     platform: { name: "android", hasPlugin: true },
@@ -113,7 +118,12 @@ import {
   requestLocationPermission,
   __resetLocationForTests,
   LOCATION_STALE_MS,
+  FALLBACK_AFTER_MS,
+  WATCHDOG_MS,
   MSG,
+  acquireFix,
+  acceptFix,
+  useLocationDiag,
 } from "../src/core/location/locationService";
 
 const nfix = (
@@ -152,6 +162,10 @@ beforeEach(async () => {
     return { ...native.perm };
   });
   geo.watchCb = null;
+  geo.checkPermissions.mockImplementation(async () => ({ location: "prompt", coarseLocation: "prompt" }));
+  geo.getCurrentPosition.mockImplementation(async (): Promise<any> => {
+    throw new Error("no fix");
+  });
 });
 
 describe("Android native location (AissLocation)", () => {
@@ -402,5 +416,239 @@ describe("fallbacks", () => {
     expect(geo.watchPosition).toHaveBeenCalled();
     geo.watchCb!(null, { code: 1, message: "User denied Geolocation" });
     expect(useLocation.getState().reason).toBe("denied");
+  });
+});
+
+describe("robustness: a phone that allows location but delivers nothing", () => {
+  const pos = (over: Partial<{ lat: number; acc: number; ts: number }> = {}) => ({
+    coords: { latitude: over.lat ?? 19.5, longitude: 73.5, accuracy: over.acc ?? 10, altitude: null, speed: null, heading: null },
+    timestamp: over.ts ?? Date.now(),
+  });
+  beforeEach(() => {
+    geo.checkPermissions.mockImplementation(async () => ({ location: "granted", coarseLocation: "granted" }));
+    geo.getCurrentPosition.mockImplementation(async () => {
+      throw new Error("no fix");
+    });
+    plugin.start.mockImplementation(async () => ({
+      ...status(),
+      started: native.perm.state === "granted",
+      reason: native.perm.state === "granted" ? undefined : "permission",
+    }));
+    plugin.getCurrent.mockImplementation(async () => ({ fix: native.lastKnown, fresh: false, reason: "timeout" }));
+  });
+
+  test("boot and setup asking at the same time share ONE dialog and both see the grant", async () => {
+    let answer!: () => void;
+    plugin.requestPermission.mockImplementation(
+      () =>
+        new Promise((res) => {
+          answer = () => {
+            native.perm = { state: "granted", precise: true, coarse: true };
+            res({ ...native.perm });
+          };
+        }) as any
+    );
+    const boot = startLocation();
+    await vi.waitFor(() => expect(plugin.requestPermission).toHaveBeenCalledTimes(1));
+    const setup = requestLocationPermission();
+    await new Promise((r) => setTimeout(r, 5));
+    expect(plugin.requestPermission).toHaveBeenCalledTimes(1);
+    answer();
+    expect(await setup).toBe("granted");
+    await boot;
+    expect(plugin.start).toHaveBeenCalled();
+    expect(useLocation.getState().permission).toBe("granted");
+  });
+
+  test("a native start() that never answers falls back to @capacitor/geolocation", async () => {
+    native.perm = { state: "granted", precise: true, coarse: true };
+    plugin.start.mockImplementation(() => new Promise(() => undefined) as any);
+    vi.useFakeTimers();
+    const p = startLocation();
+    await vi.advanceTimersByTimeAsync(9000);
+    await p;
+    vi.useRealTimers();
+    expect(geo.watchPosition).toHaveBeenCalled();
+    geo.watchCb!(pos());
+    expect(useLocation.getState()).toMatchObject({ status: "ok", fixSource: "capacitor" });
+  });
+
+  test("a lost permission answer never blocks later callers forever", async () => {
+    plugin.requestPermission.mockImplementation(() => new Promise(() => undefined) as any);
+    vi.useFakeTimers();
+    void startLocation();
+    await vi.advanceTimersByTimeAsync(10);
+    // The user granted it some other way (another dialog / Settings).
+    native.perm = { state: "granted", precise: true, coarse: true };
+    const later = ensureLocation({ request: false });
+    await vi.advanceTimersByTimeAsync(20_000);
+    await later;
+    vi.useRealTimers();
+    expect(plugin.start).toHaveBeenCalled();
+    expect(useLocation.getState().permission).toBe("granted");
+  });
+
+  test(`AissLocation silent for ${FALLBACK_AFTER_MS / 1000} s → Play Services + WebView fallbacks; whichever delivers is used`, async () => {
+    native.perm = { state: "granted", precise: true, coarse: true };
+    const web = { watchPosition: vi.fn((ok: (p: any) => void) => ((web as any).cb = ok, 7)), clearWatch: vi.fn() };
+    const prev = (globalThis as any).navigator.geolocation;
+    Object.defineProperty((globalThis as any).navigator, "geolocation", { value: web, configurable: true });
+    try {
+      vi.useFakeTimers();
+      await startLocation();
+      expect(geo.watchPosition).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(FALLBACK_AFTER_MS + 100);
+      vi.useRealTimers();
+      expect(geo.watchPosition).toHaveBeenCalled();
+      expect(web.watchPosition).toHaveBeenCalled();
+      expect(useLocationDiag.getState().fallback).toEqual(["capacitor", "webview"]);
+      (web as any).cb(pos({ lat: 18.1 }));
+      expect(useLocation.getState()).toMatchObject({ status: "ok", fixSource: "webview" });
+      expect(useLocation.getState().fix?.lat).toBe(18.1);
+      // Native recovers: its fixes are used again.
+      native.emit("location", nfix({ lat: 18.2 }));
+      expect(useLocation.getState()).toMatchObject({ fixSource: "android" });
+      await stopLocation();
+      expect(geo.clearWatch).toHaveBeenCalled();
+      expect(web.clearWatch).toHaveBeenCalledWith(7);
+    } finally {
+      vi.useRealTimers();
+      Object.defineProperty((globalThis as any).navigator, "geolocation", { value: prev, configurable: true });
+    }
+  });
+
+  test("Approximate-only grant: fallbacks never open a permission dialog (no high accuracy, no WebView)", async () => {
+    native.perm = { state: "granted", precise: false, coarse: true };
+    geo.checkPermissions.mockImplementation(async () => ({ location: "denied", coarseLocation: "granted" }));
+    const web = { watchPosition: vi.fn(() => 7), clearWatch: vi.fn() };
+    const prev = (globalThis as any).navigator.geolocation;
+    Object.defineProperty((globalThis as any).navigator, "geolocation", { value: web, configurable: true });
+    try {
+      vi.useFakeTimers();
+      await startLocation();
+      await vi.advanceTimersByTimeAsync(FALLBACK_AFTER_MS + 100);
+      vi.useRealTimers();
+      expect(geo.watchPosition).toHaveBeenCalledWith(expect.objectContaining({ enableHighAccuracy: false }), expect.any(Function));
+      expect(web.watchPosition).not.toHaveBeenCalled();
+      expect(geo.requestPermissions).not.toHaveBeenCalled();
+      await stopLocation();
+    } finally {
+      vi.useRealTimers();
+      Object.defineProperty((globalThis as any).navigator, "geolocation", { value: prev, configurable: true });
+    }
+  });
+
+  test("no fallback when native delivers in time", async () => {
+    native.perm = { state: "granted", precise: true, coarse: true };
+    vi.useFakeTimers();
+    await startLocation();
+    native.emit("location", nfix());
+    await vi.advanceTimersByTimeAsync(FALLBACK_AFTER_MS + 100);
+    vi.useRealTimers();
+    expect(geo.watchPosition).not.toHaveBeenCalled();
+  });
+
+  test("watchdog: permission granted elsewhere without a resume event is picked up", async () => {
+    native.answer = { state: "prompt", precise: false, coarse: false };
+    vi.useFakeTimers();
+    const p = startLocation();
+    await vi.advanceTimersByTimeAsync(2000);
+    await p;
+    expect(plugin.start).not.toHaveBeenCalled();
+    native.perm = { state: "granted", precise: true, coarse: true };
+    const asked = plugin.requestPermission.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(WATCHDOG_MS + 100);
+    vi.useRealTimers();
+    expect(plugin.start).toHaveBeenCalled();
+    expect(plugin.requestPermission.mock.calls.length).toBe(asked); // never a dialog from the watchdog
+  });
+
+  test("a fix stamped in the future (wrong GPS clock) does not block later fixes", () => {
+    acceptFix({ lat: 10, lng: 10, accuracyM: 5, altitude: null, speedMps: null, headingDeg: null, ts: Date.now() + 3_600_000 }, "capacitor");
+    acceptFix({ lat: 11, lng: 10, accuracyM: 5, altitude: null, speedMps: null, headingDeg: null, ts: Date.now() + 10 }, "android");
+    expect(useLocation.getState().fix?.lat).toBe(11);
+  });
+
+  test("a coarse fix from the other source does not replace a fresh precise one", () => {
+    acceptFix({ lat: 10, lng: 10, accuracyM: 5, altitude: null, speedMps: null, headingDeg: null, ts: Date.now() }, "android");
+    acceptFix({ lat: 10.01, lng: 10, accuracyM: 900, altitude: null, speedMps: null, headingDeg: null, ts: Date.now() + 1 }, "webview");
+    expect(useLocation.getState().fix?.lat).toBe(10);
+  });
+});
+
+describe("acquireFix (SOS text)", () => {
+  test("a recent fix is used at once", async () => {
+    native.perm = { state: "granted", precise: true, coarse: true };
+    await startLocation();
+    native.emit("location", nfix({ lat: 21 }));
+    const r = await acquireFix({ maxAgeMs: 120_000, timeoutMs: 8000 });
+    expect(r.fresh).toBe(true);
+    expect(r.fix?.lat).toBe(21);
+    expect(plugin.getCurrent).not.toHaveBeenCalled();
+  });
+
+  test("no fix yet: asks the native one-shot for a fresh one", async () => {
+    native.perm = { state: "granted", precise: true, coarse: true };
+    plugin.getCurrent.mockImplementationOnce(async () => ({ fix: nfix({ lat: 22, provider: "network", accuracy: 40 }), fresh: true, reason: "fresh" }));
+    const r = await acquireFix({ timeoutMs: 3000 });
+    expect(plugin.getCurrent).toHaveBeenCalled();
+    expect(r).toMatchObject({ fresh: true });
+    expect(r.fix?.lat).toBe(22);
+  });
+
+  test("Play Services answers when the native one-shot cannot", async () => {
+    native.perm = { state: "granted", precise: true, coarse: true };
+    geo.checkPermissions.mockImplementation(async () => ({ location: "granted", coarseLocation: "granted" }));
+    geo.getCurrentPosition.mockImplementationOnce(async () => ({
+      coords: { latitude: 23, longitude: 73, accuracy: 15, altitude: null, speed: null, heading: null },
+      timestamp: Date.now(),
+    }));
+    const r = await acquireFix({ timeoutMs: 3000 });
+    expect(r.fresh).toBe(true);
+    expect(r.fix?.lat).toBe(23);
+  });
+
+  test("nothing fresh in time: returns the old position marked not fresh", async () => {
+    native.perm = { state: "granted", precise: true, coarse: true };
+    native.lastKnown = nfix({ lat: 24, time: Date.now() - 30 * 60_000 });
+    vi.useFakeTimers();
+    const p = acquireFix({ maxAgeMs: 120_000, timeoutMs: 8000 });
+    await vi.advanceTimersByTimeAsync(8100);
+    const r = await p;
+    vi.useRealTimers();
+    expect(r.fresh).toBe(false);
+    expect(r.fix?.lat).toBe(24);
+  });
+
+  test("never opens a permission dialog: no grant → @capacitor/geolocation is not asked", async () => {
+    vi.useFakeTimers();
+    const p = acquireFix({ timeoutMs: 2000 });
+    await vi.advanceTimersByTimeAsync(2100);
+    await p;
+    vi.useRealTimers();
+    expect(geo.getCurrentPosition).not.toHaveBeenCalled();
+    expect(geo.requestPermissions).not.toHaveBeenCalled();
+  });
+
+  test("Approximate-only grant: asks without high accuracy (high accuracy would open a dialog)", async () => {
+    native.perm = { state: "granted", precise: false, coarse: true };
+    geo.checkPermissions.mockImplementation(async () => ({ location: "denied", coarseLocation: "granted" }));
+    geo.getCurrentPosition.mockImplementationOnce(async () => ({
+      coords: { latitude: 23.5, longitude: 73, accuracy: 1800, altitude: null, speed: null, heading: null },
+      timestamp: Date.now(),
+    }));
+    const r = await acquireFix({ timeoutMs: 3000 });
+    expect(geo.getCurrentPosition).toHaveBeenCalledWith(expect.objectContaining({ enableHighAccuracy: false }));
+    expect(r.fix?.lat).toBe(23.5);
+  });
+
+  test("no position at all → null", async () => {
+    native.perm = { state: "granted", precise: true, coarse: true };
+    vi.useFakeTimers();
+    const p = acquireFix({ timeoutMs: 2000 });
+    await vi.advanceTimersByTimeAsync(2100);
+    const r = await p;
+    vi.useRealTimers();
+    expect(r).toEqual({ fix: null, fresh: false });
   });
 });

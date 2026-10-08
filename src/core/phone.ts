@@ -22,7 +22,14 @@ export async function placeCall(name: string, number: string | null): Promise<Ca
   return result;
 }
 
-export async function sendSms(name: string, number: string | null, body: string, opts: { direct?: boolean } = {}): Promise<SmsResult | 'demo' | 'no_number'> {
+/** How long an SOS waits on Android's SMS permission dialog before sending anyway (composer fallback). */
+export const SOS_SMS_PERMISSION_WAIT_MS = 5000;
+
+/**
+ * `permissionWaitMs` (SOS): never wait longer than this for the SMS permission dialog. A blind user
+ * may not see it; the plugin then opens the Messages app with the text instead of waiting forever.
+ */
+export async function sendSms(name: string, number: string | null, body: string, opts: { direct?: boolean; permissionWaitMs?: number } = {}): Promise<SmsResult | 'demo' | 'no_number'> {
   if (isDemo()) {
     logEvent({ kind: 'message', severity: 'info', title: `Message to ${name}`, detail: `${body} (demo, not sent)` });
     return 'demo';
@@ -32,7 +39,15 @@ export async function sendSms(name: string, number: string | null, body: string,
   const direct = opts.direct ?? getSettings().smsMode === 'direct';
   // Sending without a tap needs Android's SMS permission: ask for it right here if it is missing
   // (a no-op when already granted), otherwise Android only lets the app open the Messages app.
-  if (direct) await AissNative.requestPermissions({ permissions: ['sms'] }).catch(() => undefined);
+  if (direct) {
+    const ask = AissNative.requestPermissions({ permissions: ['sms'] }).catch(() => undefined);
+    if (opts.permissionWaitMs == null) await ask;
+    else {
+      let t: ReturnType<typeof setTimeout> | undefined;
+      await Promise.race([ask, new Promise((r) => (t = setTimeout(r, opts.permissionWaitMs)))]);
+      clearTimeout(t);
+    }
+  }
   let { result, error } = await AissNative.sendSms({ number, body, direct });
   if (result === 'failed' && direct) {
     // The radio refused it (no signal, no balance): the Messages app can still retry it.

@@ -3,7 +3,7 @@
   "appName": "AI SmartStick",
   "webDir": "dist",
   "android": {
-    "allowMixedContent": false,
+    "allowMixedContent": true,
     "captureInput": true
   },
   "plugins": {

@@ -2,8 +2,9 @@ import { importLibrary, setOptions } from '@googlemaps/js-api-loader';
 import { ENV } from '../runtime/env';
 
 /**
- * Maps JavaScript API for rendering only (browser key). Places, Routes and reverse geocoding go
- * through Cloud Functions (mapsService.ts) with the server key.
+ * Maps JavaScript API (browser key): rendering, and the client-side FALLBACK for Places search and
+ * walking directions when the Cloud Functions (server key) cannot be reached (destinationSearch.ts).
+ * The browser key must allow: Maps JavaScript API, Places API (New), Directions API.
  *
  * In the Android app the page origin is https://localhost, so the browser key's "Websites"
  * restriction must include https://localhost/* — an "Android apps" restriction does NOT apply to the
@@ -125,13 +126,7 @@ let configured = false;
 const LOAD_TIMEOUT_MS = 20_000;
 
 export async function loadMaps() {
-  if (!ENV.mapsBrowserKey) throw mapsErrorFrom(new Error('Google Maps is not configured (VITE_GOOGLE_MAPS_BROWSER_KEY).'));
-  if (authError) throw authError;
-  installAuthHooks();
-  if (!configured) {
-    setOptions({ key: ENV.mapsBrowserKey, v: 'weekly', language: 'en', region: 'IN' });
-    configured = true;
-  }
+  configure();
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, rej) => {
     timer = setTimeout(() => rej(new Error('Google Maps timed out')), LOAD_TIMEOUT_MS);
@@ -147,6 +142,38 @@ export async function loadMaps() {
     clearTimeout(timer);
   }
 }
+
+function configure() {
+  if (!ENV.mapsBrowserKey) throw mapsErrorFrom(new Error('Google Maps is not configured (VITE_GOOGLE_MAPS_BROWSER_KEY).'));
+  if (authError) throw authError;
+  installAuthHooks();
+  if (!configured) {
+    setOptions({ key: ENV.mapsBrowserKey, v: 'weekly', language: 'en', region: 'IN' });
+    configured = true;
+  }
+}
+
+async function lib<T>(name: 'places' | 'routes'): Promise<T> {
+  configure();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return (await Promise.race([
+      importLibrary(name) as Promise<T>,
+      new Promise<never>((_, rej) => {
+        timer = setTimeout(() => rej(new Error('Google Maps timed out')), LOAD_TIMEOUT_MS);
+      }),
+    ])) as T;
+  } catch (e) {
+    throw mapsErrorFrom(e);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Places (New) in the browser: AutocompleteSuggestion, Place.searchByText, Place.fetchFields. */
+export const loadPlacesLibrary = () => lib<google.maps.PlacesLibrary>('places');
+/** DirectionsService (walking routes in the browser). */
+export const loadRoutesLibrary = () => lib<google.maps.RoutesLibrary>('routes');
 
 /** Test helper. */
 export function __resetMapsLoaderForTests() {

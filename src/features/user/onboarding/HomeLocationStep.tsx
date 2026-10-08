@@ -6,7 +6,8 @@ import { MapView } from '../../../components/MapView';
 import { GlassButton, cx } from '../../../components/glass';
 import { useBackHandler } from '../../../core/backStack';
 import { ensureLocation, useLocation } from '../../../core/location/locationService';
-import { autocomplete, friendlyMapsError, placeDetails, reverseLookup, type Suggestion } from '../../../core/maps/mapsService';
+import { friendlyMapsError, reverseLookup } from '../../../core/maps/mapsService';
+import { resolveDestination, searchBias, searchErrorText, suggestDestinations, type DestinationSuggestion } from '../../../core/maps/destinationSearch';
 import { useSession, type SavedPlace } from '../../../core/store/session';
 import { useRuntime } from '../../../core/runtime/mode';
 
@@ -33,7 +34,7 @@ export function HomeLocationStep({ onSaved }: { onSaved: () => void }) {
   const liveFix = fix && (locStatus === 'ok' || locStatus === 'poor') ? fix : null;
   const lookupSeq = useRef(0);
   const [q, setQ] = useState('');
-  const [items, setItems] = useState<Suggestion[]>([]);
+  const [items, setItems] = useState<DestinationSuggestion[]>([]);
   const [searching, setSearching] = useState(false);
   const [picked, setPicked] = useState<Picked | null>(null);
   const [resolving, setResolving] = useState(false);
@@ -56,28 +57,38 @@ export function HomeLocationStep({ onSaved }: { onSaved: () => void }) {
     const text = q.trim();
     if (text.length < 2 || (picked && text === picked.name)) {
       setItems([]);
+      setSearching(false);
       return;
     }
     setErr(null);
+    let alive = true; // an older, slower answer must not replace a newer one
     const t = setTimeout(() => {
       setSearching(true);
-      // Places biases results around the user (or India's centre before the first GPS fix).
-      autocomplete(text, fix?.lat ?? 20.59, fix?.lng ?? 78.96, token)
-        .then((r) => setItems(r.suggestions))
-        .catch((e) => setErr(`Search unavailable: ${friendlyMapsError(e)} You can still use your current location or tap the map.`))
-        .finally(() => setSearching(false));
+      // Biased around the newest position (any age); India-wide before the first fix. Cloud
+      // Function first, the in-app Google Places search if it fails (core/maps/destinationSearch.ts).
+      suggestDestinations(text, token, searchBias())
+        .then((r) => {
+          if (!alive) return;
+          setItems(r.suggestions);
+          if (!r.suggestions.length) setErr(`No places found for “${text}”. Try another name, or tap the map.`);
+        })
+        .catch((e) => alive && setErr(`${searchErrorText(e)} You can still use your current location or tap the map.`))
+        .finally(() => alive && setSearching(false));
     }, 300);
-    return () => clearTimeout(t);
+    return () => {
+      alive = false;
+      clearTimeout(t);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `near` stands in for fix
   }, [q, near, token]);
 
-  const choose = async (s: Suggestion) => {
+  const choose = async (s: DestinationSuggestion) => {
     setItems([]);
     setQ(s.main);
     setResolving(true);
     setErr(null);
     try {
-      const { place } = await placeDetails(s.placeId, token);
+      const place = await resolveDestination(s, token);
       setPicked({ lat: place.lat, lng: place.lng, placeId: place.placeId, name: place.name, address: place.address ?? [s.main, s.secondary].filter(Boolean).join(', ') });
     } catch (e) {
       setErr(`Could not open that place: ${friendlyMapsError(e)}`);

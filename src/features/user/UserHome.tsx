@@ -42,8 +42,10 @@ import { useNavView } from '../../core/navigation/navView';
 import { useLocation, freshnessLabel, locationProblem } from '../../core/location/locationService';
 import { useProfileName, firstName } from '../../core/profile/profile';
 import { useWalking } from '../../core/walking/walkTracker';
-import { autocomplete, placeDetails, type Suggestion } from '../../core/maps/mapsService';
-import { startRealNavigation, stopRealNavigation } from '../../core/navigation/realNavigator';
+import type { Suggestion } from '../../core/maps/mapsService';
+import { useDestinationSearch } from '../../core/maps/useDestinationSearch';
+import { searchErrorText, type DestinationSuggestion } from '../../core/maps/destinationSearch';
+import { navigateTo, pendingDestination, stopRealNavigation } from '../../core/navigation/realNavigator';
 import { startNavigation as startDemoNavigation, stopNavigation as stopDemoNavigation } from '../../core/nav/navigation';
 import { PLACES } from '../../core/sim/geo';
 import { usePhoneInfo, phoneLabel } from '../../core/native/deviceInfo';
@@ -52,6 +54,7 @@ import { useAudioRoute } from '../../core/audio/audioRoute';
 import { linkLabel, batteryLabel, safetyLabel, TONE_TEXT, km, mins, type Tone } from '../shared/labels';
 import { meters, timeAgo } from '../../core/util';
 import { friendlyError } from '../../core/errors';
+import { DiagnosticsRows } from './Diagnostics';
 
 /*
  * Home and its sub-pages.
@@ -155,7 +158,7 @@ function StatTile({ icon, label, value, tone, onClick, ariaLabel }: { icon: Reac
   const color = tone === 'ink' ? 'text-ink' : TONE_TEXT[tone];
   const inner = (
     <>
-      <span className={`stat-tile-icon grid h-9 w-9 shrink-0 place-items-center rounded-full bg-ink/[0.06] ${color}`}>{icon}</span>
+      <span className={`stat-tile-icon grid h-8 w-8 shrink-0 place-items-center rounded-full bg-ink/[0.06] ${color}`}>{icon}</span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[11.5px] font-bold uppercase tracking-wider text-ink-3">{label}</span>
         <span className={`block text-[14px] font-bold leading-tight ${color} line-clamp-2 break-words`}>{value}</span>
@@ -191,8 +194,8 @@ const StickCard = memo(function StickCard() {
   return (
     <div className={`${HOME_CARD} stick-card flex-row items-stretch gap-3`}>
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-teal/5 to-info/10" />
-      <button type="button" onClick={stickAction} aria-label="Stick diagnostics" className="stick-card-visual relative flex w-[32%] min-w-[80px] max-w-[140px] shrink-0 flex-col items-center justify-center rounded-[24px] active:scale-[0.98]">
-        <StickVisual height={168} />
+      <button type="button" onClick={stickAction} aria-label="Stick diagnostics" className="stick-card-visual relative flex w-[38%] min-w-[88px] max-w-[160px] shrink-0 flex-col items-center justify-center rounded-[24px] active:scale-[0.98]">
+        <StickVisual height={210} />
         <span className="mt-1 max-w-full truncate text-[12px] font-bold uppercase tracking-[0.1em] text-ink-2">Stick</span>
       </button>
       <div className="relative flex min-w-0 flex-1 flex-col justify-center gap-2">
@@ -213,8 +216,8 @@ const StickCard = memo(function StickCard() {
 
 function ActionRow({ icon, iconTone, label, value, valueTone = 'text-ink', onClick }: { icon: ReactNode; iconTone: string; label: string; value: ReactNode; valueTone?: string; onClick: () => void }) {
   return (
-    <button type="button" onClick={onClick} className="glass interactive flex min-h-[76px] w-full min-w-0 items-center gap-3.5 rounded-[26px] px-4 py-3 text-left">
-      <span className={`grid h-12 w-12 shrink-0 place-items-center rounded-full ${iconTone}`}>{icon}</span>
+    <button type="button" onClick={onClick} className="action-row glass interactive flex min-h-[84px] w-full min-w-0 items-center gap-4 rounded-[26px] px-5 py-4 text-left">
+      <span className={`action-row-icon grid h-12 w-12 shrink-0 place-items-center rounded-full ${iconTone}`}>{icon}</span>
       <span className="min-w-0 flex-1">
         <span className="block break-words text-[12px] font-bold uppercase tracking-wider text-ink-3">{label}</span>
         <span className={`mt-0.5 block text-[15.5px] font-bold leading-snug ${valueTone} break-words`}>{value}</span>
@@ -251,7 +254,7 @@ const QuickActions = memo(function QuickActions({ onSafety, onChat }: { onSafety
           <span className={`mt-0.5 block break-words text-[15px] font-bold ${aiState.tone === 'ink' ? 'text-ink' : TONE_TEXT[aiState.tone]}`}>{aiState.text}</span>
         </span>
       </button>
-      <div className="col-span-2 flex flex-col gap-3">
+      <div className="col-span-2 mt-1 flex flex-col gap-4">
         <ActionRow
           onClick={() => useUI.setState({ audioOpen: true })}
           icon={route.route === 'bluetooth' ? <Bluetooth size={24} /> : route.route === 'speaker' ? <Speaker size={24} /> : <Headphones size={24} />}
@@ -280,7 +283,7 @@ const QuickActions = memo(function QuickActions({ onSafety, onChat }: { onSafety
 
 function BottomControls() {
   return (
-    <div className="mt-auto flex shrink-0 flex-col pt-1">
+    <div className="mt-auto flex shrink-0 flex-col pt-2">
       <div className="glass flex flex-col gap-2 rounded-[30px] p-2">
         <button
           type="button"
@@ -451,45 +454,26 @@ function AiChatPage({ onClose }: { onClose: () => void }) {
 
 function DestinationSearch() {
   const demo = useRuntime((s) => s.mode) === 'demo';
-  const fix = useLocation((s) => s.fix);
-  const internet = useDevice((s) => s.internet);
-  const [q, setQ] = useState('');
-  const [items, setItems] = useState<Suggestion[]>([]);
+  // Real mode: debounced, works without GPS, Cloud Function → in-app Google Places fallback.
+  const search = useDestinationSearch({ enabled: !demo });
+  const q = search.query;
+  const [demoItems, setDemoItems] = useState<Suggestion[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const newToken = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()));
-  const [token, setToken] = useState(newToken);
-  // Search around where the user is, but don't re-query on every 1 Hz GPS fix: ~100 m grid.
-  const near = fix ? `${fix.lat.toFixed(3)},${fix.lng.toFixed(3)}` : null;
+  const items: Suggestion[] = demo ? demoItems : search.items;
   // Back closes the search first (core/backStack.ts).
   useBackHandler(q.length > 0 || items.length > 0, () => {
-    setQ('');
-    setItems([]);
+    search.clear();
+    setDemoItems([]);
     setErr(null);
   });
 
   useEffect(() => {
     setErr(null);
+    if (!demo) return;
     const text = q.trim();
-    if (text.length < 2) return setItems([]);
-    if (demo) {
-      setItems(PLACES.filter((p) => p.category !== 'home' && p.name.toLowerCase().includes(text.toLowerCase())).map((p) => ({ placeId: p.id, main: p.name, secondary: 'Demo place' })));
-      return;
-    }
-    if (!fix) return setErr('Waiting for GPS before searching nearby.');
-    if (internet === false) return setErr('Search needs internet.');
-    let alive = true; // an older, slower answer must not replace a newer one
-    const t = setTimeout(() => {
-      autocomplete(text, fix.lat, fix.lng, token)
-        .then((r) => alive && setItems(r.suggestions))
-        .catch((e) => alive && setErr(`Search unavailable. ${friendlyError(e)}`));
-    }, 300); // debounce: one request per pause in typing
-    return () => {
-      alive = false;
-      clearTimeout(t);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `near` stands in for fix
-  }, [q, demo, near, internet, token]);
+    setDemoItems(text.length < 2 ? [] : PLACES.filter((p) => p.category !== 'home' && p.name.toLowerCase().includes(text.toLowerCase())).map((p) => ({ placeId: p.id, main: p.name, secondary: 'Demo place' })));
+  }, [q, demo]);
 
   const pick = async (s: Suggestion) => {
     setBusy(true);
@@ -499,35 +483,46 @@ function DestinationSearch() {
         const p = PLACES.find((x) => x.id === s.placeId);
         if (p) startDemoNavigation(p);
       } else {
-        const { place } = await placeDetails(s.placeId, token);
-        setToken(newToken()); // a Places session ends with the details call
-        await startRealNavigation(place);
+        const place = await search.pick(s as DestinationSuggestion);
+        if (!place) return; // search.error says why
+        // Live fix → directions now; otherwise the destination is set and directions start by themselves once GPS has a position.
+        await navigateTo(place);
       }
-      setQ('');
-      setItems([]);
+      search.clear();
+      setDemoItems([]);
     } catch (e) {
       const m = (e as Error).message;
-      setErr(m === 'location-unavailable' ? 'No GPS position yet.' : m === 'no-route' ? 'No walking route found.' : `Could not start directions. ${friendlyError(e)}`);
+      setErr(m === 'no-route' ? 'No walking route found.' : `Could not start directions. ${searchErrorText(e).replace(/^Search unavailable\. /, '')}`);
     } finally {
       setBusy(false);
     }
   };
 
+  const shownErr = err ?? (demo ? null : search.error);
   return (
     <div className="mt-4">
       <input
         value={q}
-        onChange={(e) => setQ(e.target.value)}
+        onChange={(e) => search.setQuery(e.target.value)}
+        onKeyDown={(e) => {
+          // Enter (keyboard "Search" key) goes to the top suggestion.
+          if (e.key === 'Enter' && items.length && !busy && !search.busy) {
+            e.preventDefault();
+            void pick(items[0]);
+          }
+        }}
         placeholder="Search a destination"
         aria-label="Search a destination"
+        enterKeyHint="search"
         className="h-12 w-full min-w-0 rounded-full border border-line bg-surface px-5 text-[16px] font-medium text-ink outline-none placeholder:text-ink-3"
       />
-      {err && <p className="mt-2 px-2 text-[13.5px] font-semibold text-amber-ink" role="status">{err}</p>}
+      {!demo && search.searching && !items.length && <p className="mt-2 px-2 text-[13.5px] font-semibold text-ink-3" role="status">Searching…</p>}
+      {shownErr && <p className="mt-2 px-2 text-[13.5px] font-semibold text-amber-ink" role="status">{shownErr}</p>}
       {items.length > 0 && (
         <ul className="page-scroll mt-2 max-h-48 rounded-[20px] border border-line bg-surface" role="listbox" aria-label="Suggestions">
           {items.map((it) => (
             <li key={it.placeId}>
-              <button type="button" disabled={busy} onClick={() => void pick(it)} className="min-h-12 w-full px-4 py-3 text-left disabled:opacity-50">
+              <button type="button" disabled={busy || search.busy} onClick={() => void pick(it)} className="min-h-12 w-full px-4 py-3 text-left disabled:opacity-50">
                 <span className="block break-words text-[15.5px] font-semibold text-ink">{it.main}</span>
                 {it.secondary && <span className="block break-words text-[13px] text-ink-3">{it.secondary}</span>}
               </button>
@@ -618,9 +613,13 @@ function WalkingPage({ onClose }: { onClose: () => void }) {
             </div>
           </div>
           {nav.active ? (
-            <button type="button" onClick={() => (nav.source === 'demo' ? stopDemoNavigation() : stopRealNavigation('user'))} className="mt-4 h-12 w-full rounded-full bg-ink/5 text-[15px] font-bold text-ink active:bg-ink/10">
-              End route
-            </button>
+            <>
+              {/* Destination set, waiting for a usable position: keep the one action that fixes it (e.g. "Use precise"). */}
+              {nav.source === 'real' && pendingDestination() && <LocationStatus className="mt-3" wantPrecise />}
+              <button type="button" onClick={() => (nav.source === 'demo' ? stopDemoNavigation() : stopRealNavigation('user'))} className="mt-4 h-12 w-full rounded-full bg-ink/5 text-[15px] font-bold text-ink active:bg-ink/10">
+                End route
+              </button>
+            </>
           ) : (
             <>
               <DestinationSearch />
@@ -691,6 +690,9 @@ function StickDetailsContent() {
           <KV k="Wi-Fi signal" v={d.rssi == null ? 'Unavailable' : `${d.rssi} dBm`} />
           <KV k="Last packet" v={d.lastPacketAt ? timeAgo(d.lastPacketAt, now) : 'Never'} />
         </div>
+      </Section>
+      <Section title="Diagnostics">
+        <DiagnosticsRows />
       </Section>
       <Section title="Obstacles logged">
         <div className={listCls}>{obstacles.length ? obstacles.map((e) => <EventRow key={e.id} e={e} now={now} />) : <p className="px-4 py-6 text-center text-[15px] text-ink-3">No obstacles under 60 cm recorded.</p>}</div>

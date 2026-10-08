@@ -18,6 +18,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
 import android.provider.Settings;
+import android.util.Log;
 
 import androidx.core.content.ContextCompat;
 
@@ -45,6 +46,10 @@ import java.util.List;
  *
  * Events: "location" {lat,lng,accuracy,altitude,speed,bearing,time,provider}
  *         "status"   {enabled,gps,network,providers}
+ *
+ * Every step is logged to logcat with the tag "AissLocation" and the prefix "[LOCATION]":
+ *   adb logcat -s AissLocation
+ * so a phone that gets no position shows exactly where it stops (permission, providers, no fixes).
  */
 @CapacitorPlugin(
     name = "AissLocation",
@@ -55,6 +60,9 @@ import java.util.List;
 public class AissLocationPlugin extends Plugin {
     private static final String FUSED = "fused";
     private static final long SWITCH_PROVIDER_AFTER_MS = 5000;
+    private static final String TAG = "AissLocation";
+    /** A permission dialog older than this is assumed lost (activity recreated) and may be asked again. */
+    private static final long PERMISSION_DIALOG_MAX_MS = 90_000;
 
     private final Handler main = new Handler(Looper.getMainLooper());
     private LocationManager lm;
@@ -89,6 +97,33 @@ public class AissLocationPlugin extends Plugin {
     private volatile boolean registered = false;
     private long intervalMs = 1000;
     private volatile Location best;
+    /** Diagnostics (getDiagnostics / the app's Location test page). */
+    private volatile long deliveredCount = 0;
+    private volatile long lastDeliveredAt = 0;
+    private volatile String lastProvider = null;
+    private volatile String lastError = null;
+    /**
+     * One permission dialog at a time. A second request while the dialog is up would be cancelled
+     * by Android at once (answered "not granted") and confuse JS; it waits for the real answer instead.
+     */
+    private final List<PluginCall> permissionWaiters = new ArrayList<>();
+    private boolean permissionAsking = false;
+    private long permissionAskedAt = 0;
+
+    private static void info(String msg) {
+        try {
+            Log.i(TAG, "[LOCATION] " + msg);
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void fail(String msg, Exception e) {
+        lastError = msg + (e != null ? ": " + e.getClass().getSimpleName() + " " + e.getMessage() : "");
+        try {
+            Log.w(TAG, "[LOCATION] " + lastError);
+        } catch (Exception ignored) {
+        }
+    }
 
     private LocationManager lm() {
         if (lm == null) lm = (LocationManager) getContext().getSystemService(Context.LOCATION_SERVICE);
@@ -215,9 +250,17 @@ public class AissLocationPlugin extends Plugin {
         if (l == null) return;
         if (!isBetter(l, best)) return;
         best = l;
+        deliveredCount++;
+        lastDeliveredAt = System.currentTimeMillis();
+        lastProvider = l.getProvider();
+        // First fix, then every 60th (about once a minute at 1 Hz): enough to see it is alive.
+        if (deliveredCount == 1 || deliveredCount % 60 == 0) {
+            info("fix #" + deliveredCount + " from " + l.getProvider() + " ±" + Math.round(acc(l)) + " m, age " + ageMs(l) + " ms");
+        }
         try {
             notifyListeners("location", toJs(l));
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            fail("notifyListeners failed", e);
         }
     }
 
@@ -233,6 +276,7 @@ public class AissLocationPlugin extends Plugin {
             return null;
         }
         for (String p : all) {
+            if (LocationManager.GPS_PROVIDER.equals(p) && !fine()) continue; // needs a precise grant
             try {
                 Location l = m.getLastKnownLocation(p);
                 if (l == null) continue;
@@ -253,6 +297,7 @@ public class AissLocationPlugin extends Plugin {
         try {
             all = m.getAllProviders();
         } catch (Exception e) {
+            fail("getAllProviders failed", e);
             return;
         }
         List<String> want = new ArrayList<>();
@@ -269,11 +314,13 @@ public class AissLocationPlugin extends Plugin {
                     long every = LocationManager.PASSIVE_PROVIDER.equals(p) ? 0 : intervalMs;
                     m.requestLocationUpdates(p, every, 0f, listener, Looper.getMainLooper());
                     activeProviders.add(p);
-                } catch (SecurityException | IllegalArgumentException ignored) {
+                } catch (SecurityException | IllegalArgumentException e) {
                     // Provider needs a permission level we don't have, or does not exist on this phone.
+                    fail("provider " + p + " refused", e);
                 }
             }
             registered = !activeProviders.isEmpty();
+            info("registered providers " + activeProviders + " of " + all + " (precise=" + fine() + ", locationOn=" + locationEnabled() + ", sdk=" + Build.VERSION.SDK_INT + ")");
         }
     }
 
@@ -389,12 +436,38 @@ public class AissLocationPlugin extends Plugin {
             call.resolve(permissionResult());
             return;
         }
-        requestPermissionForAlias("location", call, "permissionCallback");
+        synchronized (permissionWaiters) {
+            if (permissionAsking && SystemClock.elapsedRealtime() - permissionAskedAt < PERMISSION_DIALOG_MAX_MS) {
+                // The dialog is already on screen: answer this call with the same result.
+                permissionWaiters.add(call);
+                info("permission dialog already open; waiting for its answer");
+                return;
+            }
+            permissionAsking = true;
+            permissionAskedAt = SystemClock.elapsedRealtime();
+        }
+        info("asking for location permission (upgrade=" + upgrade + ")");
+        try {
+            requestPermissionForAlias("location", call, "permissionCallback");
+        } catch (Exception e) {
+            fail("permission request failed", e);
+            synchronized (permissionWaiters) {
+                permissionAsking = false;
+            }
+            call.resolve(permissionResult());
+        }
     }
 
     @PermissionCallback
     private void permissionCallback(PluginCall call) {
         JSObject r = permissionResult();
+        List<PluginCall> waiting;
+        synchronized (permissionWaiters) {
+            permissionAsking = false;
+            waiting = new ArrayList<>(permissionWaiters);
+            permissionWaiters.clear();
+        }
+        info("permission answer: " + r.optString("state") + " precise=" + fine() + " coarse=" + coarse());
         if (wanted && (fine() || coarse())) {
             main.post(() -> {
                 register();
@@ -402,7 +475,14 @@ public class AissLocationPlugin extends Plugin {
                 emitStatus();
             });
         }
-        call.resolve(r);
+        // Capacitor can hand a null call when the activity was recreated during the dialog.
+        if (call != null) call.resolve(r);
+        for (PluginCall w : waiting) {
+            try {
+                w.resolve(r);
+            } catch (Exception ignored) {
+            }
+        }
     }
 
     @PluginMethod
@@ -435,12 +515,14 @@ public class AissLocationPlugin extends Plugin {
         Integer iv = call.getInt("intervalMs", 1000);
         intervalMs = Math.max(500, iv == null ? 1000 : iv);
         if (!(fine() || coarse())) {
+            info("start refused: no location permission");
             JSObject r = statusObject();
             r.put("started", false);
             r.put("reason", "permission");
             call.resolve(r);
             return;
         }
+        info("start (interval " + intervalMs + " ms)");
         main.post(() -> {
             wanted = true;
             hookSystem();
@@ -453,6 +535,159 @@ public class AissLocationPlugin extends Plugin {
             deliver(lastKnown());
             emitStatus();
         });
+    }
+
+    /**
+     * One fresh position for SOS / "where am I": the first fix from GPS, network or fused within
+     * timeoutMs, otherwise the freshest cached one. {fix, fresh, reason: fresh|timeout|permission|off}
+     */
+    @PluginMethod
+    public void getCurrent(PluginCall call) {
+        Integer t = call.getInt("timeoutMs", 8000);
+        final long timeout = Math.max(1000, Math.min(30000, t == null ? 8000 : t));
+        if (!(fine() || coarse())) {
+            JSObject r = new JSObject();
+            r.put("fix", JSObject.NULL);
+            r.put("fresh", false);
+            r.put("reason", "permission");
+            call.resolve(r);
+            return;
+        }
+        main.post(() -> new OneShot(call).begin(timeout));
+    }
+
+    /** A single fresh position request, independent of the continuous updates. */
+    private final class OneShot implements LocationListener {
+        private final PluginCall call;
+        private boolean done = false;
+        private final Runnable timeoutTask = () -> finish(null, "timeout");
+
+        OneShot(PluginCall call) {
+            this.call = call;
+        }
+
+        void begin(long timeoutMs) {
+            LocationManager m = lm();
+            int asked = 0;
+            if (m != null) {
+                List<String> all;
+                try {
+                    all = m.getAllProviders();
+                } catch (Exception e) {
+                    all = new ArrayList<>();
+                }
+                List<String> want = new ArrayList<>();
+                if (fine() && all.contains(LocationManager.GPS_PROVIDER)) want.add(LocationManager.GPS_PROVIDER);
+                if (all.contains(LocationManager.NETWORK_PROVIDER)) want.add(LocationManager.NETWORK_PROVIDER);
+                if (Build.VERSION.SDK_INT >= 31 && all.contains(FUSED)) want.add(FUSED);
+                for (String p : want) {
+                    try {
+                        m.requestLocationUpdates(p, 0L, 0f, this, Looper.getMainLooper());
+                        asked++;
+                    } catch (SecurityException | IllegalArgumentException e) {
+                        fail("one-shot " + p + " refused", e);
+                    }
+                }
+            }
+            info("one-shot fix requested from " + asked + " providers, timeout " + timeoutMs + " ms");
+            if (asked == 0) {
+                finish(null, locationEnabled() ? "no_provider" : "off");
+                return;
+            }
+            main.postDelayed(timeoutTask, timeoutMs);
+        }
+
+        void finish(Location l, String why) {
+            if (done) return;
+            done = true;
+            main.removeCallbacks(timeoutTask);
+            try {
+                LocationManager m = lm();
+                if (m != null) m.removeUpdates(this);
+            } catch (Exception ignored) {
+            }
+            Location pick = l != null ? l : lastKnown();
+            info("one-shot result: " + why + (pick == null ? " (no position at all)" : " ±" + Math.round(acc(pick)) + " m, age " + ageMs(pick) + " ms"));
+            JSObject r = new JSObject();
+            r.put("fix", pick == null ? JSObject.NULL : toJs(pick));
+            r.put("fresh", l != null);
+            r.put("reason", why);
+            try {
+                call.resolve(r);
+            } catch (Exception ignored) {
+            }
+            if (l != null) deliver(l); // the continuous stream benefits too
+        }
+
+        @Override
+        public void onLocationChanged(Location location) {
+            finish(location, "fresh");
+        }
+
+        @Override
+        @SuppressWarnings("deprecation")
+        public void onStatusChanged(String provider, int status, Bundle extras) {
+        }
+
+        @Override
+        public void onProviderEnabled(String provider) {
+        }
+
+        @Override
+        public void onProviderDisabled(String provider) {
+        }
+    }
+
+    /** Everything the Location test page shows: permission, switch, providers with their cached fixes, counters. */
+    @PluginMethod
+    public void getDiagnostics(PluginCall call) {
+        JSObject r = permissionResult();
+        r.put("sdk", Build.VERSION.SDK_INT);
+        r.put("enabled", locationEnabled());
+        r.put("wanted", wanted);
+        r.put("running", registered);
+        r.put("backgroundAllowed", backgroundAllowed());
+        r.put("delivered", (Object) Long.valueOf(deliveredCount));
+        r.put("lastDeliveredAt", lastDeliveredAt == 0 ? JSObject.NULL : (Object) Long.valueOf(lastDeliveredAt));
+        r.put("lastProvider", lastProvider == null ? JSObject.NULL : lastProvider);
+        r.put("lastError", lastError == null ? JSObject.NULL : lastError);
+        JSArray active = new JSArray();
+        synchronized (activeProviders) {
+            for (String p : activeProviders) active.put(p);
+        }
+        r.put("activeProviders", active);
+        JSArray providers = new JSArray();
+        LocationManager m = lm();
+        if (m != null) {
+            List<String> all;
+            try {
+                all = m.getAllProviders();
+            } catch (Exception e) {
+                all = new ArrayList<>();
+            }
+            for (String p : all) {
+                JSObject o = new JSObject();
+                o.put("name", p);
+                o.put("enabled", providerOn(p));
+                try {
+                    Location l = (fine() || coarse()) && !(LocationManager.GPS_PROVIDER.equals(p) && !fine()) ? m.getLastKnownLocation(p) : null;
+                    if (l != null) {
+                        o.put("lastAgeMs", (Object) Long.valueOf(ageMs(l)));
+                        o.put("lastAccuracy", (Object) Double.valueOf(acc(l)));
+                    } else {
+                        o.put("lastAgeMs", JSObject.NULL);
+                        o.put("lastAccuracy", JSObject.NULL);
+                    }
+                } catch (Exception e) {
+                    o.put("lastAgeMs", JSObject.NULL);
+                    o.put("lastAccuracy", JSObject.NULL);
+                    o.put("error", e.getClass().getSimpleName());
+                }
+                providers.put(o);
+            }
+        }
+        r.put("providers", providers);
+        call.resolve(r);
     }
 
     @PluginMethod

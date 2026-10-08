@@ -11,7 +11,7 @@ import { km, mins } from '../../shared/labels';
 import { meters } from '../../../core/util';
 
 /** Shared hero-card frame: full slide width, never wider (min-w-0), shadow small enough to fit the carousel's bottom padding. */
-export const HOME_CARD = 'glass relative flex h-full min-h-[256px] w-full min-w-0 flex-col overflow-hidden rounded-[32px] p-4 shadow-[0_12px_26px_-16px_rgba(0,0,0,.35)]';
+export const HOME_CARD = 'glass relative flex h-full min-h-[288px] w-full min-w-0 flex-col overflow-hidden rounded-[32px] p-4 shadow-[0_12px_26px_-16px_rgba(0,0,0,.35)]';
 const CARD = HOME_CARD;
 
 /** Walking: the active route at a glance, or "Where to?" into the map. */

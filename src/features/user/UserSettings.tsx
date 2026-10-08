@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from 'motion/react';
 import { useBackHandler } from '../../core/backStack';
 import { toggleThemeWithTransition } from '../../util/theme';
-import { Accessibility, AlertTriangle, Battery, Check, ChevronLeft, ChevronRight, Contrast, Heart, Home, Mic, Minus, Moon, Plus, Shield, Smartphone, Sun, User, Vibrate, Volume2, Wifi, Search, Download, Unplug, ShieldAlert, ScanEye, MessageSquare, Sparkles, Radar, MapPin, Phone, Pencil } from 'lucide-react';
+import { Accessibility, AlertTriangle, Battery, Check, ChevronLeft, ChevronRight, Contrast, Heart, Home, Mic, Minus, Moon, Plus, Shield, Smartphone, Sun, User, Vibrate, Volume2, Wifi, Search, Download, Unplug, ShieldAlert, ScanEye, MessageSquare, Sparkles, Radar, MapPin, Phone, Pencil, LocateFixed } from 'lucide-react';
 import { EventRow } from '../guardian/parts';
 import { useUI } from '../../core/store/ui';
 import { useRuntime, switchMode } from '../../core/runtime/mode';
@@ -37,6 +37,8 @@ import { GlassButton, Segmented, Toggle } from '../../components/glass';
 import { clamp } from '../../core/util';
 import { Atmosphere } from '../../components/Atmosphere';
 import { HomeLocationStep } from './onboarding/HomeLocationStep';
+import { DiagnosticsRows } from './Diagnostics';
+import { openLocationTest } from './LocationTest';
 import { useState, useEffect, useRef, type ReactNode } from 'react';
 import type { Contact } from '../../core/types';
 
@@ -746,6 +748,9 @@ function HardwareContent({ onClose }: { onClose: () => void }) {
         </div>
       )}
 
+      <SectionTitle>Diagnostics</SectionTitle>
+      <DiagnosticsRows className="mb-5" />
+
       <SectionTitle>Stick behaviour</SectionTitle>
       <div className="glass mb-3 space-y-4 rounded-[24px] p-4">
         <div>
@@ -820,6 +825,7 @@ function PrivacyContent() {
   return (
     <div className="glass mb-5 overflow-hidden rounded-[28px] [&>*+*]:border-t [&>*+*]:border-line">
       <BigRow icon={<MapPin size={22} />} label="Share live location" detail="With your safety contact. During an SOS it is always shared." on={s.locationSharing} onChange={(v) => update({ locationSharing: v })} />
+      <NavRow icon={<LocateFixed size={20} />} iconBg="bg-teal/10 text-teal" label="Location test" detail="Permission, GPS signal and sources, with a report to copy" onClick={openLocationTest} />
       <BigRow
         icon={<Smartphone size={22} />}
         label="Keep running with the screen off"
