@@ -61,7 +61,8 @@ export class Emitter<T extends { [K in keyof T]: (...args: never[]) => void }> {
 
 /** JPEG sanity check: SOI/EOI markers, plausible size. The camera is never trusted blindly. */
 export async function validateJpeg(blob: Blob): Promise<string | null> {
-  if (blob.size < 2_000) return 'frame too small';
+  // 500 B: QQVGA (160x120) frames from boards without PSRAM are about 2 KB.
+  if (blob.size < 500) return 'frame too small';
   if (blob.size > 2_000_000) return 'frame too large';
   const head = new Uint8Array(await blob.slice(0, 3).arrayBuffer());
   // Some camera drivers pad the buffer after EOI; accept EOI within the last 64 bytes.

@@ -53,12 +53,16 @@ vi.mock('../src/core/maps/mapsLoader', async (orig) => {
 
 import { suggestDestinations, resolveDestination, findPlaces, routeWalking, MapsUnavailableError, searchBias, serverBackoffMs, __resetDestinationSearchForTests } from '../src/core/maps/destinationSearch';
 import { useLocation } from '../src/core/location/locationService';
+import { __resetOsmForTests } from '../src/core/maps/osmFallback';
 
 const fnErr = (code: string, message = code) => Object.assign(new Error(message), { code: `functions/${code}` });
 
 beforeEach(() => {
   vi.clearAllMocks();
   __resetDestinationSearchForTests();
+  __resetOsmForTests();
+  // The OpenStreetMap last resort is offline here (tests never reach the real internet).
+  vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('Failed to fetch'); }));
   browser.placesFails = null;
   useLocation.setState({ fix: null });
   browser.fetchAutocompleteSuggestions.mockResolvedValue({
@@ -114,13 +118,14 @@ describe('destination search works without GPS and without the Cloud Function', 
     expect(svc.autocomplete).toHaveBeenCalledTimes(2);
   });
 
-  test('both fail → one error naming both causes (never a silent empty list)', async () => {
+  test('all fail (server, in-app, OpenStreetMap) → one error naming every cause (never a silent empty list)', async () => {
     svc.autocomplete.mockRejectedValue(fnErr('not-found', 'NOT FOUND'));
     browser.placesFails = new Error('PlacesApiNotEnabled');
     const e = await suggestDestinations('barber', 'tok').catch((x) => x);
     expect(e).toBeInstanceOf(MapsUnavailableError);
     expect(e.message).toMatch(/not deployed/);
     expect(e.message).toMatch(/Places API \(New\)/);
+    expect(e.message).toMatch(/OpenStreetMap: OpenStreetMap search could not be reached/);
   });
 
   test('a browser suggestion resolves through the same autocomplete session (toPlace)', async () => {

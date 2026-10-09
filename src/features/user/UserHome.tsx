@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { BatteryFull, BatteryLow, BatteryCharging, Settings, Smartphone, Unlink, Moon, Sun, Footprints, MessageSquare, Map, ChevronRight, Activity, ShieldAlert, Heart, Flame, Phone, Zap, LogOut, Wand2, Link2, Headphones, Mic, StopCircle, Send, Plus, Bluetooth, Speaker, X } from 'lucide-react';
+import { BatteryFull, BatteryLow, BatteryCharging, Settings, Smartphone, Unlink, Moon, Sun, Footprints, MessageSquare, Map, ChevronRight, Activity, ShieldAlert, Heart, Flame, Phone, Zap, LogOut, Wand2, Link2, Headphones, Mic, StopCircle, Send, Plus, Bluetooth, Speaker, X, Camera } from 'lucide-react';
 
 import { useVoiceAssistant } from '../../hooks/useVoiceAssistant';
 import { useDevice, batteryHours, isLinked } from '../../core/store/device';
@@ -17,6 +17,8 @@ import { useActivity } from '../../core/store/activity';
 import { EventRow } from '../guardian/parts';
 import { StickVisual } from '../../components/StickVisual';
 import { LiveVisionPanel } from '../../components/LiveVisionPanel';
+import { LiveCameraView } from '../../components/LiveCameraView';
+import { CameraView } from './CameraView';
 import { LocationStatus } from '../../components/LocationStatus';
 import { useBackHandler } from '../../core/backStack';
 import { toggleThemeWithTransition } from '../../util/theme';
@@ -45,7 +47,8 @@ import { useWalking } from '../../core/walking/walkTracker';
 import type { Suggestion } from '../../core/maps/mapsService';
 import { useDestinationSearch } from '../../core/maps/useDestinationSearch';
 import { searchErrorText, type DestinationSuggestion } from '../../core/maps/destinationSearch';
-import { navigateTo, pendingDestination, stopRealNavigation } from '../../core/navigation/realNavigator';
+import { OSM_ATTRIBUTION, isOsmPlaceId } from '../../core/maps/osmFallback';
+import { activeRouteProvider, navigateTo, pendingDestination, stopRealNavigation } from '../../core/navigation/realNavigator';
 import { startNavigation as startDemoNavigation, stopNavigation as stopDemoNavigation } from '../../core/nav/navigation';
 import { PLACES } from '../../core/sim/geo';
 import { usePhoneInfo, phoneLabel } from '../../core/native/deviceInfo';
@@ -227,7 +230,30 @@ function ActionRow({ icon, iconTone, label, value, valueTone = 'text-ink', onCli
   );
 }
 
-const QuickActions = memo(function QuickActions({ onSafety, onChat }: { onSafety: () => void; onChat: () => void }) {
+/**
+ * Camera card: compact live preview of the stick camera; opens the full-screen CameraView. The
+ * preview holds the stream only while on screen and Home is not covered (`active`). Its button
+ * has one fixed label and nothing in it speaks.
+ */
+function CameraCard({ active, onOpen }: { active: boolean; onOpen: () => void }) {
+  return (
+    <button type="button" onClick={onOpen} aria-label="Stick camera, live view. Opens full screen." className="glass interactive flex w-full min-w-0 flex-col gap-3 rounded-[26px] p-3 text-left">
+      <span className="action-row flex w-full min-w-0 items-center gap-4 px-2 pt-1">
+        <span className="action-row-icon grid h-12 w-12 shrink-0 place-items-center rounded-full bg-teal/10 text-teal">
+          <Camera size={24} />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block break-words text-[12px] font-bold uppercase tracking-wider text-ink-3">Camera</span>
+          <span className="mt-0.5 block break-words text-[15.5px] font-bold leading-snug text-ink">See what the stick sees</span>
+        </span>
+        <ChevronRight size={20} className="shrink-0 text-ink-3" aria-hidden />
+      </span>
+      <LiveCameraView compact active={active} />
+    </button>
+  );
+}
+
+const QuickActions = memo(function QuickActions({ onSafety, onChat, onCamera, cameraActive }: { onSafety: () => void; onChat: () => void; onCamera: () => void; cameraActive: boolean }) {
   const safety = useSafetyEval((s) => s.state);
   const internet = useDevice((s) => s.internet);
   const aiUnavailable = useAssistant((s) => s.unavailable);
@@ -255,6 +281,7 @@ const QuickActions = memo(function QuickActions({ onSafety, onChat }: { onSafety
         </span>
       </button>
       <div className="col-span-2 mt-1 flex flex-col gap-4">
+        <CameraCard active={cameraActive} onOpen={onCamera} />
         <ActionRow
           onClick={() => useUI.setState({ audioOpen: true })}
           icon={route.route === 'bluetooth' ? <Bluetooth size={24} /> : route.route === 'speaker' ? <Speaker size={24} /> : <Headphones size={24} />}
@@ -454,7 +481,7 @@ function AiChatPage({ onClose }: { onClose: () => void }) {
 
 function DestinationSearch() {
   const demo = useRuntime((s) => s.mode) === 'demo';
-  // Real mode: debounced, works without GPS, Cloud Function → in-app Google Places fallback.
+  // Real mode: debounced, works without GPS; Cloud Function and in-app Google Places race, OpenStreetMap last.
   const search = useDestinationSearch({ enabled: !demo });
   const q = search.query;
   const [demoItems, setDemoItems] = useState<Suggestion[]>([]);
@@ -516,7 +543,7 @@ function DestinationSearch() {
         enterKeyHint="search"
         className="h-12 w-full min-w-0 rounded-full border border-line bg-surface px-5 text-[16px] font-medium text-ink outline-none placeholder:text-ink-3"
       />
-      {!demo && search.searching && !items.length && <p className="mt-2 px-2 text-[13.5px] font-semibold text-ink-3" role="status">Searching…</p>}
+      {!demo && search.searching && !items.length && <p className="mt-2 px-2 text-[13.5px] font-semibold text-ink-3" role="status">{search.slow ? 'Still searching… the server is slow to start.' : 'Searching…'}</p>}
       {shownErr && <p className="mt-2 px-2 text-[13.5px] font-semibold text-amber-ink" role="status">{shownErr}</p>}
       {items.length > 0 && (
         <ul className="page-scroll mt-2 max-h-48 rounded-[20px] border border-line bg-surface" role="listbox" aria-label="Suggestions">
@@ -530,6 +557,8 @@ function DestinationSearch() {
           ))}
         </ul>
       )}
+      {/* Required attribution when the places come from OpenStreetMap (Google search failed). */}
+      {!demo && items.length > 0 && search.source === 'osm' && <p className="mt-1 px-2 text-[11px] text-ink-3">{OSM_ATTRIBUTION}</p>}
     </div>
   );
 }
@@ -619,6 +648,8 @@ function WalkingPage({ onClose }: { onClose: () => void }) {
               <button type="button" onClick={() => (nav.source === 'demo' ? stopDemoNavigation() : stopRealNavigation('user'))} className="mt-4 h-12 w-full rounded-full bg-ink/5 text-[15px] font-bold text-ink active:bg-ink/10">
                 End route
               </button>
+              {/* Required attribution for an OpenStreetMap place or route. */}
+              {nav.source === 'real' && (activeRouteProvider() === 'osm' || isOsmPlaceId(nav.destination?.placeId)) && <p className="mt-2 text-center text-[11px] text-ink-3">{OSM_ATTRIBUTION}</p>}
             </>
           ) : (
             <>
@@ -1041,6 +1072,7 @@ function SafetyCenterContent() {
 export function UserHome() {
   const [safetyCenterOpen, setSafetyCenterOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  const [cameraOpen, setCameraOpen] = useState(false);
   const batteryOpen = useUI((s) => s.batteryPage);
   const mapOpen = useUI((s) => s.mapOpen);
   const stickDetailsOpen = useUI((s) => s.stickPage);
@@ -1049,7 +1081,7 @@ export function UserHome() {
   const audioOpen = useUI((s) => s.audioOpen);
   const otherScreen = useUI((s) => s.userSettings || s.stickSetup);
   // Home hides under full-screen pages: one animated background, nothing behind for TalkBack.
-  const covered = safetyCenterOpen || chatOpen || batteryOpen || mapOpen || stickDetailsOpen || liveAiOpen || healthOpen || audioOpen || otherScreen;
+  const covered = safetyCenterOpen || chatOpen || cameraOpen || batteryOpen || mapOpen || stickDetailsOpen || liveAiOpen || healthOpen || audioOpen || otherScreen;
 
   const header = useRef<HTMLElement>(null);
   const scrolled = useRef(false);
@@ -1061,6 +1093,7 @@ export function UserHome() {
   }, []);
   const openSafety = useCallback(() => setSafetyCenterOpen(true), []);
   const openChat = useCallback(() => setChatOpen(true), []);
+  const openCamera = useCallback(() => setCameraOpen(true), []);
 
   return (
     <AppScreen>
@@ -1073,7 +1106,7 @@ export function UserHome() {
             <WalkCard />
             <AssistantCard />
           </HomeCarousel>
-          <QuickActions onSafety={openSafety} onChat={openChat} />
+          <QuickActions onSafety={openSafety} onChat={openChat} onCamera={openCamera} cameraActive={!covered} />
           <BottomControls />
         </SafeAreaContent>
       </div>
@@ -1082,6 +1115,7 @@ export function UserHome() {
         <SafetyCenterContent />
       </SubPage>
       <AiChatSubpage open={chatOpen} onClose={() => setChatOpen(false)} />
+      <CameraView open={cameraOpen} onClose={() => setCameraOpen(false)} />
       <WalkingSubpage open={mapOpen} onClose={() => useUI.setState({ mapOpen: false })} />
       <SubPage open={stickDetailsOpen} onClose={() => useUI.setState({ stickPage: false })} title="Stick diagnostics" background="none">
         <StickDetailsContent />

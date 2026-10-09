@@ -1,16 +1,19 @@
 import { useEffect, useState } from 'react';
 import { create } from 'zustand';
 import { AnimatePresence } from 'motion/react';
-import { Activity, ChevronRight, LocateFixed } from 'lucide-react';
+import { Activity, ChevronRight, Cloud, LocateFixed } from 'lucide-react';
 import { SubPageView } from '../../components/Layout';
 import { ConnectionTest } from './ConnectionTest';
 import { openLocationTest, TEST_PAGE_Z } from './LocationTest';
+import { openServerTest, ServerTestHost } from './ServerTest';
 
 /**
- * DIAGNOSTICS: the stick Connection test and the Location test, reachable from anywhere
- * (Stick diagnostics on Home, Settings → Stick & hardware, setup). Like LocationTestHost, the
- * Connection test page is rendered by one host mounted in StickUserApp (inside its text-size /
- * high-contrast root), so it opens on top of whichever page asked for it without nesting sub-pages.
+ * DIAGNOSTICS: the stick Connection test, the Location test and the Server & maps test, reachable
+ * from anywhere (Stick diagnostics on Home, Settings → Stick & hardware, setup). Like
+ * LocationTestHost, the Connection test page is rendered by one host mounted in StickUserApp (inside
+ * its text-size / high-contrast root), so it opens on top of whichever page asked for it without
+ * nesting sub-pages. ConnectionTestHost also renders ServerTestHost, so the Server test is mounted
+ * wherever the Connection test is.
  */
 export const useConnectionTest = create<{ open: boolean }>(() => ({ open: false }));
 export const openConnectionTest = () => useConnectionTest.setState({ open: true });
@@ -28,17 +31,21 @@ export function ConnectionTestHost() {
   }, [id]);
   const owner = useHosts((s) => s.ids[0] === id);
   const open = useConnectionTest((s) => s.open);
-  if (!owner) return null;
   return (
-    <AnimatePresence>
-      {open && (
-        <div key="conntest" className={`absolute inset-0 ${TEST_PAGE_Z}`}>
-          <SubPageView onClose={closeConnectionTest} title="Connection test">
-            <ConnectionTest />
-          </SubPageView>
-        </div>
+    <>
+      <ServerTestHost />
+      {owner && (
+        <AnimatePresence>
+          {open && (
+            <div key="conntest" className={`absolute inset-0 ${TEST_PAGE_Z}`}>
+              <SubPageView onClose={closeConnectionTest} title="Connection test">
+                <ConnectionTest />
+              </SubPageView>
+            </div>
+          )}
+        </AnimatePresence>
       )}
-    </AnimatePresence>
+    </>
   );
 }
 
@@ -55,12 +62,13 @@ function DiagRow({ icon, iconBg, label, detail, onClick }: { icon: React.ReactNo
   );
 }
 
-/** The two diagnostics rows (a glass list). */
+/** The diagnostics rows (a glass list). */
 export function DiagnosticsRows({ className = '' }: { className?: string }) {
   return (
     <div className={`glass overflow-hidden rounded-[24px] [&>*+*]:border-t [&>*+*]:border-line ${className}`}>
       <DiagRow icon={<Activity size={20} />} iconBg="bg-teal/10 text-teal" label="Connection test" detail="Check every step between phone and stick, with a report to copy" onClick={openConnectionTest} />
       <DiagRow icon={<LocateFixed size={20} />} iconBg="bg-info/10 text-info" label="Location test" detail="Permission, GPS signal and sources, with a report to copy" onClick={openLocationTest} />
+      <DiagRow icon={<Cloud size={20} />} iconBg="bg-amber-soft text-amber-ink" label="Server & maps test" detail="Internet, Firebase, App Check, Google Maps and AI, with a report to copy" onClick={openServerTest} />
     </div>
   );
 }

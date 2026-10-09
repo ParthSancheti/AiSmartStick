@@ -5,6 +5,7 @@ import { fuseSensors } from './fusionEngine';
 import { getCurrentSensorContext } from './sensorConditioning';
 import { useVisionDebug, type VisionRunState } from '../store/visionDebug';
 import { useDevice, isLinked } from '../store/device';
+import { acquireLiveStream } from '../camera/liveStream';
 import { trace } from '../device/deviceTrace';
 import { log } from '../log';
 import type { DetectionSnapshot } from './types';
@@ -33,6 +34,8 @@ export class VisionEngine {
   private initTimer: ReturnType<typeof setTimeout> | null = null;
   private unsubLink: (() => void) | null = null;
   private consecutiveErrors = 0;
+  /** Holds the live camera stream while detection runs, so frames come from it, not from extra /capture calls. */
+  private releaseStream: (() => void) | null = null;
 
   public latestSnapshot: DetectionSnapshot | null = null;
   public onSnapshot: ((s: DetectionSnapshot) => void) | null = null;
@@ -69,6 +72,8 @@ export class VisionEngine {
   private halt(state: VisionRunState) {
     this.looping = false;
     this.loopGen++;
+    this.releaseStream?.();
+    this.releaseStream = null;
     if (this.loopId) clearTimeout(this.loopId);
     this.loopId = null;
     this.setRun(state);
@@ -86,6 +91,8 @@ export class VisionEngine {
         this.consecutiveErrors = 0;
         this.tracker = new ObjectTracker();
         this.pipeline.reset();
+        this.releaseStream?.();
+        this.releaseStream = acquireLiveStream('vision');
         this.setRun('running');
         void this.loop(++this.loopGen);
       }

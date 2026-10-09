@@ -8,6 +8,7 @@ import { useBackHandler } from '../../../core/backStack';
 import { ensureLocation, useLocation } from '../../../core/location/locationService';
 import { friendlyMapsError, reverseLookup } from '../../../core/maps/mapsService';
 import { resolveDestination, searchBias, searchErrorText, suggestDestinations, type DestinationSuggestion } from '../../../core/maps/destinationSearch';
+import { OSM_ATTRIBUTION, isOsmPlaceId } from '../../../core/maps/osmFallback';
 import { useSession, type SavedPlace } from '../../../core/store/session';
 import { useRuntime } from '../../../core/runtime/mode';
 
@@ -65,7 +66,8 @@ export function HomeLocationStep({ onSaved }: { onSaved: () => void }) {
     const t = setTimeout(() => {
       setSearching(true);
       // Biased around the newest position (any age); India-wide before the first fix. Cloud
-      // Function first, the in-app Google Places search if it fails (core/maps/destinationSearch.ts).
+      // Function and the in-app Google Places search race; OpenStreetMap is the last resort
+      // (core/maps/destinationSearch.ts).
       suggestDestinations(text, token, searchBias())
         .then((r) => {
           if (!alive) return;
@@ -177,6 +179,8 @@ export function HomeLocationStep({ onSaved }: { onSaved: () => void }) {
                   </button>
                 </li>
               ))}
+              {/* Required attribution when the places come from OpenStreetMap. */}
+              {items.some((it) => it.source === 'osm') && <li className="px-3 pb-1 pt-0.5 text-[11px] text-ink-3">{OSM_ATTRIBUTION}</li>}
             </motion.ul>
           )}
         </AnimatePresence>
@@ -193,6 +197,7 @@ export function HomeLocationStep({ onSaved }: { onSaved: () => void }) {
             <p className="text-[12px] font-bold uppercase tracking-[0.18em] text-teal">Selected place</p>
             <p className="mt-1 truncate text-[20px] font-extrabold text-ink">{picked.name}</p>
             <p className="mt-0.5 line-clamp-2 text-[14px] text-ink-2">{picked.address}</p>
+            {isOsmPlaceId(picked.placeId) && <p className="mt-0.5 text-[11px] text-ink-3">{OSM_ATTRIBUTION}</p>}
             <div className="mt-4 flex gap-2" role="radiogroup" aria-label="Save as">
               {LABELS.map((l) => (
                 <button key={l} type="button" role="radio" aria-checked={label === l} onClick={() => setLabel(l)} className={cx('h-9 flex-1 rounded-full text-[13.5px] font-bold transition-colors', label === l ? 'bg-teal text-on-teal' : 'bg-ink/5 text-ink-2')}>

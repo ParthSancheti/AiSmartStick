@@ -58,6 +58,48 @@ async function blobToB64(b: Blob) {
   return btoa(s);
 }
 
+/**
+ * Why a camera tool failed, in words the assistant can say to the user (short, simple English).
+ * Covers the stick camera (offline / busy / no answer), the server (unreachable, App Check refused,
+ * not deployed) and the AI picture service (key problem on the server).
+ */
+export function visionFailureReason(e: unknown): string {
+  // Only string codes are server codes (a DOMException has a number code, e.g. 23 for a timeout).
+  const raw = (e as { code?: unknown })?.code;
+  const code = typeof raw === 'string' ? raw.replace(/^functions\//, '') : '';
+  const msg = String((e as Error)?.message ?? e ?? '');
+  if (msg === 'stick-offline') return 'The stick camera is offline: the stick is not connected to the phone. Ask the user to switch the stick on and connect it.';
+  if (/camera: busy|\b409\b/i.test(msg)) return 'The stick camera is busy right now (the live video is using it). Try again in a few seconds.';
+  // Errors without a server code come from the stick side (capture request, live stream).
+  if (!code && /^\s*camera:|\bcamera\b|HTTP \d{3}|\/api\/v1\/capture|no path to the stick|not bound|stick network|stick did not answer|stream|timed out|timeout|aborted|failed to fetch|network/i.test(msg)) return 'The stick camera did not answer. The stick may be too far or switched off. Try again.';
+  const keyWords = /api.?key|API_KEY|key (is )?(not valid|invalid|expired)|gemini|not configured|PERMISSION_DENIED|billing/i;
+  switch (code) {
+    case 'unauthenticated':
+      return /sign in/i.test(msg)
+        ? 'The user is not signed in. Ask them to sign in again, then try the camera again.'
+        : 'The server refused this app (App Check). Picture description will work after App Check is set up. The obstacle sensor still works.';
+    case 'deadline-exceeded':
+      return 'The server did not answer in time (slow internet, or the server is starting). Try again.';
+    case 'unavailable':
+      return 'The phone could not reach the server. Check the internet connection.';
+    case 'failed-precondition':
+      return keyWords.test(msg) ? 'The AI picture service is not set up on the server (Gemini key missing). Tell the user it does not work yet.' : 'The server refused the picture request. Try again later.';
+    case 'internal':
+      return keyWords.test(msg) ? 'The AI picture service has a key problem on the server (Gemini key). Tell the user it does not work right now.' : 'The AI picture service had a server error. Try again.';
+    case 'resource-exhausted':
+      return 'Too many picture requests. Wait a minute and try again.';
+    case 'not-found':
+      return 'The picture service is not installed on the server yet.';
+    case 'permission-denied':
+      return 'The server refused the picture request for this account.';
+    case 'invalid-argument':
+      return 'The camera picture was not usable. Try again.';
+    case 'unknown':
+      if (/not configured/i.test(msg)) return 'This app is not connected to its server (Firebase is not set up in this build).';
+  }
+  return msg ? `The camera did not work: ${msg.slice(0, 120)}` : 'The camera did not work. Try again.';
+}
+
 /** Capture from the stick and interpret with Gemini vision (backend). The image is not stored anywhere. */
 export async function runVision(task: VisionTask, hint?: string): Promise<VisionResult> {
   const prev = useAssistant.getState().phase;
@@ -163,8 +205,12 @@ async function executeActionInner(a: Action): Promise<ToolResult> {
       }
       // ── VISION ──
       case 'vision.captureScene': {
-        const f = await captureFrame('assistant');
-        return ok(a, { captured: true, width: 0, height: 0, at: f.ts, note: 'Use describe_scene/read_text to interpret a photo.' });
+        try {
+          const f = await captureFrame('assistant');
+          return ok(a, { captured: true, width: 0, height: 0, at: f.ts, note: 'Use describe_scene/read_text to interpret a photo.' });
+        } catch (e) {
+          return fail(a, visionFailureReason(e));
+        }
       }
       case 'vision.describeScene':
       case 'vision.readText':
@@ -172,8 +218,13 @@ async function executeActionInner(a: Action): Promise<ToolResult> {
       case 'vision.readSign':
       case 'vision.describeEnvironment': {
         const task = spec.name as VisionTask;
-        const r = await runVision(task, args.hint as string | undefined);
-        return ok(a, { ...r });
+        try {
+          const r = await runVision(task, args.hint as string | undefined);
+          return ok(a, { ...r });
+        } catch (e) {
+          console.warn(`[VISION] ${task} failed: ${String((e as { code?: string })?.code ?? '')} ${(e as Error)?.message ?? e}`);
+          return fail(a, visionFailureReason(e));
+        }
       }
       // ── NAVIGATION ──
       case 'navigation.getCurrentLocation': {

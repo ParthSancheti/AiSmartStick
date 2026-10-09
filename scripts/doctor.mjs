@@ -15,8 +15,11 @@
  *
  * It writes doctor-report.txt (git-ignored). Secret values are never printed or written: .env keys are
  * reported by NAME only, and every .env value is masked in captured tool output.
+ * Network: one small Places API (New) request with the Maps browser key (ids only), to see whether
+ * Google accepts the key for the app's address. No network: that check says SKIP.
  */
 import fs from 'node:fs';
+import https from 'node:https';
 import os from 'node:os';
 import path from 'node:path';
 import util from 'node:util';
@@ -38,6 +41,10 @@ const FW_BUILD_DIR = path.join(os.tmpdir(), 'aiss-firmware-build');
 const LOGCAT_FILTER = /AissNative|AissLocation|Capacitor|Console|chromium|SmartStick|AndroidRuntime|FATAL|DebugAppCheckProvider|debug secret/;
 const TAIL_LINES = 40;
 const NAME_WIDTH = 24;
+const SETUP_DOC = 'docs/GOOGLE_CLOUD_SETUP.md';
+// Maps key check: one Places API (New) text search with the browser key, the same call the app makes.
+const PLACES_TEST_URL = 'https://places.googleapis.com/v1/places:searchText';
+const NET_TIMEOUT_MS = 8000;
 
 const HELP = `AI SmartStick doctor: checks your PC, fixes common problems, builds and installs the app.
 
@@ -66,6 +73,8 @@ Options (with npm put them after "--", for example: npm run doctor -- --checks-o
   --help           this text
 
 Writes doctor-report.txt in the project folder (no secret values).
+The check "Maps key (Places API)" sends one small search to Google with your Maps browser key
+(the key is never printed). Without internet it says SKIP.
 Exit code 1 when something FAILED. Simple guide: docs/DOCTOR.md`;
 
 // ───────────────────────────── output ─────────────────────────────
@@ -742,9 +751,159 @@ function checkMapsKey(ctx) {
     name: 'Google Maps key',
     status: set ? 'PASS' : 'WARN',
     detail: set ? `${key} is set` : `${key} is missing or empty: the map will not load`,
-    fix: set ? null : `Google Cloud console > APIs & Services > Credentials > create an API key for "Maps JavaScript API", put it in .env as ${key}`,
+    fix: set ? null : `Google Cloud console > APIs & Services > Credentials > create an API key for "Maps JavaScript API" and "Places API (New)", put it in .env as ${key}; see ${SETUP_DOC}, "3 Browser key"`,
     note: `reminder: the key's "Website restrictions" must allow ${origin}/* (the app's address inside Android); an "Android apps" restriction does not work for this key`,
   });
+}
+
+/** One HTTPS POST with a JSON body and a hard time limit. Never throws: { status, json } or { error }. */
+function postJson(url, headers, body, timeoutMs = NET_TIMEOUT_MS) {
+  return new Promise((resolve) => {
+    let done = false;
+    let req = null;
+    const end = (r) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      resolve(r);
+    };
+    const timer = setTimeout(() => {
+      end({ error: `no answer in ${timeoutMs / 1000} s` });
+      try {
+        if (req) req.destroy();
+      } catch {
+        /* ignore */
+      }
+    }, timeoutMs);
+    try {
+      const data = Buffer.from(JSON.stringify(body), 'utf8');
+      req = https.request(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': data.length, ...headers } }, (res) => {
+        const chunks = [];
+        let size = 0;
+        res.on('data', (c) => {
+          size += c.length;
+          if (size <= 256 * 1024) chunks.push(c);
+        });
+        res.on('end', () => {
+          let json = null;
+          try {
+            json = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+          } catch {
+            /* not JSON */
+          }
+          end({ status: res.statusCode || 0, json });
+        });
+        res.on('error', (e) => end({ error: e.code || e.message }));
+      });
+      req.on('error', (e) => end({ error: e.code || e.message }));
+      req.end(data);
+    } catch (e) {
+      end({ error: (e && (e.code || e.message)) || 'request failed' });
+    }
+  });
+}
+
+/** Google REST error body -> its parts: reason (ErrorInfo), status, message, project number, service. */
+function googleRestError(json) {
+  const err = (json && typeof json === 'object' && json.error) || {};
+  const details = Array.isArray(err.details) ? err.details : [];
+  const info = details.find((d) => d && typeof d === 'object' && typeof d.reason === 'string') || {};
+  const meta = (info.metadata && typeof info.metadata === 'object' && info.metadata) || {};
+  const message = String(err.message || '');
+  const project = /(\d{6,})/.exec(String(meta.consumer || meta.containerInfo || ''))?.[1] || /\bproject #?(\d{6,})/i.exec(message)?.[1] || null;
+  return { reason: String(info.reason || ''), status: String(err.status || ''), message, project, service: String(meta.service || '') };
+}
+
+/** First sentence of Google's message, without links, short. */
+function shortGoogleText(message) {
+  const s = String(message || '')
+    .replace(/https?:\/\/\S+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const first = (s.split(/\.\s/)[0] || s).replace(/\.$/, '');
+  return first.length > 160 ? `${first.slice(0, 157)}...` : first;
+}
+
+/**
+ * Places API (New) answer for the browser key -> a check row ({ status, detail, fix }).
+ * `r` is postJson's result. Never contains the key (Google does not echo it).
+ */
+function placesKeyVerdict(r, { keyName = 'VITE_GOOGLE_MAPS_BROWSER_KEY', origin = 'https://localhost' } = {}) {
+  const see = (section) => `see ${SETUP_DOC}, "${section}"`;
+  const credentials = 'Google Cloud console > APIs & Services > Credentials > the browser key';
+  if (!r || r.error) return { status: 'SKIP', detail: `Google could not be reached (${(r && r.error) || 'no answer'}): no internet, or a proxy or firewall blocks Node.js`, fix: null };
+  if (r.status >= 200 && r.status < 300) return { status: 'PASS', detail: `Places API (New) accepts the key for ${origin}/` };
+  const g = googleRestError(r.json);
+  const code = [r.status, g.reason || g.status].filter(Boolean).join(' ');
+  const inProject = g.project ? ` in project ${g.project}` : '';
+  const text = `${g.reason} ${g.message}`;
+  if (g.reason === 'SERVICE_DISABLED' || /has not been used in project|it is disabled/i.test(g.message)) {
+    const link = `https://console.cloud.google.com/apis/library/${/^[\w.-]+\.googleapis\.com$/.test(g.service) ? g.service : 'places.googleapis.com'}${g.project ? `?project=${g.project}` : ''}`;
+    return {
+      status: 'FAIL',
+      detail: `Places API (New) is not enabled${inProject} (HTTP ${code}): in-app search fails, and the server search too if its key is in the same project`,
+      fix: `open ${link} > Enable, wait about 5 minutes, run the doctor again; also tick "Places API (New)" in the key's API restrictions; ${see('2 Enable APIs')}`,
+    };
+  }
+  if (/BILLING/.test(g.reason) || /billing/i.test(g.message)) {
+    return { status: 'FAIL', detail: `Google says billing is not on${inProject} (HTTP ${code})`, fix: `Google Cloud console > Billing: link a billing account to the project; ${see('1 Billing')}` };
+  }
+  if (/API_KEY_INVALID|API_KEY_EXPIRED/.test(g.reason) || /API key not valid|API key expired/i.test(g.message)) {
+    return { status: 'FAIL', detail: `Google says the key in ${keyName} is not valid (HTTP ${code})`, fix: `copy the key again from ${credentials} > "Show key" into .env (no quotes, no spaces), then build the app again; ${see('3 Browser key')}` };
+  }
+  if (g.reason === 'API_KEY_HTTP_REFERRER_BLOCKED' || (!g.reason && /referer|referrer/i.test(g.message))) {
+    return {
+      status: 'FAIL',
+      detail: `the key does not allow the app's address ${origin}/ (HTTP ${code}): the map and the in-app search are refused`,
+      fix: `${credentials} > Application restrictions: Websites > add ${origin}/* (and http://localhost:5173/* for npm run dev) > Save; ${see('3 Browser key')}`,
+    };
+  }
+  const appBlock = /API_KEY_(ANDROID_APP|IOS_APP|IP_ADDRESS)_BLOCKED/.exec(g.reason);
+  if (appBlock) {
+    const kind = { ANDROID_APP: 'Android apps', IOS_APP: 'iOS apps', IP_ADDRESS: 'IP addresses' }[appBlock[1]];
+    return {
+      status: 'FAIL',
+      detail: `the key has an "${kind}" restriction (HTTP ${code}); the map in the app needs a "Websites" restriction`,
+      fix: `${credentials} > Application restrictions: Websites > add ${origin}/* > Save; ${see('3 Browser key')}`,
+    };
+  }
+  if (g.reason === 'API_KEY_SERVICE_BLOCKED' || /requests to this api .* are blocked|not authorized to use this (api|service)/i.test(text)) {
+    return { status: 'FAIL', detail: `the key's API restrictions do not include Places API (New) (HTTP ${code})`, fix: `${credentials} > API restrictions: tick "Maps JavaScript API" and "Places API (New)" > Save; ${see('3 Browser key')}` };
+  }
+  if (r.status === 429 || g.status === 'RESOURCE_EXHAUSTED') {
+    return { status: 'WARN', detail: `Google says the quota is used up (HTTP ${code})`, fix: `wait a few minutes; check billing and the Places API (New) quotas in Google Cloud console; ${see('1 Billing')}` };
+  }
+  const why = shortGoogleText(g.message);
+  return { status: 'WARN', detail: `Google answered HTTP ${code}${why ? `: ${why}` : ''}`, fix: `${see('2 Enable APIs')} and "3 Browser key"` };
+}
+
+async function checkMapsKeyOnline(ctx) {
+  const keyName = ctx.mapsKeyName;
+  if (!keyName || !ctx.envFiles.length) return;
+  const key = String(ctx.env[keyName] || '').trim();
+  if (!key) return; // the "Google Maps key" row already says it is missing
+  const name = 'Maps key (Places API)';
+  const origin = ctx.webOrigin || 'https://localhost';
+  // Ids only: the smallest kind of Places request. The Referer is the app's own address inside Android.
+  const ask = (referer) => postJson(PLACES_TEST_URL, { 'X-Goog-Api-Key': key, 'X-Goog-FieldMask': 'places.id', Referer: referer }, { textQuery: 'hospital', maxResultCount: 1 });
+  statusLine('  ... asking Google Places with the Maps browser key');
+  const r = await ask(`${origin}/`);
+  clearStatusLine();
+  const v = placesKeyVerdict(r, { keyName, origin });
+  const row = { name, status: v.status, detail: ctx.redact(v.detail), fix: v.fix ? ctx.redact(v.fix) : null };
+  if (v.status === 'PASS') {
+    // Same key from a made-up website: if Google accepts that too, the key has no Website restriction.
+    const other = await ask('https://doctor-check.invalid/');
+    if (!other.error && other.status >= 200 && other.status < 300) {
+      row.status = 'WARN';
+      row.detail += '; but it also works from any other website: the key has no "Websites" restriction, so anyone who copies it from the APK can use it';
+      row.fix = `Google Cloud console > APIs & Services > Credentials > the browser key > Application restrictions: Websites > add ${origin}/* > Save; see ${SETUP_DOC}, "3 Browser key"`;
+    }
+  }
+  row.note = v.status === 'SKIP'
+    ? `test it on the phone instead: Diagnostics > Server & maps test ("In-app Google Places")`
+    : 'the map itself (Maps JavaScript API) cannot be tested from the PC: it must be enabled and ticked in the key\'s API restrictions; on the phone: Diagnostics > Server & maps test';
+  addCheck(ctx, row);
 }
 
 function checkAppCheck(ctx) {
@@ -1383,6 +1542,7 @@ async function runChecks(ctx) {
   await g('capacitor.config.json', () => checkCapacitorConfig(ctx));
   await g('.env', () => checkEnv(ctx));
   await g('Google Maps key', () => checkMapsKey(ctx));
+  await g('Maps key (Places API)', () => checkMapsKeyOnline(ctx));
   await g('functions/.env', () => checkFunctionsEnv(ctx));
   await g('App Check (debug APK)', () => checkAppCheck(ctx));
   await g('.firebaserc', () => checkFirebaserc(ctx));
@@ -1987,4 +2147,4 @@ if (!process.env.AISS_DOCTOR_NO_MAIN) {
   );
 }
 
-export { satisfies, parseProps, escapePropValue, unescapeProp, parseEnvText, readEnvFile, parseArgs, modes, inspectNodeModules, hintsFor, styleLogLine };
+export { satisfies, parseProps, escapePropValue, unescapeProp, parseEnvText, readEnvFile, parseArgs, modes, inspectNodeModules, hintsFor, styleLogLine, placesKeyVerdict, googleRestError, postJson };

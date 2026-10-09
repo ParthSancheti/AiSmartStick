@@ -15,6 +15,21 @@ export type CallResult = 'call_started' | 'dialer_opened';
 export type SmsResult = 'sent' | 'queued' | 'composer_opened' | 'failed';
 export type AudioRoute = 'speaker' | 'wired' | 'bluetooth' | 'unknown';
 
+/** One JPEG from the stick's MJPEG stream. data = base64 (no line breaks); at = phone time it arrived (ms). */
+export interface StreamFrameEvent {
+  data: string;
+  seq: number;
+  at: number;
+  bytes: number;
+}
+
+/** Native stream reader state. via = stick (the stick Wi-Fi) or default (the phone's default network). */
+export interface StreamStateEvent {
+  state: 'connecting' | 'live' | 'error' | 'stopped';
+  error?: string;
+  via?: 'stick' | 'default';
+}
+
 export interface AissNativePlugin {
   /** Wi-Fi scan for the stick's setup AP (needs NEARBY_WIFI_DEVICES / location permission). */
   scanForSetupNetworks(opts: { prefix: string }): Promise<{ networks: SetupNetwork[] }>;
@@ -44,6 +59,17 @@ export interface AissNativePlugin {
   /** GET returning the raw response bytes base64-encoded (camera JPEG). Same network binding and headers as setupRequest. */
   requestBinary(opts: { path: string; headers?: Record<string, string>; timeoutMs?: number; route?: 'auto' | 'default' }): Promise<{ status: number; body: string; contentType?: string; via?: string }>;
   releaseSetupNetwork(): Promise<void>;
+  /**
+   * Live camera: a native thread reads the stick's MJPEG stream (http://192.168.4.1:{port}{path}) over
+   * the stick Wi-Fi and sends each JPEG as a 'streamFrame' event, at most maxFps a second (extra
+   * frames are dropped, never queued). Reconnects by itself (1, 2, 4, 8 s) until stopStream.
+   * A start while running only updates the options. Defaults: port 81, path /stream, maxFps 8.
+   */
+  startStream(opts?: { port?: number; path?: string; maxFps?: number }): Promise<{ running: boolean }>;
+  /** Stops the reader and closes the socket at once (the stick serves only one stream viewer). */
+  stopStream(): Promise<void>;
+  addListener(event: 'streamFrame', cb: (f: StreamFrameEvent) => void): Promise<PluginListenerHandle>;
+  addListener(event: 'streamState', cb: (s: StreamStateEvent) => void): Promise<PluginListenerHandle>;
   /**
    * Last-resort fallback: bindProcessToNetwork(stick network) — ALL app traffic (WebView included)
    * goes over the stick Wi-Fi; maps / assistant / Firebase stop while it is on. on: false releases it.

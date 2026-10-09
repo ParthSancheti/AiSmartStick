@@ -124,7 +124,7 @@ export async function startRealNavigation(place: PlaceResult) {
   const fix = useLocation.getState().fix;
   // A cached position (location off, indoors for long) would route from the wrong place.
   if (!fix || Date.now() - fix.ts > LOCATION_STALE_MS) throw new Error('location-unavailable');
-  // Cloud Function (Routes API), else the in-app Maps DirectionsService.
+  // Cloud Function (Routes API) / in-app Maps DirectionsService (hedged), else OpenStreetMap.
   const route = await routeWalking({ lat: fix.lat, lng: fix.lng }, place);
   if (!route.path.length) throw new Error('no-route');
   clearPending();
@@ -261,6 +261,8 @@ function onLocation(fix: Fix) {
 }
 
 export const realNavActive = () => active !== null;
+/** Whose map data the active route uses ('osm' → the map must show the OpenStreetMap attribution). */
+export const activeRouteProvider = (): 'google' | 'osm' | null => (active ? (active.route.provider ?? 'google') : null);
 export const currentDestination = () => active?.place ?? pending ?? null;
 /** Destination set while waiting for the first GPS fix (null when none). */
 export const pendingDestination = () => pending;

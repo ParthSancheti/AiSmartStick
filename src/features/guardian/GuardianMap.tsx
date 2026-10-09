@@ -8,6 +8,7 @@ import { Meter } from '../../components/StatusBits';
 import { PersonAvatar, useSafetyStatus, TopNav } from './parts';
 import { useFeed } from '../../core/sync/guardianFeed';
 import { freshnessLabel } from '../../core/location/locationService';
+import { OSM_ATTRIBUTION, isOsmPlaceId } from '../../core/maps/osmFallback';
 import { AissNative } from '../../core/native/aissNative';
 import { useNow } from '../../hooks/useNow';
 import { useRuntime } from '../../core/runtime/mode';
@@ -81,6 +82,8 @@ export function GuardianMap() {
                   Next: {next}
                 </p>
               )}
+              {/* Required attribution when the destination came from OpenStreetMap (Google search failed). */}
+              {isOsmPlaceId(nav.destination.placeId) && <p className="mt-2 text-[11px] text-ink-3">{OSM_ATTRIBUTION}</p>}
             </>
           ) : (
             <>

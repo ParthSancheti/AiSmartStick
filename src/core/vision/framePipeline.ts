@@ -1,14 +1,20 @@
 import { getTransport } from '../device/bridge';
 import type { CapturedFrame } from '../transport/types';
+import { isLiveStreamRunning, latestStreamFrame, useLiveStream, waitForStreamFrame } from '../camera/liveStream';
 
 export interface FramePipelineConfig {
   /** Frames older than this when they arrive are dropped (the world has moved on). */
   maxStaleMs: number;
 }
 
+/** How long to wait for the live stream's next frame before asking the stick for a photo. */
+const STREAM_WAIT_MS = 1500;
+
 /**
  * Pull-based frame source: one capture in flight at a time (the vision loop is sequential), with
  * capture / inference / end-to-end latency and FPS metrics for the debug view.
+ * Prefers live-stream frames (core/camera/liveStream.ts) not analysed yet; while the stream runs it
+ * waits for the next one instead of competing for the camera with /api/v1/capture.
  */
 export class FramePipeline {
   public metrics = {
@@ -23,14 +29,33 @@ export class FramePipeline {
 
   private lastFrameAt = 0;
   private lastInferenceAt = 0;
+  /** Newest live-stream frame handed out (stream seq only grows). */
+  private lastStreamSeq = 0;
 
   constructor(private config: FramePipelineConfig = { maxStaleMs: 1500 }) {}
 
-  public async fetchNextFrame(): Promise<CapturedFrame> {
+  private fromStream(f: { blob: Blob; capturedAt: number; seq: number }): CapturedFrame {
+    this.lastStreamSeq = f.seq;
+    const s = useLiveStream.getState();
+    return { blob: f.blob, width: s.width, height: s.height, capturedAt: f.capturedAt };
+  }
+
+  private async nextFrame(): Promise<CapturedFrame> {
+    const fresh = latestStreamFrame(this.config.maxStaleMs);
+    if (fresh && fresh.seq > this.lastStreamSeq) return this.fromStream(fresh);
+    if (isLiveStreamRunning()) {
+      const next = await waitForStreamFrame(this.lastStreamSeq, STREAM_WAIT_MS);
+      if (next) return this.fromStream(next);
+    }
     const t = getTransport();
     if (!t) throw new Error('offline');
+    return t.captureFrame();
+  }
+
+  public async fetchNextFrame(): Promise<CapturedFrame> {
+    if (!getTransport()) throw new Error('offline');
     const t0 = performance.now();
-    const frame = await t.captureFrame();
+    const frame = await this.nextFrame();
     this.metrics.captureLatency = performance.now() - t0;
     const age = Date.now() - frame.capturedAt;
     if (age > this.config.maxStaleMs) {

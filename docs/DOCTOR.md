@@ -81,6 +81,7 @@ Every check has one word:
 * **PASS** : good.
 * **WARN** : it works for now, but something is missing or not ideal. Read the line.
 * **FAIL** : you must fix this. The app will not build or will not work.
+* **SKIP** : not tested (for example no internet for the Maps key test).
 
 Under each WARN and FAIL there is a `fix:` line. It tells you what to do.
 A `fixed:` line means the doctor already fixed it.
@@ -104,7 +105,8 @@ The last line is `RESULT: OK` or `RESULT: FAILED`.
 | **functions/node_modules** | Packages for the Cloud Functions. Only needed to deploy them. | `npm run doctor:fix` |
 | **capacitor.config.json** | App id `in.aismartstick.app`, `webDir` is `dist`, CapacitorHttp is off. | Take this file from the original ZIP. |
 | **.env** | Your app settings. All six `VITE_FIREBASE_...` keys need a value. The doctor shows key **names** only, never the values. | Firebase console > Project settings > Your apps > Web app > Config. Copy each value into `.env`. If it says "UTF-16" or "BOM": `npm run doctor:fix`. |
-| **Google Maps key** | `VITE_GOOGLE_MAPS_BROWSER_KEY` has a value. Without it the map does not load. | Make a key in Google Cloud console > APIs & Services > Credentials. In the key's **Website restrictions**, allow `https://localhost/*`. Do **not** use an "Android apps" restriction for this key. |
+| **Google Maps key** | `VITE_GOOGLE_MAPS_BROWSER_KEY` has a value. Without it the map does not load. | Make a key in Google Cloud console > APIs & Services > Credentials. In the key's **Website restrictions**, allow `https://localhost/*`. Do **not** use an "Android apps" restriction for this key. See `docs/GOOGLE_CLOUD_SETUP.md`, "3 Browser key". |
+| **Maps key (Places API)** | The doctor asks Google one small question with your browser key: a Places API (New) search for "hospital", from the app's address `https://localhost/`. This is the same search the app makes. The key is never shown. | **FAIL "Places API (New) is not enabled in project ..."**: open the link in the `fix:` line, click **Enable**, wait about 5 minutes, run the doctor again (`docs/GOOGLE_CLOUD_SETUP.md`, "2 Enable APIs"). **FAIL "does not allow the app's address"** or **"Android apps" restriction**: set the key's Application restrictions to **Websites** and add `https://localhost/*`. **FAIL "API restrictions do not include Places API (New)"**: tick Maps JavaScript API and Places API (New) on the key. **FAIL "not valid"**: copy the key again into `.env`. **WARN "works from any other website"**: the key has no Website restriction; add one. **SKIP**: no internet (or a proxy blocks it); test on the phone instead. The map itself (Maps JavaScript API) cannot be tested from the PC: use Diagnostics > Server & maps test on the phone. |
 | **functions/.env** | Settings for the Cloud Functions. Only needed to deploy them. | Copy the missing lines from `functions/.env.example`. `GEMINI_API_KEY` and `MAPS_SERVER_KEY` are not in this file: they are Firebase secrets. |
 | **App Check (debug APK)** | An APK from your PC does not come from the Play Store. Google says "not trusted". Then maps and the assistant are refused. | See section 6, "App Check token". |
 | **.firebaserc** | Your Firebase project id. Only needed for `firebase deploy`. | Copy your `.firebaserc` into the project folder. |
@@ -172,15 +174,26 @@ Windows may ask "Terminate batch job (Y/N)?". Type `Y` and press Enter.
 
 To install and then see the log in one go: `npm run apk:install -- --logcat`
 
+Useful lines for the server, the camera and maps:
+
+* `[SERVER] mapsSearch ok 850ms` or `[SERVER] mapsSearch unauthenticated 120ms` : one line per server call, with its result.
+* `[SMARTSTICK] server test: ...` : every step of the Server & maps test.
+* `[SMARTSTICK] stream: ...` (tag `AissNative`) and `[SMARTSTICK] camera stream: ...` : the live camera video.
+* `[app-check] ...` and `[VISION] ...` : App Check and AI picture problems.
+
 ### App Check token
 
 A test APK from your PC needs an App Check **debug token**:
 
 1. In `.env` set `VITE_APPCHECK_DEBUG=true`.
 2. Run `npm run apk:install -- --logcat`.
-3. Open the app. In the log, find the green `>>` line with "debug secret". Copy the long code.
+3. Open the app. In the log, find the green `>>` line from `DebugAppCheckProvider`:
+   "Enter this debug secret into the allow list in the Firebase Console for your project: ..."
+   (newer Firebase versions: "Firebase App Check debug token: ..."). Copy the long code (like `1a2b3c4d-5e6f-...`, 36 letters and dashes).
 4. Firebase console > App Check > Apps > your Android app > menu (three dots) > Manage debug tokens > add the code.
 5. For a Play Store build, set `VITE_APPCHECK_DEBUG=false` again.
+
+All the details (and the other choices): `docs/GOOGLE_CLOUD_SETUP.md`, "6 App Check".
 
 ---
 
@@ -221,6 +234,9 @@ It has: the date, your Windows version, the versions of your tools, every check,
 and the last lines of a failed step.
 It has **no secret values**. Keys are shown by name only. Values in tool output are hidden.
 
+Apart from `npm install` (only with `--fix`), the only network call of the checks is the Maps key test
+(one small Places search with the browser key). It never prints the key.
+
 Need help? Open `doctor-report.txt`, copy all of it, paste it into your AI IDE and ask:
 "Please help me fix this."
 
@@ -260,5 +276,7 @@ To see what it would do, without changes: `npm run doctor -- --fix --dry-run`
 | Errors about long paths or strange letters in the path | Move the project to `C:\dev\aismartstick`. |
 | Unit tests fail, but you need an APK now | `npm run apk -- --skip-tests` (fix the tests later). |
 | Google sign-in fails on the phone | Read the "Google sign-in SHA-1" and "google-services.json" checks. |
-| Map is grey or says "not allowed" | Read the "Google Maps key" check: allow `https://localhost/*`. |
+| Map is grey or says "not allowed" | Read the "Google Maps key" and "Maps key (Places API)" checks: allow `https://localhost/*`. |
+| Search says "Places API (New) has not been used in project ... or it is disabled" | Read the "Maps key (Places API)" check. Open the link in its `fix:` line and click Enable. Full guide: `docs/GOOGLE_CLOUD_SETUP.md`. |
 | Maps or assistant say "App Check" | Section 6, "App Check token". |
+| Anything about the server, Maps keys or the AI | On the phone: Diagnostics > Server & maps test > Copy report. Then `docs/GOOGLE_CLOUD_SETUP.md`. |

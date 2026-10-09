@@ -52,6 +52,9 @@ cd functions && npm run build && firebase deploy --only functions
 * [DEVICE_PROTOCOL.md](DEVICE_PROTOCOL.md): stick ↔ phone protocol v1 (provisioning, HMAC auth, telemetry)
 * [FIREBASE_SCHEMA.md](FIREBASE_SCHEMA.md): data model, security model, write rates, functions
 * [ANDROID_SETUP.md](ANDROID_SETUP.md): Firebase / Maps / Gemini / FCM setup, permissions, build
+* [docs/GOOGLE_CLOUD_SETUP.md](docs/GOOGLE_CLOUD_SETUP.md): billing, APIs, browser / server / Gemini keys, App Check, deploy, and "message in the app → what to do" (the in-app Server & maps test points here)
+* [docs/DEVICE_DEBUG.md](docs/DEVICE_DEBUG.md): real-device test steps (camera view, live video, AI vision, maps, stick link) and what to send when something fails
+* [docs/DOCTOR.md](docs/DOCTOR.md): `npm run doctor`, the one command that checks the PC (including the Maps browser key), builds and installs the app
 * [PRODUCTION_CHECKLIST.md](PRODUCTION_CHECKLIST.md): feature traceability matrix, classification, release gates
 * [HARDWARE_WIRING.md](HARDWARE_WIRING.md): the owner's pin map audited, electrical conditions, power
 * [FIRMWARE_SETUP.md](FIRMWARE_SETUP.md): ECU modules, build/flash, hardware test procedure, OTA design

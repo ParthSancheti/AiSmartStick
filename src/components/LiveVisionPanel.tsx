@@ -1,57 +1,87 @@
 import { useVisionDebug } from '../core/store/visionDebug';
 import { useDeviceTrace, type TraceStage } from '../core/device/deviceTrace';
 import { useNow } from '../hooks/useNow';
+import { LiveCameraView } from './LiveCameraView';
 
 const RUN_TEXT: Record<string, string> = {
-  stopped: 'Vision off',
-  waiting_for_stick: 'Waiting for the stick',
-  loading_model: 'Loading EfficientDet-Lite0…',
-  running: 'Detecting',
-  paused: 'Paused',
-  error: 'Detector failed to load',
+  stopped: 'Object detection is off',
+  waiting_for_stick: 'Object detection waits for the stick',
+  loading_model: 'Loading object detection…',
+  running: 'Detecting objects',
+  paused: 'Object detection paused',
+  error: 'Object detection failed to load',
 };
 
+/** Detection results older than this are not drawn: they would sit on the wrong objects. */
+const SNAPSHOT_FRESH_MS = 3000;
+
 /**
- * Real stick camera frame with live EfficientDet detections and track ids, plus the hop-by-hop
- * data-flow counters. Everything shown comes from the pipeline itself; nothing is simulated.
+ * Live stick camera (core/camera/liveStream.ts) with the latest detections and track ids drawn on
+ * top, the detector state on its own line, and the hop-by-hop data-flow counters. The picture never
+ * waits for the detector: a loading or failed detector only changes the line under it.
+ * Everything shown comes from the pipeline itself; nothing is simulated.
  */
 export function LiveVisionPanel() {
+  return (
+    <div className="flex flex-col gap-3">
+      <LiveCameraView label="Live picture from the stick camera, with detected objects">
+        <DetectionBoxes />
+      </LiveCameraView>
+      <DetectorStatus />
+      <DataFlow />
+    </div>
+  );
+}
+
+/**
+ * Detection boxes for a LiveCameraView overlay (normalized 0..1 boxes). Drawn only while the vision
+ * snapshot is fresh; otherwise nothing.
+ */
+export function DetectionBoxes() {
   const snap = useVisionDebug((s) => s.latestSnapshot);
-  const frame = useVisionDebug((s) => s.debugFrameUrl);
+  const now = useNow(1000);
+  if (!snap || now - snap.timestamp >= SNAPSHOT_FRESH_MS) return null;
+  return (
+    <>
+      {snap.tracks
+        .filter((t) => t.state === 'CONFIRMED' || t.state === 'TENTATIVE')
+        .map((t) => (
+          <span
+            key={t.trackId}
+            className={`absolute block rounded-md border-2 ${t.state === 'CONFIRMED' ? 'border-teal' : 'border-amber border-dashed'}`}
+            style={{ left: `${t.currentBox.x * 100}%`, top: `${t.currentBox.y * 100}%`, width: `${t.currentBox.w * 100}%`, height: `${t.currentBox.h * 100}%` }}
+          >
+            {/* Label above the box; inside it when the box touches the top edge. */}
+            <span className={`absolute left-0 block whitespace-nowrap rounded bg-black/70 px-1.5 py-0.5 text-[11px] font-bold text-white ${t.currentBox.y < 0.08 ? 'top-0' : '-top-6'}`}>
+              #{t.trackId} {t.label} {Math.round(t.confidence * 100)}%
+            </span>
+          </span>
+        ))}
+    </>
+  );
+}
+
+/** One line: what the object detector is doing, plus its error (if any) in its own box. */
+export function DetectorStatus({ className = '' }: { className?: string }) {
+  const snap = useVisionDebug((s) => s.latestSnapshot);
   const run = useVisionDebug((s) => s.runState);
   const detErr = useVisionDebug((s) => s.detectorError);
   const frameErr = useVisionDebug((s) => s.lastFrameError);
   const now = useNow(1000);
-  const age = snap ? now - snap.timestamp : null;
-  const fresh = age != null && age < 3000;
-
+  const fresh = snap != null && now - snap.timestamp < SNAPSHOT_FRESH_MS;
+  const n = fresh && snap ? snap.objects.length : null;
+  const dot = run === 'running' ? 'bg-ok' : run === 'error' ? 'bg-sos' : run === 'loading_model' || run === 'waiting_for_stick' ? 'bg-amber' : 'bg-ink-3';
+  const err = detErr ?? (run === 'running' ? frameErr : null);
   return (
-    <div className="flex flex-col gap-3">
-      <div className="glass relative aspect-[4/3] overflow-hidden rounded-[24px] border border-glass-border bg-black/80">
-        {frame ? <img src={frame} alt="Latest frame from the stick camera" className={`h-full w-full object-cover ${fresh ? '' : 'opacity-40 grayscale'}`} /> : null}
-        {snap &&
-          fresh &&
-          snap.tracks
-            .filter((t) => t.state === 'CONFIRMED' || t.state === 'TENTATIVE')
-            .map((t) => (
-              <div
-                key={t.trackId}
-                className={`absolute rounded-md border-2 ${t.state === 'CONFIRMED' ? 'border-teal' : 'border-amber border-dashed'}`}
-                style={{ left: `${t.currentBox.x * 100}%`, top: `${t.currentBox.y * 100}%`, width: `${t.currentBox.w * 100}%`, height: `${t.currentBox.h * 100}%` }}
-              >
-                <span className="absolute -top-6 left-0 whitespace-nowrap rounded bg-black/70 px-1.5 py-0.5 text-[11px] font-bold text-white">
-                  #{t.trackId} {t.label} {Math.round(t.confidence * 100)}%
-                </span>
-              </div>
-            ))}
-        {!frame && <span className="absolute inset-0 grid place-items-center px-6 text-center text-[15px] font-semibold text-white/70">{RUN_TEXT[run] ?? run}</span>}
-        <span className="absolute left-3 top-3 rounded-full bg-black/60 px-2.5 py-1 text-[12px] font-bold text-white">
+    <div className={`flex flex-col gap-2 ${className}`}>
+      <p className="flex min-w-0 items-center gap-2 px-1 text-[14px] font-semibold text-ink-2">
+        <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${dot}`} aria-hidden />
+        <span className="min-w-0 break-words">
           {RUN_TEXT[run] ?? run}
-          {fresh && snap ? ` · ${snap.objects.length} obj` : ''}
+          {run === 'running' && n != null ? ` · ${n === 1 ? '1 object' : `${n} objects`}` : ''}
         </span>
-      </div>
-      {(detErr || (run === 'running' && frameErr)) && <p className="rounded-[16px] bg-amber/15 px-3 py-2 text-[13px] text-ink-2">{detErr ?? frameErr}</p>}
-      <DataFlow />
+      </p>
+      {err && <p className="break-words rounded-[16px] bg-amber/15 px-3 py-2 text-[13px] text-ink-2">{err}</p>}
     </div>
   );
 }

@@ -4,7 +4,9 @@ import { ENV } from '../runtime/env';
 /**
  * Maps JavaScript API (browser key): rendering, and the client-side FALLBACK for Places search and
  * walking directions when the Cloud Functions (server key) cannot be reached (destinationSearch.ts).
- * The browser key must allow: Maps JavaScript API, Places API (New), Directions API.
+ * The browser key must allow: Maps JavaScript API, Places API (New), and Directions API where it can
+ * still be turned on (new Google projects cannot enable the legacy Directions API; the app then
+ * takes walking routes from the server or OpenStreetMap). Setup: docs/GOOGLE_CLOUD_SETUP.md.
  *
  * In the Android app the page origin is https://localhost, so the browser key's "Websites"
  * restriction must include https://localhost/* — an "Android apps" restriction does NOT apply to the

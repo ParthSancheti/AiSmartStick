@@ -48,7 +48,10 @@ import android.database.Cursor;
 import android.provider.ContactsContract;
 import android.os.PowerManager;
 
+import java.io.BufferedInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.EOFException;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.DatagramPacket;
@@ -57,10 +60,15 @@ import java.net.HttpURLConnection;
 import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.Socket;
+import java.net.SocketTimeoutException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+
+import javax.net.SocketFactory;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.ExecutorService;
@@ -791,6 +799,449 @@ public class AissNativePlugin extends Plugin {
         setupSsid = null;
     }
 
+    // ── Live camera: MJPEG stream reader (stick port 81) ─────────
+    //
+    // GET http://192.168.4.1:81/stream answers multipart/x-mixed-replace, one JPEG per part:
+    //   "\r\n--BOUNDARY\r\nContent-Type: image/jpeg\r\nContent-Length: N\r\n\r\n<N bytes>"
+    // sent in HTTP/1.1 chunks. The stick serves ONE viewer: a second connection is accepted but never
+    // answered, so "no answer to the request" means another phone or browser is watching.
+    // A raw socket on the stick network (same choice as requestBinary) lets stopStream close it at
+    // once, from any thread, so the stick frees its only stream slot right away.
+
+    private static final int STREAM_CONNECT_TIMEOUT_MS = 4000;
+    private static final int STREAM_READ_TIMEOUT_MS = 5000;
+    private static final int STREAM_MAX_PART = 512 * 1024;
+    private static final int[] STREAM_BACKOFF_MS = { 1000, 2000, 4000, 8000 };
+    /**
+     * Nobody listens to "streamFrame" for this long (the WebView reloaded and Capacitor dropped all
+     * listeners): the reader stops by itself, so the stick's only stream slot is not held for nobody.
+     */
+    private static final long STREAM_ORPHAN_MS = 5000;
+    private final Object streamLock = new Object();
+    /** Since when no JS listener exists (0 = there is one). Reader thread only. */
+    private long streamOrphanSince;
+    /** The reader thread. A stopped one may still be closing its socket. Guarded by streamLock. */
+    private Thread streamThread;
+    /** Bumped by every new reader and every stop: an older reader ends at its next check. */
+    private volatile int streamGen;
+    private volatile boolean streamWanted;
+    private volatile Socket streamSocket;
+    private volatile int streamPort = 81;
+    private volatile String streamPath = "/stream";
+    private volatile int streamMaxFps = 8;
+    /** Last state sent to JS (only changes are sent). Guarded by streamLock. */
+    private String streamLastState;
+    private String streamLastError;
+
+    /** Thrown when the stick accepted the connection but did not answer: another viewer holds the stream. */
+    private static final class StreamBusy extends IOException {
+        private static final long serialVersionUID = 1L;
+
+        StreamBusy() {
+            super("busy: the stick did not answer (another viewer is watching the camera)");
+        }
+    }
+
+    @PluginMethod
+    public void startStream(PluginCall call) {
+        int port = call.getInt("port", 81);
+        String path = call.getString("path", "/stream");
+        int fps = call.getInt("maxFps", 8);
+        if (port <= 0 || port > 65535) port = 81;
+        if (path == null || !path.startsWith("/")) path = "/stream";
+        fps = Math.max(1, Math.min(30, fps));
+        boolean started = false;
+        synchronized (streamLock) {
+            streamPort = port;
+            streamPath = path;
+            streamMaxFps = fps;
+            if (!(streamWanted && streamThread != null && streamThread.isAlive())) {
+                streamWanted = true;
+                streamLastState = null;
+                streamLastError = null;
+                final int gen = ++streamGen;
+                final Thread previous = streamThread;
+                Thread t = new Thread(() -> streamLoop(gen, previous), "aiss-mjpeg");
+                t.setDaemon(true);
+                streamThread = t;
+                t.start();
+                started = true;
+            }
+        }
+        log("stream: " + (started ? "start" : "already running, options updated") + " http://192.168.4.1:" + port + path + " (max " + fps + " fps)");
+        JSObject r = new JSObject();
+        r.put("running", true);
+        call.resolve(r);
+    }
+
+    @PluginMethod
+    public void stopStream(PluginCall call) {
+        stopStreamInternal();
+        call.resolve();
+    }
+
+    private void stopStreamInternal() {
+        boolean was;
+        synchronized (streamLock) {
+            was = streamWanted;
+            streamWanted = false;
+            streamGen++;
+            Thread t = streamThread;
+            if (t != null) t.interrupt();
+        }
+        // Outside the lock: closing unblocks the reader's connect()/read() at once.
+        closeQuietly(streamSocket);
+        if (was) emitStreamState(-1, "stopped", null, null);
+    }
+
+    private boolean streamAlive(int gen) {
+        return streamWanted && gen == streamGen;
+    }
+
+    /**
+     * True when no JS listener for "streamFrame" existed for STREAM_ORPHAN_MS; the reader is then
+     * stopped (a page reload drops every listener). Reader thread only.
+     */
+    private boolean streamOrphaned(int gen) {
+        if (hasListeners("streamFrame")) {
+            streamOrphanSince = 0;
+            return false;
+        }
+        long now = System.currentTimeMillis();
+        if (streamOrphanSince == 0) streamOrphanSince = now;
+        if (now - streamOrphanSince < STREAM_ORPHAN_MS) return false;
+        synchronized (streamLock) {
+            if (!streamAlive(gen)) return true;
+            streamWanted = false;
+            streamGen++;
+        }
+        log("stream: stopped, nobody is listening (the page was reloaded?)");
+        return true;
+    }
+
+    private static void closeQuietly(Socket s) {
+        if (s == null) return;
+        try {
+            s.close();
+        } catch (Exception ignored) {
+        }
+    }
+
+    /** Sends a state change to JS. gen -1 = always (stop); otherwise only for the current reader. */
+    private void emitStreamState(int gen, String state, String error, String via) {
+        synchronized (streamLock) {
+            if (gen >= 0 && !streamAlive(gen)) return;
+            boolean sameError = error == null ? streamLastError == null : error.equals(streamLastError);
+            if (state.equals(streamLastState) && sameError) return;
+            streamLastState = state;
+            streamLastError = error;
+        }
+        log("stream: " + state + (error != null ? " (" + error + ")" : "") + (via != null ? " via " + via : ""));
+        JSObject ev = new JSObject();
+        ev.put("state", state);
+        if (error != null) ev.put("error", error);
+        if (via != null) ev.put("via", via);
+        notifyListeners("streamState", ev);
+    }
+
+    /** One reader thread: connect, read frames, reconnect with backoff (1, 2, 4, 8 s) while wanted. */
+    private void streamLoop(int gen, Thread previous) {
+        // The stick serves one viewer: let a stopped reader finish closing its socket first.
+        if (previous != null && previous != Thread.currentThread()) {
+            try {
+                previous.join(2000);
+            } catch (InterruptedException e) {
+                if (!streamAlive(gen)) return;
+            }
+        }
+        int failures = 0;
+        streamOrphanSince = 0;
+        while (streamAlive(gen) && !streamOrphaned(gen)) {
+            int[] frames = { 0 };
+            String error;
+            try {
+                streamOnce(gen, frames);
+                error = frames[0] > 0 ? "stream ended" : "stream ended before the first frame";
+            } catch (SocketTimeoutException e) {
+                error = frames[0] > 0 ? "no frames for 5 s" : "no camera frames (timed out)";
+            } catch (Exception e) {
+                error = e.getMessage() != null && !e.getMessage().isEmpty() ? e.getMessage() : e.getClass().getSimpleName();
+            }
+            if (!streamAlive(gen)) break;
+            emitStreamState(gen, "error", error, null);
+            failures = frames[0] > 0 ? 1 : failures + 1;
+            long wait = STREAM_BACKOFF_MS[Math.min(failures, STREAM_BACKOFF_MS.length) - 1];
+            try {
+                Thread.sleep(wait);
+            } catch (InterruptedException e) {
+                if (!streamAlive(gen)) break;
+            }
+        }
+    }
+
+    /** One connection. Returns when the stick ends the stream; throws on errors. frames[0] counts JPEGs read. */
+    private void streamOnce(int gen, int[] frames) throws IOException {
+        Network net;
+        try {
+            net = stickRoute();
+        } catch (NotBound e) {
+            net = null; // stick binding lost: try the process default network (whole app on the stick)
+        }
+        final String via = net != null ? "stick" : "default";
+        final int port = streamPort;
+        final String path = streamPath;
+        emitStreamState(gen, "connecting", null, via);
+        SocketFactory factory = net != null ? net.getSocketFactory() : SocketFactory.getDefault();
+        Socket s = factory.createSocket();
+        streamSocket = s;
+        try {
+            // A stop between createSocket and here closed nothing: check after publishing the socket.
+            if (!streamAlive(gen)) return;
+            try {
+                s.connect(new InetSocketAddress("192.168.4.1", port), STREAM_CONNECT_TIMEOUT_MS);
+            } catch (SocketTimeoutException e) {
+                throw new IOException("stick camera not reachable (connect timed out via " + via + ")");
+            }
+            s.setSoTimeout(STREAM_READ_TIMEOUT_MS);
+            s.setTcpNoDelay(true);
+            OutputStream os = s.getOutputStream();
+            String req = "GET " + path + " HTTP/1.1\r\nHost: 192.168.4.1:" + port + "\r\nAccept: multipart/x-mixed-replace, image/jpeg\r\nConnection: close\r\n\r\n";
+            os.write(req.getBytes(StandardCharsets.US_ASCII));
+            os.flush();
+            InputStream raw = new BufferedInputStream(s.getInputStream(), 16384);
+            String statusLine;
+            try {
+                statusLine = readAsciiLine(raw, 256);
+            } catch (SocketTimeoutException e) {
+                throw new StreamBusy();
+            }
+            if (statusLine == null) throw new IOException("the stick closed the stream at once");
+            String[] sp = statusLine.split(" ");
+            int code;
+            try {
+                code = sp.length > 1 && sp[0].startsWith("HTTP/") ? Integer.parseInt(sp[1].trim()) : -1;
+            } catch (NumberFormatException e) {
+                code = -1;
+            }
+            if (code < 0) throw new IOException("not an HTTP answer");
+            String contentType = null;
+            boolean chunked = false;
+            for (int i = 0; ; i++) {
+                String h = readAsciiLine(raw, 1024);
+                if (h == null) throw new IOException("stream ended in the headers");
+                if (h.isEmpty()) break;
+                if (i > 64) throw new IOException("too many headers");
+                int c = h.indexOf(':');
+                if (c <= 0) continue;
+                String k = h.substring(0, c).trim().toLowerCase(Locale.ROOT);
+                String v = h.substring(c + 1).trim();
+                if (k.equals("content-type")) contentType = v;
+                else if (k.equals("transfer-encoding") && v.toLowerCase(Locale.ROOT).contains("chunked")) chunked = true;
+            }
+            if (code == 503) throw new IOException("camera unavailable (HTTP 503)");
+            if (code != 200) throw new IOException("HTTP " + code);
+            if (contentType == null || !contentType.toLowerCase(Locale.ROOT).contains("multipart")) throw new IOException("not a camera stream (" + contentType + ")");
+            InputStream in = chunked ? new ChunkedInputStream(raw) : raw;
+            readStreamParts(gen, in, boundaryOf(contentType), frames, via);
+        } finally {
+            if (streamSocket == s) streamSocket = null;
+            closeQuietly(s);
+        }
+    }
+
+    /** Reads parts until the stream ends. Skips garbage, drops parts over 512 KB, throttles to maxFps. */
+    private void readStreamParts(int gen, InputStream in, String boundary, int[] frames, String via) throws IOException {
+        long nextEmitAt = 0;
+        int seq = 0;
+        boolean live = false;
+        while (streamAlive(gen)) {
+            // 1. The boundary line (anything else is garbage).
+            String line = readAsciiLine(in, 256);
+            if (line == null) return;
+            if (!line.startsWith("--") || (boundary != null && !line.contains(boundary))) continue;
+            // 2. Part headers.
+            int length = -1;
+            boolean headersOk = true;
+            for (int i = 0; ; i++) {
+                String h = readAsciiLine(in, 256);
+                if (h == null) return;
+                if (h.isEmpty()) break;
+                if (i > 32) {
+                    headersOk = false;
+                    break;
+                }
+                int c = h.indexOf(':');
+                if (c > 0 && h.substring(0, c).trim().equalsIgnoreCase("content-length")) {
+                    try {
+                        length = Integer.parseInt(h.substring(c + 1).trim());
+                    } catch (NumberFormatException e) {
+                        length = -1;
+                    }
+                }
+            }
+            if (!headersOk || length == 0) continue;
+            // 3. The JPEG: by Content-Length, else SOI (FFD8) .. EOI (FFD9).
+            byte[] jpeg;
+            if (length > STREAM_MAX_PART) {
+                log("stream: dropped a " + length + " B part (too large)");
+                continue; // resync at the next boundary
+            } else if (length > 0) {
+                jpeg = new byte[length];
+                readFully(in, jpeg);
+            } else {
+                jpeg = scanJpeg(in);
+                if (jpeg == null) continue;
+            }
+            int soi = -1;
+            for (int k = 0; k + 1 < Math.min(jpeg.length, 64); k++) {
+                if ((jpeg[k] & 0xff) == 0xff && (jpeg[k + 1] & 0xff) == 0xd8) {
+                    soi = k;
+                    break;
+                }
+            }
+            if (soi < 0) continue;
+            if (soi > 0) jpeg = java.util.Arrays.copyOfRange(jpeg, soi, jpeg.length);
+            frames[0]++;
+            if (!live) {
+                live = true;
+                emitStreamState(gen, "live", null, via);
+            }
+            if (streamOrphaned(gen)) return;
+            // Throttle: on average at most maxFps (half a frame of slack for Wi-Fi jitter, so a stick
+            // sending exactly maxFps is not halved). Extra frames are dropped, never queued.
+            long now = System.currentTimeMillis();
+            long interval = 1000L / Math.max(1, streamMaxFps);
+            if (now < nextEmitAt - interval / 2) continue;
+            nextEmitAt = Math.max(nextEmitAt, now) + interval;
+            JSObject ev = new JSObject();
+            ev.put("data", Base64.encodeToString(jpeg, Base64.NO_WRAP));
+            ev.put("seq", ++seq);
+            ev.put("at", (Object) Long.valueOf(now));
+            ev.put("bytes", jpeg.length);
+            if (streamAlive(gen)) notifyListeners("streamFrame", ev);
+        }
+    }
+
+    /** boundary=… from the Content-Type (quotes removed), or null. */
+    private static String boundaryOf(String contentType) {
+        int i = contentType.toLowerCase(Locale.ROOT).indexOf("boundary=");
+        if (i < 0) return null;
+        String b = contentType.substring(i + 9).trim();
+        int semi = b.indexOf(';');
+        if (semi >= 0) b = b.substring(0, semi).trim();
+        if (b.length() >= 2 && b.startsWith("\"") && b.endsWith("\"")) b = b.substring(1, b.length() - 1);
+        return b.isEmpty() ? null : b;
+    }
+
+    /** One line without CR/LF (cut to cap chars; the rest of the line is skipped), or null at the end. */
+    private static String readAsciiLine(InputStream in, int cap) throws IOException {
+        StringBuilder sb = new StringBuilder();
+        boolean any = false;
+        int b;
+        while ((b = in.read()) >= 0) {
+            any = true;
+            if (b == '\n') break;
+            if (b != '\r' && sb.length() < cap) sb.append((char) b);
+        }
+        return any ? sb.toString() : null;
+    }
+
+    private static void readFully(InputStream in, byte[] buf) throws IOException {
+        int off = 0;
+        while (off < buf.length) {
+            int n = in.read(buf, off, buf.length - off);
+            if (n < 0) throw new EOFException("stream ended inside a frame");
+            off += n;
+        }
+    }
+
+    /** A part without Content-Length: the bytes from SOI to EOI. null when over 512 KB (resync). */
+    private static byte[] scanJpeg(InputStream in) throws IOException {
+        int prev = -1;
+        int skipped = 0;
+        int b;
+        while (true) {
+            b = in.read();
+            if (b < 0) throw new EOFException("stream ended inside a frame");
+            if (prev == 0xff && b == 0xd8) break;
+            prev = b;
+            if (++skipped > STREAM_MAX_PART) return null;
+        }
+        ByteArrayOutputStream out = new ByteArrayOutputStream(16384);
+        out.write(0xff);
+        out.write(0xd8);
+        prev = -1;
+        while (true) {
+            b = in.read();
+            if (b < 0) throw new EOFException("stream ended inside a frame");
+            out.write(b);
+            if (prev == 0xff && b == 0xd9) return out.toByteArray();
+            prev = b;
+            if (out.size() > STREAM_MAX_PART) return null;
+        }
+    }
+
+    /** HTTP/1.1 chunked body (the stick's web server sends the stream in chunks). */
+    private static final class ChunkedInputStream extends InputStream {
+        private final InputStream in;
+        private int left;
+        private boolean done;
+
+        ChunkedInputStream(InputStream in) {
+            this.in = in;
+        }
+
+        private boolean ready() throws IOException {
+            if (done) return false;
+            if (left > 0) return true;
+            String line = readAsciiLine(in, 64);
+            while (line != null && line.trim().isEmpty()) line = readAsciiLine(in, 64); // CRLF after a chunk
+            if (line == null) {
+                done = true;
+                return false;
+            }
+            int semi = line.indexOf(';');
+            String hex = (semi >= 0 ? line.substring(0, semi) : line).trim();
+            int n;
+            try {
+                n = Integer.parseInt(hex, 16);
+            } catch (NumberFormatException e) {
+                throw new IOException("broken chunked stream");
+            }
+            if (n <= 0) {
+                done = true;
+                return false;
+            }
+            left = n;
+            return true;
+        }
+
+        @Override
+        public int read() throws IOException {
+            if (!ready()) return -1;
+            int b = in.read();
+            if (b < 0) {
+                done = true;
+                return -1;
+            }
+            left--;
+            return b;
+        }
+
+        @Override
+        public int read(byte[] buf, int off, int len) throws IOException {
+            if (len == 0) return 0;
+            if (!ready()) return -1;
+            int n = in.read(buf, off, Math.min(len, left));
+            if (n < 0) {
+                done = true;
+                return -1;
+            }
+            left -= n;
+            return n;
+        }
+    }
+
     // ── Discovery (UDP broadcast on the hotspot) ─────────────────
 
     @PluginMethod
@@ -1207,6 +1658,7 @@ public class AissNativePlugin extends Plugin {
 
     @Override
     protected void handleOnDestroy() {
+        stopStreamInternal();
         stopDiscoveryInternal();
         processBindWanted = false;
         releaseSetup();

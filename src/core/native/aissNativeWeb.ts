@@ -65,6 +65,10 @@ export class AissNativeWeb extends WebPlugin implements AissNativePlugin {
     return this.no();
   }
   async releaseSetupNetwork() {}
+  async startStream(): Promise<{ running: boolean }> {
+    return this.no();
+  }
+  async stopStream() {}
   async setProcessBinding(): Promise<{ bound: boolean; reason?: string }> {
     return { bound: false, reason: 'Requires the AI SmartStick Android app' };
   }

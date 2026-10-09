@@ -32,9 +32,29 @@ function key() {
   return k;
 }
 
+/** Google's own reason for a refused request ("STATUS: message"), without URLs or the key; '' when none. */
+async function googleReason(r: Response, k: string): Promise<string> {
+  try {
+    const j = (await r.json()) as { error?: { status?: string; message?: string } };
+    const status = j.error?.status ?? '';
+    const message = String(j.error?.message ?? '');
+    const s = `${status}${status && message ? ': ' : ''}${message}`;
+    return (k ? s.split(k).join('[key]') : s).replace(/https?:\/\/\S+/g, '').replace(/\s+/g, ' ').trim().slice(0, 200);
+  } catch {
+    return ''; // not JSON
+  }
+}
+
 async function gpost<T>(url: string, body: unknown, fieldMask: string): Promise<T> {
-  const r = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': key(), 'x-goog-fieldmask': fieldMask }, body: JSON.stringify(body) });
-  if (!r.ok) throw new HttpsError('unavailable', `Maps request failed (${r.status}).`);
+  const k = key();
+  const r = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': k, 'x-goog-fieldmask': fieldMask }, body: JSON.stringify(body) });
+  if (!r.ok) {
+    // Say WHY Google refused (API not enabled, key restriction…): the app shows it and the Server test reads it.
+    const why = await googleReason(r, k);
+    const keyProblem = r.status === 403 || (r.status === 400 && /API.?key/i.test(why));
+    const code = keyProblem ? 'failed-precondition' : r.status === 429 ? 'resource-exhausted' : 'unavailable';
+    throw new HttpsError(code, `Maps request failed (${r.status}).${why ? ` Google says: ${why}` : ''}`);
+  }
   return r.json() as Promise<T>;
 }
 
