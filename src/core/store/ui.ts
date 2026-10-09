@@ -28,6 +28,7 @@ interface UIData {
   mapOpen: boolean;
   healthOpen: boolean;
   liveAiOpen: boolean;
+  cameraOpen: boolean;
   audioOpen: boolean;
   /** First-time / re-pair stick provisioning screen. */
   stickSetup: boolean;
@@ -54,6 +55,7 @@ export const useUI = create<UIState>((set) => ({
   mapOpen: false,
   healthOpen: false,
   liveAiOpen: false,
+  cameraOpen: false,
   audioOpen: false,
   stickSetup: false,
   set: (p) => set(p),

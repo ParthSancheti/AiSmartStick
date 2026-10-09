@@ -123,7 +123,7 @@ describe('FramePipeline with the live stream', () => {
   });
 });
 
-describe('VisionEngine holds the live stream while detection runs', () => {
+describe('VisionEngine runs without the live stream', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.spyOn(console, 'info').mockImplementation(() => undefined);
@@ -136,27 +136,14 @@ describe('VisionEngine holds the live stream while detection runs', () => {
     vi.restoreAllMocks();
   });
 
-  it('acquires when running, releases on link loss and on stop', async () => {
+  it('never holds the live stream (hybrid: photos only when an obstacle is near)', async () => {
     const engine = new VisionEngine();
     engine.start();
     await vi.advanceTimersByTimeAsync(0);
     expect(useVisionDebug.getState().runState).toBe('running');
-    expect(h.acquired).toEqual(['vision']);
     await vi.advanceTimersByTimeAsync(1000);
-    expect(h.acquired).toHaveLength(1);
-
-    useDevice.setState({ link: 'disconnected' });
-    expect(h.released).toBe(1);
-    expect(useVisionDebug.getState().runState).toBe('waiting_for_stick');
-
-    useDevice.setState({ link: 'connected' });
-    await vi.advanceTimersByTimeAsync(0);
-    expect(h.acquired).toEqual(['vision', 'vision']);
-
+    expect(h.acquired).toEqual([]);
     engine.stop();
-    expect(h.released).toBe(2);
-    engine.stop();
-    expect(h.released).toBe(2);
   });
 
   it('does not hold the stream while the detector cannot load', async () => {

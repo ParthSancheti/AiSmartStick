@@ -12,6 +12,13 @@ import type { DetectionSnapshot } from './types';
 
 /** Upper bound on the stick camera pull rate: ~4 fps leaves room for telemetry on the ESP32's one HTTP task. */
 const MIN_FRAME_INTERVAL_MS = 250;
+/** Detection photos are taken only while the ultrasonic sensor sees something this close. */
+export const VISION_TRIGGER_CM = 150;
+const IDLE_CHECK_MS = 400;
+function obstacleNear() {
+  const u = useDevice.getState().ultrasonic;
+  return u.status === 'ok' && u.distanceCm != null && u.distanceCm <= VISION_TRIGGER_CM;
+}
 /** Model load retries (missing asset, worker crash) back off instead of hammering. */
 const INIT_RETRY_MS = [5_000, 15_000, 60_000];
 
@@ -91,8 +98,9 @@ export class VisionEngine {
         this.consecutiveErrors = 0;
         this.tracker = new ObjectTracker();
         this.pipeline.reset();
+        // Hybrid (battery): no continuous stream for detection; photos only when an obstacle is near.
         this.releaseStream?.();
-        this.releaseStream = acquireLiveStream('vision');
+        this.releaseStream = null;
         this.setRun('running');
         void this.loop(++this.loopGen);
       }
@@ -130,6 +138,11 @@ export class VisionEngine {
     if (!live()) return;
     const started = performance.now();
     let wait = MIN_FRAME_INTERVAL_MS;
+    if (!obstacleNear()) {
+      // Nothing close ahead: the camera stays idle (saves the stick battery). Check again soon.
+      this.loopId = setTimeout(() => void this.loop(gen), IDLE_CHECK_MS);
+      return;
+    }
     try {
       const frame = await this.pipeline.fetchNextFrame();
       if (!live()) return;

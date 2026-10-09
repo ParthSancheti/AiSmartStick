@@ -17,7 +17,6 @@ import { useActivity } from '../../core/store/activity';
 import { EventRow } from '../guardian/parts';
 import { StickVisual } from '../../components/StickVisual';
 import { LiveVisionPanel } from '../../components/LiveVisionPanel';
-import { LiveCameraView } from '../../components/LiveCameraView';
 import { CameraView } from './CameraView';
 import { LocationStatus } from '../../components/LocationStatus';
 import { useBackHandler } from '../../core/backStack';
@@ -230,30 +229,7 @@ function ActionRow({ icon, iconTone, label, value, valueTone = 'text-ink', onCli
   );
 }
 
-/**
- * Camera card: compact live preview of the stick camera; opens the full-screen CameraView. The
- * preview holds the stream only while on screen and Home is not covered (`active`). Its button
- * has one fixed label and nothing in it speaks.
- */
-function CameraCard({ active, onOpen }: { active: boolean; onOpen: () => void }) {
-  return (
-    <button type="button" onClick={onOpen} aria-label="Stick camera, live view. Opens full screen." className="glass interactive flex w-full min-w-0 flex-col gap-3 rounded-[26px] p-3 text-left">
-      <span className="action-row flex w-full min-w-0 items-center gap-4 px-2 pt-1">
-        <span className="action-row-icon grid h-12 w-12 shrink-0 place-items-center rounded-full bg-teal/10 text-teal">
-          <Camera size={24} />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block break-words text-[12px] font-bold uppercase tracking-wider text-ink-3">Camera</span>
-          <span className="mt-0.5 block break-words text-[15.5px] font-bold leading-snug text-ink">See what the stick sees</span>
-        </span>
-        <ChevronRight size={20} className="shrink-0 text-ink-3" aria-hidden />
-      </span>
-      <LiveCameraView compact active={active} />
-    </button>
-  );
-}
-
-const QuickActions = memo(function QuickActions({ onSafety, onChat, onCamera, cameraActive }: { onSafety: () => void; onChat: () => void; onCamera: () => void; cameraActive: boolean }) {
+const QuickActions = memo(function QuickActions({ onSafety, onChat }: { onSafety: () => void; onChat: () => void }) {
   const safety = useSafetyEval((s) => s.state);
   const internet = useDevice((s) => s.internet);
   const aiUnavailable = useAssistant((s) => s.unavailable);
@@ -281,7 +257,6 @@ const QuickActions = memo(function QuickActions({ onSafety, onChat, onCamera, ca
         </span>
       </button>
       <div className="col-span-2 mt-1 flex flex-col gap-4">
-        <CameraCard active={cameraActive} onOpen={onCamera} />
         <ActionRow
           onClick={() => useUI.setState({ audioOpen: true })}
           icon={route.route === 'bluetooth' ? <Bluetooth size={24} /> : route.route === 'speaker' ? <Speaker size={24} /> : <Headphones size={24} />}
@@ -699,6 +674,9 @@ function StickDetailsContent() {
       </div>
       <Section title="Camera & detection">
         <LiveVisionPanel />
+        <button type="button" onClick={() => useUI.setState({ cameraOpen: true })} className="min-h-12 rounded-full bg-teal/10 px-4 text-[15px] font-bold text-teal active:scale-[0.98]">
+          Open camera full screen
+        </button>
       </Section>
       {d.link === 'auth_failed' && (
         <div className="mb-4 rounded-[24px] bg-sos/10 p-4 ring-1 ring-sos/30" role="alert">
@@ -1072,7 +1050,7 @@ function SafetyCenterContent() {
 export function UserHome() {
   const [safetyCenterOpen, setSafetyCenterOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
-  const [cameraOpen, setCameraOpen] = useState(false);
+  const cameraOpen = useUI((s) => s.cameraOpen);
   const batteryOpen = useUI((s) => s.batteryPage);
   const mapOpen = useUI((s) => s.mapOpen);
   const stickDetailsOpen = useUI((s) => s.stickPage);
@@ -1093,7 +1071,6 @@ export function UserHome() {
   }, []);
   const openSafety = useCallback(() => setSafetyCenterOpen(true), []);
   const openChat = useCallback(() => setChatOpen(true), []);
-  const openCamera = useCallback(() => setCameraOpen(true), []);
 
   return (
     <AppScreen>
@@ -1106,7 +1083,7 @@ export function UserHome() {
             <WalkCard />
             <AssistantCard />
           </HomeCarousel>
-          <QuickActions onSafety={openSafety} onChat={openChat} onCamera={openCamera} cameraActive={!covered} />
+          <QuickActions onSafety={openSafety} onChat={openChat} />
           <BottomControls />
         </SafeAreaContent>
       </div>
@@ -1115,7 +1092,7 @@ export function UserHome() {
         <SafetyCenterContent />
       </SubPage>
       <AiChatSubpage open={chatOpen} onClose={() => setChatOpen(false)} />
-      <CameraView open={cameraOpen} onClose={() => setCameraOpen(false)} />
+      <CameraView open={cameraOpen} onClose={() => useUI.setState({ cameraOpen: false })} />
       <WalkingSubpage open={mapOpen} onClose={() => useUI.setState({ mapOpen: false })} />
       <SubPage open={stickDetailsOpen} onClose={() => useUI.setState({ stickPage: false })} title="Stick diagnostics" background="none">
         <StickDetailsContent />

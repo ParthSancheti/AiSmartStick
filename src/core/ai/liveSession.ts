@@ -114,6 +114,13 @@ export class LiveSession {
     return this.active;
   }
 
+  /** One camera photo (JPEG base64) into the running Live conversation; Live sees it natively. */
+  sendImage(b64: string): boolean {
+    if (!this.active || !this.session || this.connecting) return false;
+    this.session.sendRealtimeInput({ video: { data: b64, mimeType: 'image/jpeg' } });
+    return true;
+  }
+
   /** True while the Live socket is being set up (the connecting tune is playing). */
   get isConnecting() {
     return this.active && this.connecting;

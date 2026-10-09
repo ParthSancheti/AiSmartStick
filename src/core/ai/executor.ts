@@ -17,6 +17,7 @@ import { placeCall, sendSms } from '../phone';
 import { say, stopAll, useAudio } from '../audio/audioManager';
 import { usePhoneInfo, phoneLabel } from '../native/deviceInfo';
 import { captureFrame } from '../vision/relay';
+import { liveSession } from './liveSession';
 import { call } from '../backend/api';
 import type { VisionRequest, VisionResult, VisionTask } from '../../../shared/assistantContract';
 import { loadMessages } from './history';
@@ -219,6 +220,20 @@ async function executeActionInner(a: Action): Promise<ToolResult> {
       case 'vision.describeEnvironment': {
         const task = spec.name as VisionTask;
         try {
+          if (liveSession.isActive) {
+            // Live sees images natively: send the photo into the conversation, no extra server call.
+            const f = await captureFrame('assistant');
+            if (liveSession.sendImage(await blobToB64(f.blob))) {
+              const s = sensorContext();
+              return ok(a, {
+                imageSentToLive: true,
+                task,
+                hint: (args.hint as string | undefined) ?? null,
+                measuredDistanceCm: s.forwardDistanceCm,
+                instruction: 'The photo from the stick camera was just sent to you as an image. Answer the user from it now: ' + (task === 'read_text' || task === 'read_sign' ? 'read the text exactly; say if it is unclear.' : 'describe what is ahead, obstacles first, briefly; say if unsure.'),
+              });
+            }
+          }
           const r = await runVision(task, args.hint as string | undefined);
           return ok(a, { ...r });
         } catch (e) {
