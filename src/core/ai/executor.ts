@@ -5,22 +5,27 @@ import { useDevice, isLinked } from '../store/device';
 import { useSession, getSettings } from '../store/session';
 import { useSafety } from '../store/safety';
 import { logEvent } from '../store/activity';
-import { useLocation, freshnessLabel } from '../location/locationService';
-import { searchPlaces, reverseLookup, type PlaceResult } from '../maps/mapsService';
-import { startRealNavigation, stopRealNavigation, reroute as realReroute } from '../navigation/realNavigator';
+import { useLocation, freshnessLabel, acquireFix, LOCATION_STALE_MS } from '../location/locationService';
+import { reverseLookup, type PlaceResult } from '../maps/mapsService';
+import { findPlaces, placeById, searchBias } from '../maps/destinationSearch';
+import { messageWithLocation, wantsLocation } from '../location/shareLocation';
+import { stopRealNavigation, reroute as realReroute } from '../navigation/realNavigator';
 import { useNavView } from '../navigation/navView';
 import { useSafetyEval } from '../safety/safetyRuntime';
-import { startSos, cancelSos } from '../safety/sos';
+import { startSos, cancelSos, safetyContact } from '../safety/sos';
 import { placeCall, sendSms } from '../phone';
 import { say, stopAll, useAudio } from '../audio/audioManager';
 import { usePhoneInfo, phoneLabel } from '../native/deviceInfo';
 import { captureFrame } from '../vision/relay';
+import { liveSession } from './liveSession';
 import { call } from '../backend/api';
 import type { VisionRequest, VisionResult, VisionTask } from '../../../shared/assistantContract';
 import { loadMessages } from './history';
 import { useAssistant } from '../store/assistant';
 import { resolveLang } from './voiceOut';
 import { fuseScene, measuredSuffix, sensorContext } from '../vision/fusion';
+import { offerDestination, startNavigationTo, navigatingTo, pendingOffer } from './navIntent';
+import { liveAudioActive } from '../audio/audioManager';
 
 /**
  * REAL MODE tool executor. Gemini proposes actions; this decides and does them.
@@ -54,6 +59,48 @@ async function blobToB64(b: Blob) {
   return btoa(s);
 }
 
+/**
+ * Why a camera tool failed, in words the assistant can say to the user (short, simple English).
+ * Covers the stick camera (offline / busy / no answer), the server (unreachable, App Check refused,
+ * not deployed) and the AI picture service (key problem on the server).
+ */
+export function visionFailureReason(e: unknown): string {
+  // Only string codes are server codes (a DOMException has a number code, e.g. 23 for a timeout).
+  const raw = (e as { code?: unknown })?.code;
+  const code = typeof raw === 'string' ? raw.replace(/^functions\//, '') : '';
+  const msg = String((e as Error)?.message ?? e ?? '');
+  if (msg === 'stick-offline') return 'The stick camera is offline: the stick is not connected to the phone. Ask the user to switch the stick on and connect it.';
+  if (/camera: busy|\b409\b/i.test(msg)) return 'The stick camera is busy right now (the live video is using it). Try again in a few seconds.';
+  // Errors without a server code come from the stick side (capture request, live stream).
+  if (!code && /^\s*camera:|\bcamera\b|HTTP \d{3}|\/api\/v1\/capture|no path to the stick|not bound|stick network|stick did not answer|stream|timed out|timeout|aborted|failed to fetch|network/i.test(msg)) return 'The stick camera did not answer. The stick may be too far or switched off. Try again.';
+  const keyWords = /api.?key|API_KEY|key (is )?(not valid|invalid|expired)|gemini|not configured|PERMISSION_DENIED|billing/i;
+  switch (code) {
+    case 'unauthenticated':
+      return /sign in/i.test(msg)
+        ? 'The user is not signed in. Ask them to sign in again, then try the camera again.'
+        : 'The server refused this app (App Check). Picture description will work after App Check is set up. The obstacle sensor still works.';
+    case 'deadline-exceeded':
+      return 'The server did not answer in time (slow internet, or the server is starting). Try again.';
+    case 'unavailable':
+      return 'The phone could not reach the server. Check the internet connection.';
+    case 'failed-precondition':
+      return keyWords.test(msg) ? 'The AI picture service is not set up on the server (Gemini key missing). Tell the user it does not work yet.' : 'The server refused the picture request. Try again later.';
+    case 'internal':
+      return keyWords.test(msg) ? 'The AI picture service has a key problem on the server (Gemini key). Tell the user it does not work right now.' : 'The AI picture service had a server error. Try again.';
+    case 'resource-exhausted':
+      return 'Too many picture requests. Wait a minute and try again.';
+    case 'not-found':
+      return 'The picture service is not installed on the server yet.';
+    case 'permission-denied':
+      return 'The server refused the picture request for this account.';
+    case 'invalid-argument':
+      return 'The camera picture was not usable. Try again.';
+    case 'unknown':
+      if (/not configured/i.test(msg)) return 'This app is not connected to its server (Firebase is not set up in this build).';
+  }
+  return msg ? `The camera did not work: ${msg.slice(0, 120)}` : 'The camera did not work. Try again.';
+}
+
 /** Capture from the stick and interpret with Gemini vision (backend). The image is not stored anywhere. */
 export async function runVision(task: VisionTask, hint?: string): Promise<VisionResult> {
   const prev = useAssistant.getState().phase;
@@ -79,6 +126,35 @@ async function runVisionInner(task: VisionTask, hint?: string): Promise<VisionRe
 
 function placeOut(p: PlaceResult) {
   return { placeId: p.placeId, name: p.name, address: p.address, distanceM: p.distanceM == null ? null : Math.round(p.distanceM), openNow: p.openNow };
+}
+
+/** What the model may say about GPS: a missing fix never blocks choosing a destination. */
+function gpsNote() {
+  const f = useLocation.getState().fix;
+  if (f && Date.now() - f.ts <= LOCATION_STALE_MS) return 'live';
+  return f ? 'last known position (distances approximate)' : 'no position yet (distances unknown)';
+}
+
+const WAIT_GPS_INSTRUCTION = 'Tell the user the destination is set and walking directions will start automatically as soon as GPS finds their position. Do not say the location or maps are unavailable.';
+const WAIT_PRECISE_INSTRUCTION = 'Tell the user the destination is set, but walking directions need Precise location: ask them to turn on Precise location for this app (the map shows a "Use precise" button). Directions start by themselves once it is on. Do not say maps are unavailable.';
+/** What the model should say while the destination waits for a usable position (honest about an Approximate-only grant). */
+const waitInstruction = () => (useLocation.getState().precise === false ? WAIT_PRECISE_INSTRUCTION : WAIT_GPS_INSTRUCTION);
+
+/** Starts directions to `p` now, or sets it and waits for the first GPS fix. Never starts twice. */
+async function goTo(a: Action, p: PlaceResult): Promise<ToolResult> {
+  chosen = p;
+  if (navigatingTo(p.placeId)) {
+    // The user's "yes" already started it (deterministic confirmation path). Never start twice.
+    const n = useNavView.getState();
+    const waiting = !n.path.length && n.remainingM == null;
+    return ok(a, { destination: p.name, alreadyNavigating: true, directions: waiting ? 'waiting_for_gps' : 'started', remainingM: n.remainingM == null ? null : Math.round(n.remainingM), next: n.next?.text ?? null, ...(waiting ? { instruction: waitInstruction() } : {}) });
+  }
+  // The model speaks the result itself (waitInstruction): no second, overlapping announcement.
+  const r = await startNavigationTo(p, { announce: false });
+  if ('waitingForGps' in r && r.waitingForGps) return ok(a, { destination: placeOut(p), directions: 'waiting_for_gps', instruction: waitInstruction() });
+  const route = r.started ? r.route : null;
+  const n = useNavView.getState();
+  return ok(a, { destination: p.name, directions: 'started', distanceM: route ? Math.round(route.distanceM) : n.totalM, durationMin: route ? Math.max(1, Math.round(route.durationS / 60)) : null, firstInstruction: route?.steps[0]?.instruction ?? n.next?.text ?? null });
 }
 
 /**
@@ -130,8 +206,12 @@ async function executeActionInner(a: Action): Promise<ToolResult> {
       }
       // ── VISION ──
       case 'vision.captureScene': {
-        const f = await captureFrame('assistant');
-        return ok(a, { captured: true, width: 0, height: 0, at: f.ts, note: 'Use describe_scene/read_text to interpret a photo.' });
+        try {
+          const f = await captureFrame('assistant');
+          return ok(a, { captured: true, width: 0, height: 0, at: f.ts, note: 'Use describe_scene/read_text to interpret a photo.' });
+        } catch (e) {
+          return fail(a, visionFailureReason(e));
+        }
       }
       case 'vision.describeScene':
       case 'vision.readText':
@@ -139,41 +219,76 @@ async function executeActionInner(a: Action): Promise<ToolResult> {
       case 'vision.readSign':
       case 'vision.describeEnvironment': {
         const task = spec.name as VisionTask;
-        const r = await runVision(task, args.hint as string | undefined);
-        return ok(a, { ...r });
+        try {
+          if (liveSession.isActive) {
+            // Live sees images natively: send the photo into the conversation, no extra server call.
+            const f = await captureFrame('assistant');
+            if (liveSession.sendImage(await blobToB64(f.blob))) {
+              const s = sensorContext();
+              return ok(a, {
+                imageSentToLive: true,
+                task,
+                hint: (args.hint as string | undefined) ?? null,
+                measuredDistanceCm: s.forwardDistanceCm,
+                instruction: 'The photo from the stick camera was just sent to you as an image. Answer the user from it now: ' + (task === 'read_text' || task === 'read_sign' ? 'read the text exactly; say if it is unclear.' : 'describe what is ahead, obstacles first, briefly; say if unsure.'),
+              });
+            }
+          }
+          const r = await runVision(task, args.hint as string | undefined);
+          return ok(a, { ...r });
+        } catch (e) {
+          console.warn(`[VISION] ${task} failed: ${String((e as { code?: string })?.code ?? '')} ${(e as Error)?.message ?? e}`);
+          return fail(a, visionFailureReason(e));
+        }
       }
       // ── NAVIGATION ──
       case 'navigation.getCurrentLocation': {
-        const f = useLocation.getState().fix!;
+        // Actively asks for a fresh position (up to 6 s) instead of failing on an empty store.
+        const { fix: f, fresh } = await acquireFix({ maxAgeMs: 60_000, timeoutMs: 6000 });
+        if (!f) return fail(a, useLocation.getState().permission === 'denied' ? 'Location permission is denied.' : 'No GPS position yet. Ask the user to move near a window or outdoors.');
+        if (!fresh) return ok(a, { live: false, accuracyM: Math.round(f.accuracyM), freshness: freshnessLabel(f.ts), address: null, note: 'Only an old position is known; say how old it is.' });
         let rev: Awaited<ReturnType<typeof reverseLookup>> | null = null;
         if (d.internet) rev = await reverseLookup(f.lat, f.lng).catch(() => null);
         return ok(a, { accuracyM: Math.round(f.accuracyM), freshness: freshnessLabel(f.ts), address: rev?.address ?? null, nearestPlace: rev?.landmark ?? null });
       }
       case 'navigation.searchPlace':
       case 'navigation.findNearestPlace': {
-        const f = useLocation.getState().fix!;
-        const r = await searchPlaces({ query: (args.query as string) || undefined, category: (args.category as string) || undefined, lat: f.lat, lng: f.lng, radiusM: 3000 });
+        // No GPS needed: the newest position of any age only biases the search.
+        const r = await findPlaces({ query: (args.query as string) || undefined, category: (args.category as string) || undefined, bias: searchBias(), radiusM: 3000 });
         lastPlaces = r.places;
-        if (!r.places.length) return ok(a, { places: [], note: 'No matching places found nearby.' });
-        if (spec.type === 'navigation.findNearestPlace') {
-          // App rule: nearest place that is not known to be closed.
-          const pick = r.places.find((p) => p.openNow !== false) ?? r.places[0];
-          chosen = pick;
-          return ok(a, { chosen: placeOut(pick), alternatives: r.places.slice(0, 3).map(placeOut) });
-        }
-        return ok(a, { places: r.places.slice(0, 5).map(placeOut) });
+        if (!r.places.length) return ok(a, { places: [], note: r.biased ? 'No matching places found nearby.' : 'No matching places found.' });
+        // App rule: the best match that is not known to be closed. It becomes the OFFER: if the user
+        // says yes, the app starts walking directions to exactly this place (core/ai/navIntent.ts).
+        const pick = spec.type === 'navigation.findNearestPlace' ? (r.places.find((p) => p.openNow !== false) ?? r.places[0]) : r.places[0];
+        chosen = pick;
+        offerDestination(pick);
+        const gps = gpsNote();
+        return ok(a, {
+          offered: placeOut(pick),
+          alternatives: r.places.filter((p) => p !== pick).slice(0, 3).map(placeOut),
+          gps,
+          instruction: `Tell the user the offered place name${pick.distanceM != null ? ' and distance' : ''}, then ask if they want to go there. If they say yes, call start_navigation with this placeId. Do not search again.${gps === 'live' ? '' : ' GPS has no live position yet: that is fine, directions start automatically once it does. Never say the location is unavailable.'}`,
+        });
       }
       case 'navigation.setDestination': {
-        const p = lastPlaces.find((x) => x.placeId === args.placeId);
-        if (!p) return fail(a, 'That place id did not come from a recent search. Search again first.');
-        chosen = p;
-        return ok(a, { destination: placeOut(p) });
+        const id = (args.placeId as string | undefined)?.trim();
+        const query = (args.query as string | undefined)?.trim();
+        let p: PlaceResult | null = id ? (lastPlaces.find((x) => x.placeId === id) ?? (pendingOffer()?.placeId === id ? pendingOffer() : null) ?? (chosen?.placeId === id ? chosen : null)) : null;
+        // A real Google place id the model kept from earlier: look it up instead of refusing.
+        if (!p && id) p = await placeById(id).catch(() => null);
+        if (!p && query) {
+          const r = await findPlaces({ query, bias: searchBias() });
+          lastPlaces = r.places;
+          p = r.places[0] ?? null;
+          if (!p) return fail(a, `No place called "${query}" was found. Ask the user for the name or address again.`);
+        }
+        if (!p) return fail(a, id ? 'That place could not be found. Search for it with search_place first.' : 'Give a placeId from a search, or the place name as query.');
+        return goTo(a, p);
       }
       case 'navigation.startNavigation': {
-        const p = (args.placeId ? lastPlaces.find((x) => x.placeId === args.placeId) : null) ?? chosen;
+        const p = (args.placeId ? lastPlaces.find((x) => x.placeId === args.placeId) : null) ?? pendingOffer() ?? chosen;
         if (!p) return fail(a, 'No destination chosen. Search for a place first.');
-        const route = await startRealNavigation(p);
-        return ok(a, { destination: p.name, distanceM: Math.round(route.distanceM), durationMin: Math.max(1, Math.round(route.durationS / 60)), firstInstruction: route.steps[0]?.instruction ?? null });
+        return goTo(a, p);
       }
       case 'navigation.stopNavigation':
         stopRealNavigation('user');
@@ -201,19 +316,33 @@ async function executeActionInner(a: Action): Promise<ToolResult> {
         return ok(a, { phase: useSafety.getState().phase });
       // ── COMMUNICATION ──
       case 'communication.getGuardianContact':
-        return ok(a, { name: s.guardian.name || null, heardAs: s.guardian.heardAs || null, hasPhoneNumber: !!s.guardian.phone });
+      {
+        const c = safetyContact();
+        return ok(a, { name: c.name, heardAs: s.guardian.heardAs || null, hasPhoneNumber: !!c.phone });
+      }
       case 'communication.callGuardian': {
-        const r = await placeCall(s.guardian.heardAs || s.guardian.name, s.guardian.phone);
-        if (r === 'no_number') return fail(a, 'No phone number is saved for the guardian.');
+        const c = safetyContact();
+        const r = await placeCall(c.name, c.phone);
+        if (r === 'no_number') return fail(a, 'No safety phone number is saved. The user can add one in Settings.');
         return ok(a, { result: r, meaning: r === 'call_started' ? 'The phone is calling now.' : 'The dialer is open; the user must press call.' });
       }
       case 'communication.sendSmsToGuardian': {
-        const r = await sendSms(s.guardian.heardAs || s.guardian.name, s.guardian.phone, String(args.text));
-        if (r === 'no_number') return fail(a, 'No phone number is saved for the guardian.');
-        return ok(a, { result: r, meaning: r === 'sent' ? 'The SMS was handed to Android for sending.' : 'The message composer is open; the user must press send. Do not say it was sent.' });
+        const c = safetyContact();
+        // Help / "where I am" texts carry the position as a plain Maps link (the receiver may not have the app).
+        const sos = useSafety.getState().phase === 'active' || useSafety.getState().phase === 'countdown';
+        const addLocation = c.phone != null && (sos || wantsLocation(String(args.text)));
+        const body = addLocation ? (await messageWithLocation(String(args.text), { timeoutMs: 6000 })).text : String(args.text);
+        const r = await sendSms(c.name, c.phone, body);
+        if (r === 'no_number') return fail(a, 'No safety phone number is saved. The user can add one in Settings.');
+        if (r === 'failed') return fail(a, 'The text could not be sent (no mobile network or SMS balance). Do not say it was sent.');
+        const meaning =
+          r === 'sent' ? 'The mobile network accepted the SMS.' : r === 'queued' ? 'The SMS was handed to the phone; delivery is not confirmed yet.' : r === 'demo' ? 'Demo mode: nothing was sent.' : 'The message composer is open; the user must press send. Do not say it was sent.';
+        return ok(a, { result: r, meaning, locationIncluded: addLocation && /maps\.google\.com/.test(body) });
       }
       // ── AUDIO ──
       case 'audio.speak':
+        // In a Live session the model's own voice is the output; a second (TTS) voice would talk over it.
+        if (liveAudioActive()) return ok(a, { queued: false, note: 'Say this yourself in your spoken reply.' });
         void say(String(args.text), { lang: resolveLang(), priority: 'normal' });
         return ok(a, { queued: true });
       case 'audio.stopSpeaking':
@@ -248,7 +377,8 @@ async function executeActionInner(a: Action): Promise<ToolResult> {
   } catch (e) {
     const msg = (e as Error).message;
     if (msg === 'stick-offline') return fail(a, 'The stick is not connected.');
-    if (msg === 'location-unavailable') return fail(a, 'No GPS position yet.');
+    if (msg === 'location-unavailable') return fail(a, 'No live GPS position yet. The destination can still be set: call set_destination or start_navigation again.');
+    if (msg === 'no-route') return fail(a, 'Google found no walking route to that place.');
     return fail(a, msg || 'Tool failed');
   }
 }

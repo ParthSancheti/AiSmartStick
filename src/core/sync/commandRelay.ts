@@ -3,11 +3,12 @@ import { fb } from '../firebase/app';
 import { paths } from '../../../shared/firestoreSchema';
 import { getTransport } from '../device/bridge';
 import { useDevice, isLinked } from '../store/device';
-import { useSession } from '../store/session';
+import { useSession, getSettings } from '../store/session';
 import { logEvent } from '../store/activity';
 import { announce } from '../ai/voiceOut';
 import { runVision } from '../ai/executor';
 import { log } from '../log';
+import { askUser } from '../camera/cameraSession';
 
 /**
  * USER PHONE side of Guardian remote commands: queued → received → executing → completed/failed/expired.
@@ -47,15 +48,28 @@ export function stopCommandRelay() {
 
 async function execute(uid: string, c: RemoteCommandDoc) {
   const ref = doc(fb().db, `${paths.user(uid)}/deviceCommands/${c.commandId}`);
-  const set = (p: Partial<RemoteCommandDoc>) => updateDoc(ref, { ...p, updatedAt: Date.now() }).catch((e) => log.warn('command status write failed', { e: String(e) }));
+  // Status writes are queued, never awaited: offline (or on a slow link) waiting for the server would
+  // hold the command for minutes; Firestore delivers the writes in order when it can.
+  const set = (p: Partial<RemoteCommandDoc>) => {
+    try {
+      void updateDoc(ref, { ...JSON.parse(JSON.stringify(p)), updatedAt: Date.now() }).catch((e) => log.warn('command status write failed', { e: String(e) }));
+    } catch (e) {
+      log.warn('command status write rejected', { e: String(e) });
+    }
+  };
   if (Date.now() > c.expiresAt) return set({ status: 'expired' });
-  await set({ status: 'received' });
+  set({ status: 'received' });
   const who = useSession.getState().guardian.heardAs || 'Your guardian';
   const t = getTransport();
   try {
     if (c.type === 'scan') {
       announce({ en: `${who} asked for a description of what is in front of you.`, hi: `${who} ने आपके सामने का विवरण माँगा है।` }, { high: true });
-      await set({ status: 'executing' });
+      // Same consent rule as live camera viewing: the scan sends a camera image to the AI.
+      if (getSettings().cameraRequests === 'ask' && !(await askUser(who))) {
+        logEvent({ kind: 'vision', severity: 'info', title: `AI scan request from ${who} declined` });
+        return set({ status: 'failed', error: 'The user did not allow the camera.' });
+      }
+      set({ status: 'executing' });
       const r = await runVision('describe_scene');
       announce(r.spoken);
       logEvent({ kind: 'vision', severity: 'info', title: `${who} requested an AI scan`, detail: r.uncertain ? 'Result was uncertain' : undefined });
@@ -63,7 +77,7 @@ async function execute(uid: string, c: RemoteCommandDoc) {
       return set({ status: 'completed', result: { spoken: r.spoken, uncertain: r.uncertain, hazards: r.hazards.length } });
     }
     if (!t || !isLinked(useDevice.getState().link)) return set({ status: 'failed', error: 'The stick is not connected to the phone.' });
-    await set({ status: 'executing' });
+    set({ status: 'executing' });
     const ack = await t.send({ type: c.type }, { commandId: c.commandId, ttlMs: Math.max(1000, c.expiresAt - Date.now()) });
     const ok = ack.status === 'completed' || ack.status === 'duplicate';
     if (c.type === 'nudge' && ok) announce({ en: `${who} sent you a nudge.`, hi: `${who} ने आपको याद किया।` });

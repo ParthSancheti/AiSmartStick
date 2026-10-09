@@ -15,6 +15,7 @@ String pass();
 void hmacHex(const char *msg, size_t len, char out[65]);
 void sha256Hex(const uint8_t *data, size_t len, char out[65]);
 bool ctEqual(const char *a, const char *b);
-/** Verifies x-aiss-* headers over METHOD\npath\nts\nnonce\nsha256(body); records nonce on success. */
+/** Always true when REQUIRE_AUTH is 0 (v1 simple link). Otherwise verifies x-aiss-* headers over
+ *  METHOD\npath\nts\nnonce\nsha256(body) and records the nonce on success. */
 bool authorized(httpd_req_t *r, const char *method, const char *body, size_t bodyLen);
 }

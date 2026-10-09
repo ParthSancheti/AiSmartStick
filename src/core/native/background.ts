@@ -1,10 +1,13 @@
 import { create } from 'zustand';
 import { Capacitor } from '@capacitor/core';
+import { App as CapApp } from '@capacitor/app';
 import { AissNative } from './aissNative';
 import { useDevice } from '../store/device';
 import { useSafety } from '../store/safety';
 import { useSession } from '../store/session';
 import { useNavView } from '../navigation/navView';
+import { useAssistant } from '../store/assistant';
+import { useAuth } from '../auth/authStore';
 import { linkLabelText } from './backgroundText';
 
 /**
@@ -24,7 +27,9 @@ function wanted() {
   const d = useDevice.getState();
   const sos = useSafety.getState().phase;
   const nav = useNavView.getState().active;
-  return useSession.getState().settings.runInBackground && (d.link !== 'unpaired' || sos === 'active' || sos === 'countdown' || nav);
+  const ast = useAssistant.getState().phase !== 'idle';
+  if (useAuth.getState().status !== 'signedIn') return false;
+  return useSession.getState().settings.runInBackground && (d.link !== 'unpaired' || sos === 'active' || sos === 'countdown' || nav || ast);
 }
 
 function text(): { title: string; body: string } {
@@ -37,22 +42,28 @@ function text(): { title: string; body: string } {
 }
 
 let lastKey = '';
-async function sync() {
+/**
+ * Starts the service from the foreground (so it acquires location + microphone types), afterwards
+ * only updates the notification text: restarting a foreground service from the background is
+ * refused on Android 12+ and would drop the while-in-use types on Android 14+.
+ */
+async function sync(promote = false) {
   if (!Capacitor.isNativePlatform()) return;
   const want = wanted();
   const t = text();
   const key = `${want}|${t.title}|${t.body}`;
-  if (key === lastKey) return;
+  if (key === lastKey && !promote) return;
   lastKey = key;
   try {
     if (want) {
-      await AissNative.startBackgroundService(t); // also updates the notification text
+      await AissNative.startBackgroundService({ ...t, promote });
       useBackground.setState({ running: true, error: null });
     } else if (useBackground.getState().running) {
       await AissNative.stopBackgroundService();
       useBackground.setState({ running: false });
     }
   } catch (e) {
+    lastKey = ''; // retry on the next state change / resume
     useBackground.setState({ running: false, error: (e as Error).message });
   }
 }
@@ -64,8 +75,14 @@ export function startBackgroundController() {
   useDevice.subscribe(() => void sync());
   useSafety.subscribe(() => void sync());
   useNavView.subscribe(() => void sync());
+  useAssistant.subscribe(() => void sync());
   useSession.subscribe(() => void sync());
-  void sync();
+  useAuth.subscribe(() => void sync());
+  // Back on screen: re-acquire service types for permissions granted meanwhile (GPS, microphone).
+  void CapApp.addListener('appStateChange', ({ isActive }) => {
+    if (isActive) void sync(true);
+  });
+  void sync(true);
 }
 
 export async function stopBackground() {

@@ -7,9 +7,20 @@
 #pragma once
 #include <stdint.h>
 
-#define FW_VERSION        "1.1.0-ecu"
+#define FW_VERSION        "1.2.1"
 #define DEVICE_MODEL      "AISS-ESP32CAM-1"
 #define PROTOCOL_VERSION  1
+
+// ── Stick link (v1 = simple) ─────────────────────────────────────────────────
+// The stick is always its own Wi-Fi access point. Any phone that joins it reads telemetry and sends
+// commands WITHOUT keys or signatures (REQUIRE_AUTH 0). The Wi-Fi password is the only protection.
+// Set REQUIRE_AUTH to 1 to bring back the HMAC-signed requests of firmware 1.1 (the app would then
+// need the old provisioning flow again).
+#define REQUIRE_AUTH      0
+#define STICK_AP_SSID     "SmartStick_AI"
+#define STICK_AP_PASS     "Stick@1234"
+#define STICK_AP_CHANNEL  6        // 1/6/11 are the non-overlapping 2.4 GHz channels
+#define STICK_AP_MAX_STA  4        // phones that may join at once
 
 // ── HC-SR04 ──────────────────────────────────────────────────────────────────
 #define PIN_US_TRIG   13   // 3.3 V trigger is sufficient for HC-SR04.

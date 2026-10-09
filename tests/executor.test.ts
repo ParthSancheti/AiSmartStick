@@ -40,10 +40,16 @@ describe('AI tool executor (validation & truthfulness)', () => {
     expect(useSession.getState().settings.voiceRate).toBe(1.2);
   });
 
-  it('communication requires a linked guardian', async () => {
-    useSession.setState({ linked: false });
-    const r = await executeAction(act('call_guardian', 'communication.callGuardian'));
-    expect(r.ok).toBe(false);
-    expect(r.error).toMatch(/No guardian/);
+  it('calls the Safety Number (no linked guardian app needed), and says so when none is saved', async () => {
+    const getContactLookup = () => executeAction(act('get_guardian_contact', 'communication.getGuardianContact'));
+    useSession.setState({ linked: false, contacts: [], guardian: { ...useSession.getState().guardian, phone: null } });
+    const none = await getContactLookup();
+    expect(none.ok).toBe(true);
+    expect((none.data as { hasPhoneNumber: boolean }).hasPhoneNumber).toBe(false);
+
+    useSession.setState({ contacts: [{ id: 'emergency', name: 'Safety contact', relation: 'emergency', phone: '+919876543210', aliases: [] }] });
+    const saved = await getContactLookup();
+    expect((saved.data as { name: string; hasPhoneNumber: boolean }).hasPhoneNumber).toBe(true);
+    expect((saved.data as { name: string }).name).toBe('Safety contact');
   });
 });

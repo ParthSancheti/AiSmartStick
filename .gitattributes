@@ -1,0 +1,3 @@
+# Windows scripts keep CRLF line endings (cmd.exe can misread LF-only batch files).
+*.bat -text
+*.cmd -text

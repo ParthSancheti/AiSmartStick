@@ -1,1 +1,1 @@
-package com.getcapacitor; public class JSObject extends org.json.JSONObject { public JSObject put(String k, Object v){ return this; } public JSObject put(String k, boolean v){ return this; } public JSObject put(String k, int v){ return this; } }
+package com.getcapacitor; public class JSObject extends org.json.JSONObject { public JSObject put(String k, Object v){ return this; } public JSObject put(String k, boolean v){ return this; } public JSObject put(String k, int v){ return this; } @Override public String getString(String k){ return null; } }

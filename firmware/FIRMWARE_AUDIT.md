@@ -49,7 +49,7 @@ silently change it**. That wiring has to be changed on the hardware first.
 |---|---|---|---|
 | 1 | Motor | `delay()` inside `/motor` freezes the HTTP server, telemetry and the button for the whole pattern | Pattern state machine (`motorTick`), no `delay()`; commands return immediately |
 | 2 | Ultrasonic | `pulseIn()` blocks up to 1 s by default (≈23 ms at 4 m) on every read; no-echo looks like "0" | Echo measured by pin-change interrupt, trigger every 70 ms, explicit `no_echo` / `out_of_range` / `invalid` status |
-| 3 | Camera | QVGA RGB565 + `frame2jpg` conversion: slow, heap-hungry, fragments memory | `PIXFORMAT_JPEG` from the sensor, `CAMERA_GRAB_LATEST`, 2 buffers in PSRAM, JPEG bytes sent unmodified |
+| 3 | Camera | QVGA RGB565 + `frame2jpg` conversion: slow, heap-hungry, fragments memory | `PIXFORMAT_JPEG` from the sensor, `CAMERA_GRAB_LATEST`, 2 buffers in PSRAM, JPEG bytes sent unmodified. **Update (1.2.1):** only on OV2640/OV3660/OV5640. Clone boards with other sensors (no JPEG) stay on RGB565 in PSRAM + `camera::toJpeg`, as the field-proven sketch did. |
 | 4 | Camera API | Browser `<img src=/stream>` as the only camera path; one MJPEG client blocks others | `/api/v1/capture` returns one validated JPEG + width/height/seq headers. MJPEG is not part of the product protocol |
 | 5 | HTTP server | Arduino `WebServer` handled in `loop()`: every slow handler stalls sensors | `esp_http_server` in its own task (5 sockets, LRU purge); `loop()` never blocks |
 | 6 | Concurrency | Capture + telemetry at once | `camBusy` → 409 `busy` rather than blocking; telemetry is independent |

@@ -19,11 +19,17 @@ interface UIData {
   userSettings: boolean;
   pocket: boolean;
   demoOpen: boolean;
+  visionDebug: boolean;
   call: { name: string; startedAt: number } | null;
   userBanner: Banner | null;
   guardianToast: { id: number; text: string } | null;
   batteryPage: boolean;
   stickPage: boolean;
+  mapOpen: boolean;
+  healthOpen: boolean;
+  liveAiOpen: boolean;
+  cameraOpen: boolean;
+  audioOpen: boolean;
   /** First-time / re-pair stick provisioning screen. */
   stickSetup: boolean;
 }
@@ -40,11 +46,17 @@ export const useUI = create<UIState>((set) => ({
   userSettings: false,
   pocket: false,
   demoOpen: false,
+  visionDebug: false,
   call: null,
   userBanner: null,
   guardianToast: null,
   batteryPage: false,
   stickPage: false,
+  mapOpen: false,
+  healthOpen: false,
+  liveAiOpen: false,
+  cameraOpen: false,
+  audioOpen: false,
   stickSetup: false,
   set: (p) => set(p),
 }));

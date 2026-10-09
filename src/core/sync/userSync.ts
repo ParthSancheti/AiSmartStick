@@ -3,7 +3,7 @@ import { fb } from '../firebase/app';
 import { paths, type ActivityDoc, type LiveDeviceDoc, type LiveLocationDoc, type LiveNavigationDoc, type LiveSafetyDoc, type NotificationDoc, type SosDoc } from '../../../shared/firestoreSchema';
 import { useDevice } from '../store/device';
 import { useSession } from '../store/session';
-import { useSafety } from '../store/safety';
+import { useSafety, initialSafety } from '../store/safety';
 import { mergeEvents, onActivityLogged } from '../store/activity';
 import { useLocation } from '../location/locationService';
 import { useNavView } from '../navigation/navView';
@@ -233,11 +233,21 @@ function watchSos(sosId: string) {
     }
     if (s.state === 'resolved' && s.resolvedBy && s.resolvedBy !== uid && !seen.resolved) {
       seen.resolved = true;
-      if (useSafety.getState().phase === 'active') useSafety.setState({ phase: 'resolved', resolvedBy: 'guardian' });
+      if (useSafety.getState().phase === 'active') {
+        useSafety.setState({ phase: 'resolved', resolvedBy: 'guardian' });
+        // Same as a local resolve: show the green confirmation briefly, then return to normal.
+        setTimeout(() => {
+          if (useSafety.getState().phase === 'resolved') useSafety.setState({ ...initialSafety });
+        }, 3500);
+      }
       announce(P.guardianResolved(name), { high: true });
+      stopSosWatch();
+      return;
     }
-    // Delivery confirmation: the server has the document.
-    if (!snap.metadata.hasPendingWrites && useSafety.getState().delivery !== 'cloud') useSafety.setState({ delivery: 'cloud', dispatchFailed: false });
+    // Delivery confirmation: the server has the document. That only reaches a person when a guardian
+    // app is linked, and an SMS that already went out stays the reported channel.
+    const delivery = useSafety.getState().delivery;
+    if (!snap.metadata.hasPendingWrites && useSession.getState().linked && delivery !== 'cloud' && delivery !== 'sms') useSafety.setState({ delivery: 'cloud', dispatchFailed: false });
     // Only the backend can say whether the guardian's phone was actually notified.
     const gn = (s as SosDoc & { guardianNotify?: { status: 'sent' | 'failed' | 'no_devices' | 'no_guardian' } }).guardianNotify;
     if (gn && useSafety.getState().guardianNotify !== gn.status) useSafety.setState({ guardianNotify: gn.status });

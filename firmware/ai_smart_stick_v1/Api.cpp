@@ -1,5 +1,6 @@
 #include "Api.h"
 #include <esp_http_server.h>
+#include <img_converters.h>
 #include <mbedtls/base64.h>
 #include <WiFi.h>
 #include "ArduinoJson.h"
@@ -20,6 +21,28 @@ static volatile bool rebootReq = false, resetReq = false, provDone = false;
 static aiss::IdRing<24> seenCommands;
 static portMUX_TYPE cmdMux = portMUX_INITIALIZER_UNLOCKED;
 static uint32_t telemetrySeq = 0, frameSeq = 0;
+// Serial diagnostics (no effect on the safety loop: printed from the HTTP task / a low-priority task).
+static volatile uint32_t httpCount = 0, telemetryCount = 0, lastTelemetryBytes = 0, lastTelemetryLogAt = 0, telemetrySinceLog = 0;
+static volatile int lastTelemetryStatus = 0;
+
+// "[HTTP] GET /api/v1/telemetry 200 1234B": every request, telemetry at most once per 2 s (with a count).
+static void logHttp(httpd_req_t *r, int status, size_t bytes) {
+  httpCount++;
+  const char *m = r->method == HTTP_POST ? "POST" : r->method == HTTP_OPTIONS ? "OPTIONS" : "GET";
+  if (!strncmp(r->uri, "/api/v1/telemetry", 17)) {
+    telemetryCount++;
+    lastTelemetryBytes = bytes;
+    lastTelemetryStatus = status;
+    telemetrySinceLog++;
+    uint32_t now = millis();
+    if (now - lastTelemetryLogAt < 2000) return;
+    Serial.printf("[HTTP] %s %s %d %uB (%lu requests in the last %lu ms)\n", m, r->uri, status, (unsigned)bytes, (unsigned long)telemetrySinceLog, (unsigned long)(lastTelemetryLogAt ? now - lastTelemetryLogAt : 0));
+    lastTelemetryLogAt = now;
+    telemetrySinceLog = 0;
+    return;
+  }
+  Serial.printf("[HTTP] %s %s %d %uB\n", m, r->uri, status, (unsigned)bytes);
+}
 
 int takeModeRequest() { int m = modeReq; modeReq = -1; return m; }
 bool takeRebootRequest() { bool r = rebootReq; rebootReq = false; return r; }
@@ -27,12 +50,27 @@ bool takeFactoryResetRequest() { bool r = resetReq; resetReq = false; return r; 
 bool takeProvisioned() { bool r = provDone; provDone = false; return r; }
 
 static esp_err_t send(httpd_req_t *r, int status, JsonDocument &d) {
-  static char buf[2048];
-  size_t n = serializeJson(d, buf, sizeof buf);
+  // Busy telemetry (16 button events, 8 safety events, errors) reaches ~2.4 KB: 2 KB truncated it
+  // into invalid JSON. One buffer is safe: every handler runs in the single httpd task.
+  static char buf[4096];
+  size_t n = measureJson(d);
+  if (n >= sizeof buf) {
+    JsonDocument e;
+    e["error"] = "too_large";
+    n = serializeJson(e, buf, sizeof buf);
+    status = 503;
+  } else {
+    n = serializeJson(d, buf, sizeof buf);
+  }
   httpd_resp_set_status(r, status == 200 ? "200 OK" : status == 401 ? "401 Unauthorized" : status == 400 ? "400 Bad Request" : status == 409 ? "409 Conflict" : status == 413 ? "413 Payload Too Large" : "503 Service Unavailable");
   httpd_resp_set_type(r, "application/json");
   httpd_resp_set_hdr(r, "Cache-Control", "no-store");
-  return httpd_resp_send(r, buf, n);
+  // Lets a browser page (dev server on a laptop joined to the stick) read the API too. The Android app
+  // uses native HTTP and does not need it.
+  httpd_resp_set_hdr(r, "Access-Control-Allow-Origin", "*");
+  esp_err_t e = httpd_resp_send(r, buf, n);
+  logHttp(r, status, n);
+  return e;
 }
 static esp_err_t error(httpd_req_t *r, int status, const char *code, const char *msg = nullptr) {
   JsonDocument d;
@@ -75,7 +113,13 @@ static void fillHealth(JsonObject h, const ecu::Sensors &s) {
   for (int i = 0; i < 9; i++) if (bits & (1 << i)) e.add(names[i]);
 }
 
-// GET /api/v1/device[?challenge=]  (identity + key proof; no secrets)
+static void putRssi(JsonDocument &d) {
+  int v = net::rssi();
+  if (v == 0) d["rssi"] = nullptr;   // unknown: never a made-up value
+  else d["rssi"] = v;
+}
+
+// GET /api/v1/device[?challenge=]  (identity; no secrets). "auth": false = v1 simple link, no keys needed.
 static esp_err_t hDevice(httpd_req_t *r) {
   char q[96] = "", challenge[40] = "";
   httpd_req_get_url_query_str(r, q, sizeof q);
@@ -86,8 +130,9 @@ static esp_err_t hDevice(httpd_req_t *r) {
   d["firmware"] = FW_VERSION;
   d["protocolVersion"] = PROTOCOL_VERSION;
   d["paired"] = identity::provisioned();
+  d["auth"] = REQUIRE_AUTH != 0;
   d["uptimeMs"] = millis();
-  if (identity::provisioned() && challenge[0]) {
+  if (REQUIRE_AUTH != 0 && identity::provisioned() && challenge[0]) {
     char msg[64], proof[65];
     int l = snprintf(msg, sizeof msg, "%s%s", challenge, identity::deviceId());
     identity::hmacHex(msg, l, proof);
@@ -143,7 +188,7 @@ static esp_err_t hTelemetry(httpd_req_t *r) {
     num(e, "value", sr[k].value, 2);
     num(e, "confidence", sr[k].confidence, 2);
   }
-  d["rssi"] = net::rssi();
+  putRssi(d);
   fillHealth(d["health"].to<JsonObject>(), s);
   return send(r, 200, d);
 }
@@ -155,7 +200,7 @@ static esp_err_t hStatus(httpd_req_t *r) {
   d["deviceId"] = identity::deviceId();
   d["protocolVersion"] = PROTOCOL_VERSION;
   d["uptimeMs"] = millis();
-  d["rssi"] = net::rssi();
+  putRssi(d);
   fillHealth(d["health"].to<JsonObject>(), ecu::snapshot());
   return send(r, 200, d);
 }
@@ -169,24 +214,46 @@ static esp_err_t hConfig(httpd_req_t *r) {
 }
 
 // GET /api/v1/capture  (P3; runs in the HTTP task, never in the safety loop)
+// The camera is shared by the API task (capture, selfTest) and the port-81 stream task: one frame
+// at a time, so camera::capture()'s recovery (deinit after 3 failures) never runs while the other
+// task still holds a frame buffer.
 static volatile bool camBusy = false;
+static portMUX_TYPE camMux = portMUX_INITIALIZER_UNLOCKED;
+static bool camTryLock() {
+  bool got = false;
+  portENTER_CRITICAL(&camMux);
+  if (!camBusy) { camBusy = true; got = true; }
+  portEXIT_CRITICAL(&camMux);
+  return got;
+}
+static void camUnlock() { camBusy = false; }
 static esp_err_t hCapture(httpd_req_t *r) {
   if (!identity::authorized(r, "GET", nullptr, 0)) return error(r, 401, "unauthorized");
   if (health::safeMode() || !camera::ok()) return error(r, 503, "camera_error", health::safeMode() ? "safe mode" : "camera not available");
-  if (camBusy) return error(r, 409, "busy");
-  camBusy = true;
+  if (!camTryLock()) return error(r, 409, "busy");
   camera_fb_t *fb = camera::capture();
-  if (!fb) { camBusy = false; return error(r, 503, "camera_error", "capture failed"); }
+  if (!fb) { camUnlock(); return error(r, 503, "camera_error", "capture failed"); }
+  uint8_t *jpg = fb->buf; size_t jpgLen = fb->len; bool converted = false;
+  if (fb->format != PIXFORMAT_JPEG) {
+    converted = camera::toJpeg(fb, &jpg, &jpgLen);
+    if (!converted) { camera::release(fb); camUnlock(); return error(r, 503, "camera_error", "jpeg conversion failed"); }
+  }
   char w[8], h[8], s[12], ts[16];
   snprintf(w, 8, "%u", fb->width); snprintf(h, 8, "%u", fb->height); snprintf(s, 12, "%lu", (unsigned long)++frameSeq); snprintf(ts, 16, "%lu", millis());
   httpd_resp_set_type(r, "image/jpeg");
+  httpd_resp_set_hdr(r, "Cache-Control", "no-store");
+  // The app's WebView fallback path (fetch from https://localhost) needs CORS for the camera too.
+  httpd_resp_set_hdr(r, "Access-Control-Allow-Origin", "*");
+  httpd_resp_set_hdr(r, "Access-Control-Expose-Headers", "x-aiss-width, x-aiss-height, x-aiss-seq, x-aiss-ts");
   httpd_resp_set_hdr(r, "x-aiss-width", w);
   httpd_resp_set_hdr(r, "x-aiss-height", h);
   httpd_resp_set_hdr(r, "x-aiss-seq", s);
   httpd_resp_set_hdr(r, "x-aiss-ts", ts);
-  esp_err_t e = httpd_resp_send(r, (const char *)fb->buf, fb->len);
+  esp_err_t e = httpd_resp_send(r, (const char *)jpg, jpgLen);
+  logHttp(r, 200, jpgLen);
+  if (converted) free(jpg);
   camera::release(fb);   // RELEASE: the buffer returns to the driver immediately
-  camBusy = false;
+  camUnlock();
   return e;
 }
 
@@ -249,9 +316,13 @@ static esp_err_t hCommand(httpd_req_t *r) {
     num(res["ultrasonic"].as<JsonObject>(), "distanceCm", s.usCm, 1);
     res["button"] = "press the button once within 10 s and check telemetry";
     res["motor"] = motor::play("confirm", motor::COMMAND) ? "pulsed" : "busy";
-    camera_fb_t *fb = (!health::safeMode() && !camBusy) ? camera::capture() : nullptr;
+    bool camLocked = !health::safeMode() && camTryLock();
+    camera_fb_t *fb = camLocked ? camera::capture() : nullptr;
     res["camera"]["ok"] = fb != nullptr;
     if (fb) { res["camera"]["bytes"] = fb->len; res["camera"]["width"] = fb->width; camera::release(fb); }
+    res["camera"]["sensorPid"] = camera::sensorPid();
+    res["camera"]["format"] = camera::jpeg() ? "jpeg" : "rgb565";
+    if (camLocked) camUnlock();
     res["heapFree"] = ESP.getFreeHeap();
     res["psram"] = psramFound();
     res["resetReason"] = health::resetReason();
@@ -352,16 +423,137 @@ static esp_err_t hOta(httpd_req_t *r) {
   return ESP_OK;
 }
 
+// GET /  — a quick "is the stick alive?" check from any browser joined to SmartStick_AI.
+static esp_err_t hRoot(httpd_req_t *r) {
+  static char page[320];
+  int n = snprintf(page, sizeof page,
+                   "AI SmartStick %s\nfirmware %s, protocol v%d, auth %s, uptime %lu s\n"
+                   "Telemetry: http://192.168.4.1/api/v1/telemetry\n",
+                   identity::deviceId(), FW_VERSION, PROTOCOL_VERSION, REQUIRE_AUTH ? "on" : "off", (unsigned long)(millis() / 1000));
+  if (n < 0) n = 0;
+  if (n >= (int)sizeof page) n = sizeof page - 1;
+  httpd_resp_set_type(r, "text/plain");
+  httpd_resp_set_hdr(r, "Cache-Control", "no-store");
+  httpd_resp_set_hdr(r, "Access-Control-Allow-Origin", "*");
+  esp_err_t e = httpd_resp_send(r, page, n);
+  logHttp(r, 200, n);
+  return e;
+}
+
+// OPTIONS (CORS preflight) for the POST routes: a WebView/browser fetch with a JSON body asks first.
+static esp_err_t hPreflight(httpd_req_t *r) {
+  httpd_resp_set_status(r, "204 No Content");
+  httpd_resp_set_hdr(r, "Access-Control-Allow-Origin", "*");
+  httpd_resp_set_hdr(r, "Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  httpd_resp_set_hdr(r, "Access-Control-Allow-Headers", "content-type, x-aiss-ts, x-aiss-content-sha256");
+  httpd_resp_set_hdr(r, "Access-Control-Max-Age", "600");
+  esp_err_t e = httpd_resp_send(r, nullptr, 0);
+  logHttp(r, 204, 0);
+  return e;
+}
+
+// ── MJPEG live stream on port 81: GET http://192.168.4.1:81/stream ──────────
+// Same protocol as the old working sketch (sketch_sep19b): multipart/x-mixed-replace, one JPEG per part.
+// Separate server so a long-running stream never blocks /api/v1/* (telemetry keeps flowing).
+static httpd_handle_t streamServer = nullptr;
+#define STREAM_BOUNDARY "123456789000000000000987654321"
+static esp_err_t hStream(httpd_req_t *r) {
+  // Own constant answer: send()'s static buffer belongs to the API server task, never share it.
+  if (health::safeMode() || !camera::ok()) {
+    static const char kErr[] = "{\"error\":\"camera_error\",\"message\":\"camera not available\"}";
+    httpd_resp_set_status(r, "503 Service Unavailable");
+    httpd_resp_set_type(r, "application/json");
+    return httpd_resp_send(r, kErr, sizeof kErr - 1);
+  }
+  Serial.println("[stream] viewer connected");
+  httpd_resp_set_type(r, "multipart/x-mixed-replace;boundary=" STREAM_BOUNDARY);
+  httpd_resp_set_hdr(r, "Access-Control-Allow-Origin", "*");
+  char part[96];
+  int misses = 0;   // consecutive loops without a frame (camera busy in the API task, or dead)
+  while (true) {
+    // Share the camera with /api/v1/capture: never capture while the API task holds a frame.
+    camera_fb_t *fb = nullptr;
+    if (camTryLock()) {
+      fb = camera::ok() ? camera::capture() : nullptr;
+      if (!fb) camUnlock();
+    }
+    if (!fb) {
+      // A dead camera (or one that stays busy) ends the stream after ~3 s, so a viewer that left is
+      // never waited on forever and the stream task is free for the next one.
+      if (++misses >= 60) { Serial.println("[stream] no frames, closing the stream"); break; }
+      delay(50);
+      continue;
+    }
+    misses = 0;
+    uint8_t *jpg = fb->buf; size_t len = fb->len; bool conv = false;
+    if (fb->format != PIXFORMAT_JPEG) { conv = camera::toJpeg(fb, &jpg, &len); if (!conv) { camera::release(fb); camUnlock(); continue; } }
+    // The JPEG copy is ours: hand the raw buffer back so the sensor fills the next frame while we send.
+    if (conv) { camera::release(fb); fb = nullptr; }
+    int hl = snprintf(part, sizeof part, "\r\n--" STREAM_BOUNDARY "\r\nContent-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n", (unsigned)len);
+    esp_err_t e = httpd_resp_send_chunk(r, part, hl);
+    if (e == ESP_OK) e = httpd_resp_send_chunk(r, (const char *)jpg, len);
+    if (conv) free(jpg);
+    camera::release(fb);
+    camUnlock();
+    if (e != ESP_OK) break;   // phone closed the stream
+    delay(30);
+  }
+  httpd_resp_send_chunk(r, nullptr, 0);
+  return ESP_OK;
+}
+static void startStream() {
+  if (streamServer) return;
+  httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
+  cfg.server_port = 81;
+  cfg.ctrl_port = 32769;
+  // Socket budget (lwIP has CONFIG_LWIP_MAX_SOCKETS, 10 by default; each server also holds a listen
+  // and a control socket): API 4+2 + stream 1+2 = 9. One live viewer at a time: hStream loops in this
+  // server's only task, so a second viewer waits until the first one's send fails (a gone viewer
+  // is detected within send_wait_timeout) or the stream ends.
+  cfg.max_open_sockets = 1;
+  cfg.lru_purge_enable = true;
+  cfg.send_wait_timeout = 2;
+  cfg.core_id = 0;
+  cfg.task_priority = tskIDLE_PRIORITY + 2;   // below the API server
+  if (httpd_start(&streamServer, &cfg) != ESP_OK) { Serial.println("[stream] port 81 failed"); return; }
+  httpd_uri_t u = {"/stream", HTTP_GET, hStream, nullptr};
+  httpd_register_uri_handler(streamServer, &u);
+  Serial.println("[stream] MJPEG at http://192.168.4.1:81/stream");
+}
+
+// One compact line every 2 s, so the serial monitor proves the stick side on its own:
+// [TELEMETRY] seq=.. us=..cm(status) zone=.. bat=..V ..mA imu=ok/err pitch=.. roll=.. heap=.. clients=..
+// Low-priority task on core 0: the safety loop (core 1) never waits for the UART.
+static void diagTask(void *) {
+  for (;;) {
+    vTaskDelay(pdMS_TO_TICKS(2000));
+    ecu::Sensors s = ecu::snapshot();
+    Serial.printf("[TELEMETRY] seq=%lu us=%.1fcm(%s) zone=%s bat=%.2fV %.0fmA imu=%s pitch=%.1f roll=%.1f heap=%u clients=%d http=%lu last=%d/%luB\n",
+                  (unsigned long)telemetrySeq, s.usCm, s.usStatus, aiss::zoneName(s.zone), s.busV, s.currentMa, s.imuOk ? "ok" : "err", s.pitch, s.roll,
+                  (unsigned)ESP.getFreeHeap(), (int)WiFi.softAPgetStationNum(), (unsigned long)httpCount, lastTelemetryStatus, (unsigned long)lastTelemetryBytes);
+  }
+}
+
 void start() {
   if (server) return;
+#if defined(CONFIG_LWIP_MAX_SOCKETS) && CONFIG_LWIP_MAX_SOCKETS < 9
+#warning "CONFIG_LWIP_MAX_SOCKETS < 9: the API (4) and stream (1) servers may run out of sockets"
+#endif
   httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
-  cfg.max_open_sockets = 5;
+  // 4 phone connections (telemetry poll + capture + command + a browser) — see the socket budget above.
+  cfg.max_open_sockets = 4;
   cfg.lru_purge_enable = true;
   cfg.stack_size = 10240;
-  cfg.max_uri_handlers = 10;
+  cfg.max_uri_handlers = 12;
+  cfg.recv_wait_timeout = 5;   // seconds; a phone that walks out of range must not hold a socket for long
+  cfg.send_wait_timeout = 5;
   cfg.core_id = 0;          // control loop runs on core 1 (Arduino); HTTP/camera on core 0 with Wi-Fi
   cfg.task_priority = tskIDLE_PRIORITY + 3;
-  if (httpd_start(&server, &cfg) != ESP_OK) return;
+  if (httpd_start(&server, &cfg) != ESP_OK) {
+    Serial.println("[HTTP] API server on port 80 FAILED to start");
+    return;
+  }
+  Serial.println("[HTTP] API at http://192.168.4.1/api/v1/telemetry (port 80, 4 sockets)");
   httpd_uri_t routes[] = {
     {"/api/v1/device", HTTP_GET, hDevice, nullptr},
     {"/api/v1/status", HTTP_GET, hStatus, nullptr},
@@ -372,7 +564,13 @@ void start() {
     {"/api/v1/provision", HTTP_POST, hProvision, nullptr},
     {"/api/v1/ota/status", HTTP_GET, hOtaStatus, nullptr},
     {"/api/v1/ota", HTTP_POST, hOta, nullptr},
+    {"/", HTTP_GET, hRoot, nullptr},
+    // CORS preflights (max_uri_handlers = 12: 10 routes + these 2).
+    {"/api/v1/command", HTTP_OPTIONS, hPreflight, nullptr},
+    {"/api/v1/ota", HTTP_OPTIONS, hPreflight, nullptr},
   };
   for (auto &u : routes) httpd_register_uri_handler(server, &u);
+  startStream();
+  xTaskCreatePinnedToCore(diagTask, "diag", 4096, nullptr, tskIDLE_PRIORITY + 1, nullptr, 0);
 }
 }  // namespace api

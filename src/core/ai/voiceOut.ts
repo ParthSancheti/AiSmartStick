@@ -1,7 +1,7 @@
 import type { ReplyLang } from '../types';
 import { useAssistant } from '../store/assistant';
 import { getSettings } from '../store/session';
-import { say, type Priority } from '../audio/audioManager';
+import { say, liveAudioActive, livePcmPlaying, type Priority } from '../audio/audioManager';
 import { userSurfaceActive } from '../surfaces';
 import { abortRecognition } from '../voice/recognition';
 import type { L } from './phrases';
@@ -32,7 +32,14 @@ export function announce(line: L | string, opts: { high?: boolean; critical?: bo
   const text = typeof line === 'string' ? line : line[lang];
   const phase = useAssistant.getState().phase;
   const urgent = opts.high || opts.critical;
-  if (!urgent && (phase === 'listening' || phase === 'thinking') && tries < 8) {
+  if (!urgent && opts.nav && liveAudioActive()) {
+    // A Live session listens for minutes: turn-by-turn cannot wait for it to end. Only wait for the
+    // model to finish its current sentence (max ~5 s), then speak the instruction.
+    if (livePcmPlaying() && tries < 6) {
+      setTimeout(() => announce(line, opts, tries + 1), 800);
+      return;
+    }
+  } else if (!urgent && (phase === 'listening' || phase === 'thinking') && tries < 8) {
     setTimeout(() => announce(line, opts, tries + 1), 1200);
     return;
   }

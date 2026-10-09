@@ -6,6 +6,8 @@ import { ImuFilter, type ImuCalibration } from './imu';
 import { UltrasonicFilter } from './ultrasonic';
 import { ButtonClassifier } from './button';
 import { STALE_MS } from './types';
+import { sensorConditioning } from '../vision/sensorConditioning';
+import { trace } from '../device/deviceTrace';
 
 /**
  * RAW HARDWARE → VALIDATION → NORMALIZATION → FILTER → QUALITY → DOMAIN STATE (device store).
@@ -23,7 +25,8 @@ let lastSafetyId = -1;
 interface Handlers {
   onButton: (p: ButtonPattern) => void;
   onFall: (peakG: number | undefined, confidence: number | undefined) => void;
-  onRejected?: (reason: string) => void;
+  /** A packet was rejected (reason), or data is accepted again after a rejection (null). */
+  onRejected?: (reason: string | null) => void;
 }
 let handlers: Handlers = { onButton: () => {}, onFall: () => {} };
 
@@ -36,6 +39,7 @@ export function setImuCalibration(cal: ImuCalibration | null) {
 }
 
 let lastRawImu: TelemetryPacket['imu'] | null = null;
+let rejecting = false;
 /** Zero the stick orientation at the current pose (user holds it upright, then taps Calibrate). */
 export function calibrateImuFromLatest(): ImuCalibration | null {
   if (!lastRawImu) return null;
@@ -53,56 +57,75 @@ export function resetPipeline() {
   lastRawImu = null;
 }
 
-const num = (v: unknown) => v === null || (typeof v === 'number' && Number.isFinite(v));
-const range = (v: unknown, lo: number, hi: number) => v === null || v === undefined || (typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi);
 const US_STATUS = ['ok', 'no_echo', 'out_of_range', 'invalid', 'timeout', 'error'];
 const ZONES = [undefined, 'unknown', 'normal', 'awareness', 'warning', 'danger'];
 
+const ok = (v: unknown) => v === null || v === undefined || (typeof v === 'number' && Number.isFinite(v));
+const inRange = (v: unknown, lo: number, hi: number) => v === null || v === undefined || (typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi);
+const show = (v: unknown) => {
+  try {
+    return JSON.stringify(v)?.slice(0, 40) ?? String(v);
+  } catch {
+    return String(v);
+  }
+};
+
 /**
- * Shape AND plausibility. Malformed packets never reach the stores: impossible distances,
- * voltages, angles, NaN/Infinity, unknown enums, oversized event lists, bad ids.
+ * Shape AND plausibility, with the reason. Malformed packets never reach the stores: impossible
+ * distances, voltages, angles, NaN/Infinity, unknown enums, oversized event lists, bad ids.
+ * Returns null when the packet is fine, else WHICH field failed (shown in the Connection test and
+ * the rejection trace, so a firmware/app mismatch is visible at once instead of "no data").
  */
-export function validatePacket(p: unknown): p is TelemetryPacket {
+export function explainPacket(p: unknown): string | null {
   const x = p as TelemetryPacket;
-  return (
-    !!x &&
-    x.v === 1 &&
-    typeof x.deviceId === 'string' &&
-    /^[A-Za-z0-9._:-]{3,40}$/.test(x.deviceId) &&
-    Number.isInteger(x.seq) &&
-    x.seq >= 0 &&
-    typeof x.uptimeMs === 'number' &&
-    Number.isFinite(x.uptimeMs) &&
-    x.uptimeMs >= 0 &&
-    !!x.battery &&
-    range(x.battery.busV, 0, 30) &&
-    range(x.battery.currentMa, -10000, 10000) &&
-    !!x.imu &&
-    range(x.imu.pitch, -180, 180) &&
-    range(x.imu.roll, -180, 180) &&
-    num(x.imu.ax ?? null) &&
-    !!x.ultrasonic &&
-    range(x.ultrasonic.distanceCm, 0, 1000) &&
-    US_STATUS.includes(x.ultrasonic.status) &&
-    ZONES.includes(x.ultrasonic.zone) &&
-    Array.isArray(x.button) &&
-    x.button.length <= 32 &&
-    x.button.every((b) => Number.isInteger(b.id) && ['press', 'release', 'gesture'].includes(b.kind)) &&
-    (x.safety === undefined || (Array.isArray(x.safety) && x.safety.length <= 16)) &&
-    !!x.health
-  );
+  if (!x || typeof x !== 'object') return 'packet is not an object';
+  if (x.v !== 1) return `v = ${show(x.v)} (expected 1)`;
+  if (typeof x.deviceId !== 'string' || !/^[A-Za-z0-9._:-]{3,40}$/.test(x.deviceId)) return `deviceId = ${show(x.deviceId)}`;
+  if (!Number.isInteger(x.seq) || x.seq < 0) return `seq = ${show(x.seq)}`;
+  if (typeof x.uptimeMs !== 'number' || !Number.isFinite(x.uptimeMs) || x.uptimeMs < 0) return `uptimeMs = ${show(x.uptimeMs)}`;
+  if (!x.battery || typeof x.battery !== 'object') return 'battery missing';
+  if (!inRange(x.battery.busV, 0, 30)) return `battery.busV = ${show(x.battery.busV)}`;
+  if (!inRange(x.battery.currentMa, -10000, 10000)) return `battery.currentMa = ${show(x.battery.currentMa)}`;
+  if (!x.imu || typeof x.imu !== 'object') return 'imu missing';
+  if (!inRange(x.imu.pitch, -180, 180)) return `imu.pitch = ${show(x.imu.pitch)}`;
+  if (!inRange(x.imu.roll, -180, 180)) return `imu.roll = ${show(x.imu.roll)}`;
+  if (!ok(x.imu.ax)) return `imu.ax = ${show(x.imu.ax)}`;
+  if (!x.ultrasonic || typeof x.ultrasonic !== 'object') return 'ultrasonic missing';
+  if (!inRange(x.ultrasonic.distanceCm, 0, 1000)) return `ultrasonic.distanceCm = ${show(x.ultrasonic.distanceCm)}`;
+  if (!US_STATUS.includes(x.ultrasonic.status)) return `ultrasonic.status = ${show(x.ultrasonic.status)}`;
+  if (!ZONES.includes(x.ultrasonic.zone)) return `ultrasonic.zone = ${show(x.ultrasonic.zone)}`;
+  if (!Array.isArray(x.button)) return 'button is not a list';
+  if (x.button.length > 32) return `button has ${x.button.length} events (max 32)`;
+  const badBtn = x.button.findIndex((b) => !b || !Number.isInteger(b.id) || !['press', 'release', 'gesture'].includes(b.kind));
+  if (badBtn >= 0) return `button[${badBtn}] = ${show(x.button[badBtn])}`;
+  if (x.safety !== undefined && (!Array.isArray(x.safety) || x.safety.length > 16)) return `safety = ${show(x.safety)}`;
+  if (!x.health || typeof x.health !== 'object') return 'health missing';
+  return null;
+}
+
+export function validatePacket(p: unknown): p is TelemetryPacket {
+  return explainPacket(p) === null;
 }
 
 export function ingestPacket(p: TelemetryPacket, receivedAt: number) {
-  if (!validatePacket(p)) {
-    handlers.onRejected?.('malformed packet');
+  const why = explainPacket(p);
+  if (why) {
+    trace('packet_rejected', { error: `malformed packet: ${why}` });
+    rejecting = true;
+    handlers.onRejected?.(`Stick data rejected: ${why}`);
     return;
+  }
+  if (rejecting) {
+    rejecting = false;
+    handlers.onRejected?.(null);
   }
   const id = useDevice.getState().identity;
   if (id && p.deviceId !== id.deviceId) {
+    trace('packet_rejected', { error: 'unexpected device' });
     handlers.onRejected?.(`packet from unexpected device ${p.deviceId}`);
     return;
   }
+  trace('packet_valid', { seq: p.seq });
   if (p.uptimeMs < lastUptime) {
     // Stick rebooted: sequence and button ids restart.
     resetPipeline();
@@ -113,9 +136,12 @@ export function ingestPacket(p: TelemetryPacket, receivedAt: number) {
   lastUptime = p.uptimeMs;
   lastRawImu = p.imu;
 
+  sensorConditioning.ingest(p, receivedAt);
+
   const b = battery.update({ busV: p.battery.busV, currentMa: p.battery.currentMa, charging: p.battery.charging, ok: p.battery.ok, at: receivedAt });
   const i = imu.update({ ...p.imu, at: receivedAt });
   const u = ultrasonic.update(p.ultrasonic, receivedAt);
+  trace('telemetry_parsed', { batteryPct: b.percent, distanceCm: u.distanceCm, pitch: i.pitch });
   const cam = useDevice.getState().camera;
   useDevice.setState({
     battery: b,
@@ -128,7 +154,12 @@ export function ingestPacket(p: TelemetryPacket, receivedAt: number) {
     camera: { ...cam, status: p.health.camera === 'error' ? 'error' : cam.status === 'capturing' ? 'capturing' : 'idle' },
   });
 
-  for (const g of buttons.ingest(p.button, p.uptimeMs)) handlers.onButton(g);
+  trace('store_updated', { seq: p.seq });
+
+  for (const g of buttons.ingest(p.button, p.uptimeMs)) {
+    trace('button_event', { gesture: g });
+    handlers.onButton(g);
+  }
   for (const e of p.safety ?? []) {
     if (e.id <= lastSafetyId) continue;
     lastSafetyId = e.id;

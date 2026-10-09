@@ -154,8 +154,8 @@ export const P = {
   }),
   cameraEnded: (n: string) => ({ en: `${n} stopped viewing your camera.`, hi: `${n} ने कैमरा देखना बंद कर दिया।` }),
   authFailed: {
-    en: 'Your stick could not be verified, so I disconnected it. Please pair it again.',
-    hi: 'स्टिक की पहचान नहीं हो पाई, इसलिए उसे डिस्कनेक्ट कर दिया। कृपया फिर से जोड़िए।',
+    en: 'Your stick needs new firmware before it can connect.',
+    hi: 'स्टिक को जुड़ने से पहले नया फ़र्मवेयर चाहिए।',
   },
   netDown: { en: "The internet dropped. I'll keep the basics working.", hi: 'इंटरनेट चला गया। ज़रूरी चीज़ें चालू रहेंगी।' },
   netUp: { en: 'Internet is back.', hi: 'इंटरनेट वापस आ गया।' },

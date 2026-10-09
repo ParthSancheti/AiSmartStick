@@ -1,4 +1,5 @@
 #include "Identity.h"
+#include "BoardConfig.h"
 #include <WiFi.h>
 #include <Preferences.h>
 #include <mbedtls/md.h>
@@ -81,6 +82,9 @@ bool ctEqual(const char *a, const char *b) {
 static bool hdr(httpd_req_t *r, const char *n, char *out, size_t sz) { return httpd_req_get_hdr_value_str(r, n, out, sz) == ESP_OK; }
 
 bool authorized(httpd_req_t *r, const char *method, const char *body, size_t bodyLen) {
+  // v1 simple link: joining the stick's Wi-Fi is enough. The signed path below stays compiled so
+  // REQUIRE_AUTH 1 still builds and works.
+  if (REQUIRE_AUTH == 0) return true;
   if (!prov) return false;
   char dev[24], ts[20], nonce[25], sig[65];
   if (!hdr(r, "x-aiss-device", dev, sizeof dev) || !hdr(r, "x-aiss-ts", ts, sizeof ts) || !hdr(r, "x-aiss-nonce", nonce, sizeof nonce) || !hdr(r, "x-aiss-sig", sig, sizeof sig)) return false;

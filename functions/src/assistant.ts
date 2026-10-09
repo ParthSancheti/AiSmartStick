@@ -24,7 +24,13 @@ HOW TO ANSWER
 SAFETY RULES (strict)
 - Never say it is safe to cross a road, walk ahead, or that a path is clear. Describe what was observed and how certain it is; remind the user to use their cane and hearing.
 - If a vision result is uncertain or the image is poor, say so plainly.
-- Never invent places, addresses, coordinates, distances or phone numbers. Places come only from search_place / find_nearest_place.
+- Never invent places, addresses, coordinates, distances or phone numbers. Places come only from search_place / find_nearest_place / set_destination.
+
+NAVIGATION
+- "Nearest X" → find_nearest_place (or search_place for a name). Say the offered place's name (and distance when given) and ask if they want to go there; on yes call start_navigation with that placeId.
+- When the user names one specific place or address to go to ("set destination to City Hospital"), call set_destination with query set to that name: it sets the destination and starts directions.
+- GPS is NOT needed to search or to set a destination. If a result says directions "waiting_for_gps", say the destination is set and directions start automatically once GPS finds their position. Never say location or maps are unavailable when the user asks to go somewhere.
+- For a help or "where am I" text, use send_sms_to_guardian; the app adds the location link itself.
 - trigger_sos only when the user clearly asks for help or says it is an emergency. cancel_sos only when they say they are okay.
 - A text message counts as sent only if the tool result says "sent". If it says "composer_opened", tell the user to press send.
 - If a tool fails, say briefly what failed and what still works (the stick keeps vibrating for obstacles offline).
@@ -32,7 +38,7 @@ SAFETY RULES (strict)
 
 CURRENT CONTEXT (from the phone, may change)
 - User's name: ${userName || 'unknown'}; guardian: ${ctx.guardianName ?? 'none linked'}
-- Stick connected: ${ctx.deviceConnected}; phone internet: ${ctx.internet}; GPS available: ${ctx.locationAvailable}
+- Stick connected: ${ctx.deviceConnected}; phone internet: ${ctx.internet}; GPS available: ${ctx.locationAvailable}${ctx.locationAvailable ? '' : ' (destinations can still be searched and set)'}
 - Navigating: ${ctx.navigating}; SOS state: ${ctx.sosPhase}; local time: ${ctx.localTime}
 `.trim();
 
@@ -260,21 +266,29 @@ Rules: write "spoken" in ${lang}. State uncertainty honestly and set "uncertain"
 });
 
 export const getLiveToken = onCall({ ...CALLABLE, secrets: [GEMINI_API_KEY] }, async (request) => {
-  requireAuth(request);
+  const uid = requireAuth(request);
+  await quota(uid, 'live', 6, 300);
+  const liveModel = GEMINI_LIVE_MODEL.value();
   const ai = client('v1alpha');
-  let tokenName = '';
+  const now = Date.now();
+  let token = '';
   try {
-    const res = await ai.authTokens.create({ expiresIn: '3600s' } as any);
-    // SDK returns a resource with `name` being the base64 token string
-    tokenName = res.name || (res as any).token || '';
+    // One-use ephemeral token: the long-lived API key never leaves the server. The model is locked
+    // here, so a leaked token cannot be used with any other model.
+    const res = await ai.authTokens.create({
+      config: {
+        uses: 1,
+        expireTime: new Date(now + 30 * 60_000).toISOString(),
+        newSessionExpireTime: new Date(now + 2 * 60_000).toISOString(),
+        liveConnectConstraints: { model: liveModel },
+        httpOptions: { apiVersion: 'v1alpha' },
+      },
+    });
+    token = res.name ?? '';
   } catch (e) {
     console.error('Failed to create ephemeral token:', e);
     throw new HttpsError('internal', 'Could not generate Live session token.');
   }
-
-  return {
-    token: tokenName,
-    liveModel: process.env.GEMINI_LIVE_MODEL || 'gemini-3.8-live',
-    flashModel: process.env.GEMINI_FLASH_MODEL || 'gemini-3.8-flash',
-  };
+  if (!token) throw new HttpsError('internal', 'Could not generate Live session token.');
+  return { token, liveModel, flashModel: GEMINI_FLASH_MODEL.value() };
 });

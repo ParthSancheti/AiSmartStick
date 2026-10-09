@@ -1,0 +1,1 @@
+package androidx.core.view; public class WindowCompat { public static void setDecorFitsSystemWindows(android.view.Window w, boolean fits){} public static WindowInsetsControllerCompat getInsetsController(android.view.Window w, android.view.View v){ return null; } }

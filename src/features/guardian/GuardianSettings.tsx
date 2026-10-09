@@ -132,7 +132,7 @@ function GuardianSafetySubpage({ open, onClose, onEditNumber }: { open: boolean,
           className="absolute inset-0 z-[70] bg-bg overflow-y-auto no-scrollbar"
         >
           <Atmosphere variant="guardian" />
-          <div className="px-4 pb-8" style={{ paddingTop: 'calc(var(--island, 0px) + 12px)' }}>
+          <div className="px-4 pb-8" style={{ paddingTop: 'calc(var(--island, var(--sat)) + 12px)' }}>
             <div className="mb-6 mt-8 flex items-center gap-4">
               <button onClick={onClose} className="h-12 w-12 glass interactive rounded-full flex items-center justify-center text-ink shrink-0">
                 <ChevronLeft size={24} />
@@ -176,7 +176,7 @@ function GuardianPrivacySubpage({ open, onClose }: { open: boolean, onClose: () 
           className="absolute inset-0 z-[70] bg-bg overflow-y-auto no-scrollbar"
         >
           <Atmosphere variant="guardian" />
-          <div className="px-4 pb-8" style={{ paddingTop: 'calc(var(--island, 0px) + 12px)' }}>
+          <div className="px-4 pb-8" style={{ paddingTop: 'calc(var(--island, var(--sat)) + 12px)' }}>
             <div className="mb-6 mt-8 flex items-center gap-4">
               <button onClick={onClose} className="h-12 w-12 glass interactive rounded-full flex items-center justify-center text-ink shrink-0">
                 <ChevronLeft size={24} />
@@ -250,7 +250,7 @@ export function GuardianSettings() {
   return (
     <div className="absolute inset-0 z-[60] bg-bg overflow-y-auto no-scrollbar">
       <Atmosphere variant="guardian" />
-      <div className="px-4 pb-8" style={{ paddingTop: 'calc(var(--island, 0px) + 12px)' }}>
+      <div className="px-4 pb-8" style={{ paddingTop: 'calc(var(--island, var(--sat)) + 12px)' }}>
         <div className="mb-5 mt-8 flex items-center gap-4">
           <button onClick={close} className="h-12 w-12 glass interactive rounded-full flex items-center justify-center text-ink shrink-0">
             <ChevronLeft size={24} />

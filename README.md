@@ -34,11 +34,27 @@ npm run build:demo       # demo build → dist-demo/
 npm run functions:build  # Cloud Functions
 ```
 
+### Release: redeploy the Cloud Functions with every APK that changes `shared/tools.ts` or `functions/`
+The APK alone is not enough for the text assistant and server-side Maps:
+```bash
+cd functions && npm run build && firebase deploy --only functions
+```
+* `assistantTurn` validates the model's tool calls against its **own** copy of `shared/tools.ts`.
+  Until it is redeployed, `set_destination {query}` ("AI, take me to City Hospital") is rejected in
+  text chat, and the old prompt still says maps need GPS.
+* `mapsSearch` / `mapsAutocomplete` accept a search **without** GPS (no lat/lng) only after the deploy.
+  Before it, destination search without a fix uses only the in-app browser-key fallback.
+* Voice mode (Gemini Live, `src/core/ai/liveSession.ts`) uses the app's own `shared/tools.ts` and works
+  with the new APK alone.
+
 ## Docs
 * [INTEGRATION_STATUS.md](INTEGRATION_STATUS.md): what is real, what is demo-only, known issues, test results
 * [DEVICE_PROTOCOL.md](DEVICE_PROTOCOL.md): stick ↔ phone protocol v1 (provisioning, HMAC auth, telemetry)
 * [FIREBASE_SCHEMA.md](FIREBASE_SCHEMA.md): data model, security model, write rates, functions
 * [ANDROID_SETUP.md](ANDROID_SETUP.md): Firebase / Maps / Gemini / FCM setup, permissions, build
+* [docs/GOOGLE_CLOUD_SETUP.md](docs/GOOGLE_CLOUD_SETUP.md): billing, APIs, browser / server / Gemini keys, App Check, deploy, and "message in the app → what to do" (the in-app Server & maps test points here)
+* [docs/DEVICE_DEBUG.md](docs/DEVICE_DEBUG.md): real-device test steps (camera view, live video, AI vision, maps, stick link) and what to send when something fails
+* [docs/DOCTOR.md](docs/DOCTOR.md): `npm run doctor`, the one command that checks the PC (including the Maps browser key), builds and installs the app
 * [PRODUCTION_CHECKLIST.md](PRODUCTION_CHECKLIST.md): feature traceability matrix, classification, release gates
 * [HARDWARE_WIRING.md](HARDWARE_WIRING.md): the owner's pin map audited, electrical conditions, power
 * [FIRMWARE_SETUP.md](FIRMWARE_SETUP.md): ECU modules, build/flash, hardware test procedure, OTA design

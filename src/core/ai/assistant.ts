@@ -39,25 +39,34 @@ function thinking(on: boolean) {
 export function startListening() {
   const a = useAssistant.getState();
   if (useSafety.getState().phase === 'countdown') return;
+  // Real mode: one Gemini Live conversation. Press to open it, press again to end it.
+  if (isReal() && liveSession.isActive) {
+    cancelListening();
+    return;
+  }
   if (a.phase === 'listening') {
     cancelListening();
     return;
   }
   if (a.phase === 'thinking') return;
   stopSpeaking();
+  clearTimeout(listenTimer);
+  // Real mode: Gemini Live streams the microphone itself (no on-device speech recognition needed).
+  // The connecting tune plays until the session is open, then liveSession plays the "listening"
+  // earcon — never both at once. Started synchronously here so audio is unlocked by this tap.
+  if (isReal()) {
+    haptics.play('tap');
+    void liveSession.start();
+    return;
+  }
   set({ phase: 'listening', heard: '', reply: '' });
   earcon('listen');
   haptics.play('listen');
-  clearTimeout(listenTimer);
 
   const s = getSettings();
   const lang = resolveLang();
-  // Real mode always uses the microphone; demo mode only when enabled.
-  if ((isReal() || s.realMic) && recognitionSupported()) {
-    if (isReal()) {
-      void liveSession.start();
-      return;
-    }
+  // Demo mode uses the browser recognizer only when enabled.
+  if (s.realMic && recognitionSupported()) {
     const ok = startRecognition({
       lang: lang === 'hi' ? 'hi-IN' : 'en-IN',
       onInterim: (t) => set({ heard: t }),
@@ -76,11 +85,14 @@ export function startListening() {
 }
 
 export function cancelListening() {
+  const phase = useAssistant.getState().phase;
+  // Closing the Live panel calls this even when nothing runs: only a real cancel makes a sound.
+  const wasBusy = liveSession.isActive || (phase !== 'idle' && phase !== 'error');
   clearTimeout(listenTimer);
   abortRecognition();
-  liveSession.stop();
+  liveSession.stop('user');
   set({ phase: 'idle', heard: '' });
-  earcon('cancel');
+  if (wasBusy) earcon('cancel');
 }
 
 /** Demo helper: shows the words appearing as if spoken, then submits. */

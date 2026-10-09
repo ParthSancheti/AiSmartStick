@@ -1,18 +1,25 @@
-import { connectStick } from './device/bridge';
+import { connectStick, disconnectStick } from './device/bridge';
+import { stopDiscovery } from './device/discovery';
+import { useDevice } from './store/device';
+import { liveSession } from './ai/liveSession';
+import { visionEngine } from './vision/visionLoop';
+import { guidanceEngine } from './guidance/guidanceEngine';
 import { MockTransport } from './transport/mockTransport';
 import { startWorld } from './sim/world';
 import { unlockAudio } from './feedback/earcons';
 import { useSession } from './store/session';
 import { useRuntime } from './runtime/mode';
 import { startAuth, clearLocalAccountData } from './auth/authService';
+import { mirrorNameToAuth } from './profile/profile';
+import { seedTextScaleFromSystem } from './native/textScale';
 import { useAuth } from './auth/authStore';
 import { watchRelationship, stopRelationshipWatch, useRelationship } from './pairing/pairingService';
-import { startUserSync, stopUserSync } from './sync/userSync';
+import { startUserSync, stopUserSync, stopSosWatch } from './sync/userSync';
 import { startRealFeed, startDemoFeed, stopFeed } from './sync/guardianFeed';
 import { startCameraResponder, stopCameraResponder } from './camera/cameraSession';
 import { startRealDevice } from './device/realDevice';
 import { startNetworkMonitor } from './device/network';
-import { startLocation } from './location/locationService';
+import { startLocation, stopLocation } from './location/locationService';
 import { onFix } from './location/locationService';
 import { walkFix, demoWalk } from './walking/walkTracker';
 import { startSafetyRuntime } from './safety/safetyRuntime';
@@ -24,6 +31,7 @@ import { UNIT_M } from './sim/geo';
 import { startSettingsSync, stopSettingsSync } from './sync/settingsSync';
 import { startBackgroundController, stopBackground } from './native/background';
 import { startCommandRelay, stopCommandRelay } from './sync/commandRelay';
+import { resumeSavedNavigation, stopRealNavigation } from './navigation/realNavigator';
 
 let booted = false;
 
@@ -52,8 +60,12 @@ function bootDemo() {
   // Demo identity (no Firebase account). Clearly labelled "Demo" in the UI.
   useAuth.setState({ status: 'signedIn', user: { uid: 'demo-user', displayName: 'Demo user', email: null, photoURL: null }, role: null, profile: null });
   void connectStick(new MockTransport({ startLinked: useSession.getState().userOnboarded }));
+  visionEngine.start();
+  guidanceEngine.start();
   startWorld();
   useSession.setState({ person: { ...useSession.getState().person, name: useSession.getState().person.name || 'Aarav' } });
+  // The profile menu reads the auth name: show the same demo name everywhere.
+  mirrorNameToAuth(useSession.getState().person.name);
   // Demo navigation feeds the same normalised view the real navigator uses.
   let walked = 0;
   let lastTravelled = 0;
@@ -85,12 +97,23 @@ function bootDemo() {
 
 function bootReal() {
   void startNetworkMonitor();
+  void seedTextScaleFromSystem();
   const isUserApp = () => {
     const role = useAuth.getState().role ?? useSession.getState().entryRole;
     return role !== 'guardian';
   };
   let relUnsub: (() => void) | null = null;
   let wasSignedIn = false;
+  // The uid the stick link was started for (started early from the uid, before the profile loads).
+  let deviceUid: string | null = null;
+  const startDeviceFor = (uid: string) => {
+    if (deviceUid === uid) return;
+    deviceUid = uid;
+    void startRealDevice();
+  };
+  // GPS as soon as the app opens (never a dialog), not only after sign-in and the Firestore profile
+  // load, which can be slow or stall while the phone is on the stick's Wi-Fi.
+  const earlyLocation: Promise<void> = isUserApp() ? startLocation({ request: false }) : Promise.resolve();
   startAuth(
     (uid) => {
       wasSignedIn = true;
@@ -98,15 +121,31 @@ function bootReal() {
       startSettingsSync(uid);
       watchRelationship(uid, userSide ? 'user' : 'guardian');
       if (userSide) {
-        void startRealDevice();
-        void startLocation();
+        startDeviceFor(uid);
+        // Android shows one permission dialog at a time: ask for notifications only after location.
+        // After the quiet early start: this is the one start that may show the permission dialog
+        // (a no-op when GPS already runs).
+        const settled = Promise.race([earlyLocation, new Promise<void>((r) => setTimeout(r, 15_000))]);
+        void settled.then(() => startLocation()).finally(() => void registerPush(uid, 'user'));
         onFix(walkFix);
+        // Directions that were running when the app/process died resume from the first fresh fix.
+        const offResume = onFix(() => {
+          offResume();
+          void resumeSavedNavigation();
+        });
         void startUserSync(uid);
         startCameraResponder(uid);
-        void registerPush(uid, 'user');
         startBackgroundController();
         startCommandRelay(uid);
+        visionEngine.start();
+        guidanceEngine.start();
       } else {
+        // Started early from the uid but this account turned out to be a guardian: no stick here.
+        if (deviceUid) {
+          deviceUid = null;
+          disconnectStick();
+          useDevice.setState({ link: 'unpaired', identity: null, linkDetail: null });
+        }
         relUnsub?.();
         relUnsub = useRelationship.subscribe((r, prev) => {
           if (r.rel && r.rel.relationshipId !== prev.rel?.relationshipId) startRealFeed(r.rel);
@@ -120,7 +159,18 @@ function bootReal() {
     () => {
       // Signed out: nothing from the previous account may stay on screen.
       if (useAuth.getState().status === 'signedOut' && wasSignedIn) void clearLocalAccountData();
+      deviceUid = null;
       stopUserSync();
+      stopSosWatch();
+      // The previous account's stick link, GPS, directions and voice session end with it.
+      liveSession.stop();
+      stopRealNavigation();
+      void stopLocation();
+      void stopDiscovery();
+      disconnectStick();
+      useDevice.setState({ link: 'unpaired', identity: null, linkDetail: null });
+      visionEngine.stop();
+      guidanceEngine.stop();
       stopCameraResponder();
       void stopBackground();
       stopCommandRelay();
@@ -129,6 +179,10 @@ function bootReal() {
       stopFeed();
       relUnsub?.();
       relUnsub = null;
+    },
+    (uid) => {
+      // The stick link starts from the uid alone (profile load can stall offline for ~10 s).
+      if (isUserApp()) startDeviceFor(uid);
     },
   );
 }
