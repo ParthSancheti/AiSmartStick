@@ -12,6 +12,8 @@ export interface BatteryState {
   chargingSource: 'hardware' | 'inferred' | null;
   measuredAt: number | null;
   quality: Quality;
+  /** Why a reading cannot be turned into a charge estimate (shown to the user instead of a fake %). */
+  issue?: string | null;
 }
 
 export interface ImuState {

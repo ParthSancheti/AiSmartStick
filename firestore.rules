@@ -17,15 +17,25 @@ service cloud.firestore {
     function onlyKeys(keys) { return changed().hasOnly(keys); }
     function unchangedOrMe(key) { return !(key in changed()) || request.resource.data[key] == request.auth.uid; }
 
+    // Profile fields written by the phone: the picked photo is a small JPEG data URL (no Cloud
+    // Storage), capped well under the 1 MiB document limit; the name stays short.
+    function profileOk(d) {
+      return (!('photoData' in d) || d.photoData == null || (d.photoData is string && d.photoData.size() <= 150000 && d.photoData.matches('^data:image/.*')))
+        && (!('displayName' in d) || d.displayName is string && d.displayName.size() <= 100)
+        && (!('savedPlaces' in d) || d.savedPlaces is list && d.savedPlaces.size() <= 20);
+    }
+
     match /users/{uid} {
       allow read: if isOwner(uid) || isGuardianOf(uid);
       allow create: if isOwner(uid)
         && request.resource.data.uid == uid
         && request.resource.data.role in ['user', 'guardian']
         && request.resource.data.guardianRelationshipId == null
-        && request.resource.data.watchesUserUid == null;
+        && request.resource.data.watchesUserUid == null
+        && profileOk(request.resource.data);
       // Role and relationship pointers are server-managed.
-      allow update: if isOwner(uid) && !changed().hasAny(['uid', 'role', 'guardianRelationshipId', 'watchesUserUid', 'homeLocation', 'createdAt']);
+      allow update: if isOwner(uid) && !changed().hasAny(['uid', 'role', 'guardianRelationshipId', 'watchesUserUid', 'homeLocation', 'createdAt'])
+        && profileOk(request.resource.data);
       allow delete: if false;
 
       match /settings/{doc} {

@@ -1,10 +1,12 @@
+import { Capacitor } from '@capacitor/core';
+import { App as CapApp } from '@capacitor/app';
 import type { ButtonPattern, LinkState } from '../types';
 import type { StickTransport } from '../transport/types';
 import { MockTransport } from '../transport/mockTransport';
 import { useDevice } from '../store/device';
 import { useSession, getSettings } from '../store/session';
 import { useSafety } from '../store/safety';
-import { useUI } from '../store/ui';
+import { useUI, toastGuardian } from '../store/ui';
 import { logEvent } from '../store/activity';
 import { announce } from '../ai/voiceOut';
 import { P } from '../ai/phrases';
@@ -23,6 +25,33 @@ import { configurePipeline, ingestPacket, resetPipeline, setImuCalibration, star
  */
 let transport: StickTransport | null = null;
 let unsubs: (() => void)[] = [];
+
+/** Foreground again: a link waiting out its reconnect backoff retries at once. */
+function watchForeground(t: StickTransport): () => void {
+  if (typeof document === 'undefined' || !t.nudge) return () => {};
+  const onVis = () => {
+    if (document.visibilityState === 'visible') t.nudge?.();
+  };
+  document.addEventListener('visibilitychange', onVis);
+  // Android: the WebView may not fire visibilitychange on every resume; appStateChange does.
+  let handle: { remove: () => Promise<void> } | null = null;
+  let gone = false;
+  if (Capacitor.isNativePlatform()) {
+    CapApp.addListener('appStateChange', ({ isActive }) => {
+      if (isActive) t.nudge?.();
+    })
+      .then((h) => {
+        if (gone) void h.remove();
+        else handle = h;
+      })
+      .catch(() => undefined);
+  }
+  return () => {
+    gone = true;
+    document.removeEventListener('visibilitychange', onVis);
+    void handle?.remove().catch(() => undefined);
+  };
+}
 const buttonListeners = new Set<(p: ButtonPattern) => boolean | void>();
 
 export const getTransport = () => transport;
@@ -47,12 +76,17 @@ export async function connectStick(t: StickTransport) {
     onFall: () => {
       if (useSession.getState().userOnboarded && getSettings().sosTriggers.fall) startSos('fall');
     },
-    onRejected: (reason) => useDevice.setState({ linkDetail: reason }),
+    // Shown on Home / Stick details / Connection test; cleared when data is accepted again.
+    onRejected: (reason) => {
+      if (reason) useDevice.setState({ linkDetail: reason });
+      else if (useDevice.getState().linkDetail?.startsWith('Stick data rejected')) useDevice.setState({ linkDetail: null });
+    },
   });
   unsubs = [
-    t.on('packet', (p, at) => ingestPacket(p, at)),
+    t.on('packet', (p, at, timing) => ingestPacket(p, at, timing)),
     t.on('link', (s, d) => onLink(s, d)),
     t.on('identity', (id) => useDevice.setState({ identity: id })),
+    watchForeground(t),
   ];
   startStalenessWatch();
   startDeviceConfigSync();
@@ -79,7 +113,7 @@ function onLink(s: LinkState, detail?: string) {
       earcon('connect');
       haptics.play('connect');
     }
-    logEvent({ kind: 'device', severity: 'success', title: 'Stick connected', detail: 'Verified on the phone hotspot' });
+    logEvent({ kind: 'device', severity: 'success', title: 'Stick connected', detail: 'Live data over the stick’s Wi-Fi' });
   } else if ((s === 'disconnected' || s === 'reconnecting') && wasUp) {
     announce(P.linkDown, { high: true });
     if (fx) {
@@ -91,19 +125,13 @@ function onLink(s: LinkState, detail?: string) {
     announce({ en: 'Your stick needs a firmware update before it can connect.', hi: 'स्टिक को जोड़ने से पहले उसका फ़र्मवेयर अपडेट करना होगा।' }, { high: true });
     logEvent({ kind: 'device', severity: 'critical', title: 'Stick firmware incompatible', detail: detail ?? 'Protocol version mismatch' });
   } else if (s === 'auth_failed') {
-    announce(P.authFailed, { high: true });
-    logEvent({ kind: 'device', severity: 'critical', title: 'Stick could not be verified', detail: detail ?? 'Pair the stick again' });
+    // v1 simple link: a 401 only means the stick still runs the old secure firmware (1.1).
+    announce({ en: 'Your stick needs new firmware before it can connect.', hi: 'स्टिक को जोड़ने से पहले उसमें नया फ़र्मवेयर डालना होगा।' }, { high: true });
+    logEvent({ kind: 'device', severity: 'critical', title: 'Stick needs firmware 1.2', detail: detail ?? 'Flash the new firmware, then set the stick up again' });
   }
 }
 
-/** P0 spoken complement to the ECU's own vibration: interrupts lower-priority speech. Rate-limited. */
-let lastDangerSpeech = 0;
-useDevice.subscribe((s, prev) => {
-  if (s.zone === 'danger' && prev.zone !== 'danger' && Date.now() - lastDangerSpeech > 8000 && getSettings().obstacleVibration) {
-    lastDangerSpeech = Date.now();
-    announce({ en: 'Stop. Obstacle very close ahead.', hi: 'रुकिए। सामने बहुत पास रुकावट है।' }, { critical: true, dedupeKey: 'obstacle-danger' });
-  }
-});
+// Obstacle speech and route holds are owned by GuidanceEngine, using fresh independent evidence.
 
 /** Derived alerts from the filtered state (not raw values). */
 let lastObstacleLog = 0;
@@ -119,7 +147,9 @@ useDevice.subscribe((s, prev) => {
       haptics.play('warning');
       earcon('warning');
     }
-    logEvent({ kind: 'device', severity: 'warning', title: `Stick battery low, about ${pct}%`, detail: 'Estimated from the battery sensor' });
+    const msg = `Stick battery low, about ${pct}%`;
+    logEvent({ kind: 'device', severity: 'warning', title: msg, detail: 'Estimated from the battery sensor' });
+    toastGuardian(msg);
   }
   if (pct != null && pct > th + 5) lowBatteryAnnounced = false;
   if (pct != null && !s.battery.charging && pct <= 5 && !criticalLogged) {

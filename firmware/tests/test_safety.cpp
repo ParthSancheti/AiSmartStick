@@ -2,6 +2,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include "SafetyLogic.h"
+#include "OperatingMode.h"
+#include "CameraAccess.h"
+#include "BoardConfig.h"
 using namespace aiss;
 
 static int fails = 0, passes = 0;
@@ -76,6 +79,71 @@ int main() {
   // 10. Command id ring (idempotency).
   { IdRing<4> r; r.add("c1"); r.add("c2"); CHECK(r.seen("c1")); CHECK(!r.seen("c3"));
     r.add("c3"); r.add("c4"); r.add("c5"); CHECK(!r.seen("c1")); CHECK(r.seen("c5")); }
+
+  // 11. A camera crash recovery boot preserves independent local safety and cannot wake its camera.
+  { CHECK(ecu::localSafetyActive(ecu::Mode::Normal));
+    CHECK(ecu::localSafetyActive(ecu::Mode::SafeMode));
+    CHECK(!ecu::localSafetyActive(ecu::Mode::Sleep));
+    CHECK(!ecu::localSafetyActive(ecu::Mode::Setup));
+    CHECK(ecu::normalModeAfterWake(false) == ecu::Mode::Normal);
+    CHECK(ecu::normalModeAfterWake(true) == ecu::Mode::SafeMode); }
+
+  // 12. Preserve approach thresholds, filtering, confirmation and sensor timing. An abrupt
+  // obstacle in this synthetic 60 ms trace enters Danger on the third close sample (not the first).
+  { ObstacleFsm f; uint32_t t = 0;
+    CHECK(f.params().awarenessCm == 150 && f.params().warningCm == 100 && f.params().dangerCm == 50);
+    CHECK(f.params().hysteresisCm == 15 && f.params().confirmSamples == 2 && f.params().staleMs == 500);
+    CHECK(US_PERIOD_MS == 60 && IMU_PERIOD_MS == 20 && INA_PERIOD_MS == 500);
+    CHECK(feed(f, 300, t, 5) == Zone::Normal);
+    CHECK(feed(f, 30, t) == Zone::Normal);
+    CHECK(feed(f, 30, t) == Zone::Normal);
+    CHECK(feed(f, 30, t) == Zone::Danger);
+    CHECK(ecu::localSafetyActive(ecu::Mode::SafeMode) && f.zone() == Zone::Danger);
+    t += 501;
+    CHECK(f.update(2, NAN, t) == Zone::Unknown); }
+
+  // 13. A held camera frame blocks other captures and all power transitions. A pending mode
+  // request then blocks new captures until the frame has been returned and power work runs.
+  { CameraAccess a; CameraAccess::Power power = CameraAccess::Power::None;
+    CHECK(a.tryCapture());
+    CHECK(!a.tryCapture());
+    a.requestPower(false);
+    CHECK(!a.powerChangeReady());
+    CHECK(!a.tryPowerChange(power));
+    CHECK(!a.tryCapture());
+    a.release();
+    CHECK(a.powerChangeReady());
+    CHECK(!a.tryCapture());
+    CHECK(a.tryPowerChange(power));
+    CHECK(power == CameraAccess::Power::Down);
+    CHECK(!a.tryCapture());
+    a.release();
+    CHECK(!a.powerChangeReady());
+    CHECK(a.tryCapture());
+    a.release(); }
+
+  // 14. Fast sleep/wake changes coalesce to the newest pending request. If posting HTTP work
+  // fails, the guard keeps the request ready for a later attempt rather than dropping it.
+  { CameraAccess a; CameraAccess::Power power = CameraAccess::Power::None;
+    a.requestPower(false);
+    a.requestPower(true);
+    CHECK(a.powerChangeReady());
+    CHECK(a.powerChangeReady()); // failed scheduling leaves the guard untouched
+    CHECK(a.tryPowerChange(power));
+    CHECK(power == CameraAccess::Power::Up);
+    CHECK(!a.powerChangeReady());
+    CHECK(!a.tryPowerChange(power));
+    // A sleep request arriving during initialization must remain pending after it finishes.
+    a.requestPower(false);
+    CHECK(!a.powerChangeReady());
+    a.release();
+    CHECK(a.powerChangeReady());
+    CHECK(!a.tryCapture());
+    CHECK(a.tryPowerChange(power));
+    CHECK(power == CameraAccess::Power::Down);
+    a.release();
+    CHECK(a.tryCapture());
+    a.release(); }
 
   std::printf("%d passed, %d failed\n", passes, fails);
   return fails ? 1 : 0;

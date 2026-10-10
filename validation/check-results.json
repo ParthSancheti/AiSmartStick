@@ -1,0 +1,113 @@
+{
+  "source": "uploaded smartstick.zip",
+  "source_sha256": "49e40156b90931012effd8924c04408b404f0f6ea02172f559407d253f6f16ac",
+  "environment": {
+    "node": "22.23.3",
+    "firebase_cli": "15.33.0",
+    "java_major": 21
+  },
+  "before": {
+    "unit_tests": {
+      "passed": 429,
+      "failed": 0,
+      "files": 42
+    },
+    "typecheck": "passed",
+    "firmware_host_tests": {
+      "passed": 25,
+      "failed": 0
+    }
+  },
+  "after": {
+    "unit_tests": {
+      "passed": 673,
+      "failed": 0,
+      "files": 62
+    },
+    "typecheck": "passed",
+    "production_web_build": "passed",
+    "demo_web_build": "passed",
+    "functions_build": "passed",
+    "rules_tests": {
+      "passed": 15,
+      "failed": 0
+    },
+    "firmware_host_tests": {
+      "passed": 109,
+      "failed": 0,
+      "pure_logic_and_guards": 64,
+      "actual_control_loop_with_hardware_stubs": 45
+    },
+    "chromium_smoke": {
+      "onboarding": "rendered",
+      "demo_controls": "opened and closed",
+      "existing_debug_overlay": "opened and closed with local diagnostics",
+      "javascript_page_errors": 0
+    },
+    "follow_up_timing_and_speech": {
+      "new_regression_tests": 34,
+      "timing_metadata_tests": 20,
+      "spoken_fact_tests": 11,
+      "aged_eta_tests": 3,
+      "wire_protocol_changed": false,
+      "firmware_thresholds_changed": false
+    }
+  },
+  "negative_controls": {
+    "new_vision_tests_on_original": {
+      "passed": 3,
+      "failed": 12
+    },
+    "new_capture_tests_on_original": {
+      "passed": 2,
+      "failed": 2
+    },
+    "walking_vision_scenarios_on_original": {
+      "passed": 0,
+      "failed": 26
+    },
+    "actual_control_loop_scenarios_on_original": {
+      "passed": 27,
+      "failed": 18,
+      "behavioral_failures": 11,
+      "source_contract_failures": 7,
+      "note": "Original control source with external hardware stubs and legacy camera API adapters; no board measurement."
+    },
+    "queued_guidance_facts_on_earlier_refinement": {
+      "passed": 13,
+      "failed": 7,
+      "cases": 20,
+      "note": "Earlier refined GuidanceEngine against new runtime cases before the factual-validity guard; not an original-suite failure."
+    },
+    "latched_far_range_wording_before_correction": {
+      "passed": 20,
+      "failed": 1,
+      "cases": 21
+    }
+  },
+  "unverified": [
+    "Native Android build and PCM path: android/ and android-typecheck/ absent from upload",
+    "ESP32 target compilation: authoritative Arduino/core downloads blocked by proxy HTTP403; physical build/flash unverified",
+    "Real sign-in/Gemini/Maps/SOS and supervised walking/device scenarios",
+    "Physical battery savings, CPU/thermal usage, frame/exposure rates and end-to-end motor latency",
+    "150m ranging and measured side clearance are unsupported by confirmed single HC-SR04+monocular camera"
+  ],
+  "claims": "Synthetic host resource counts only; no physical battery or safety certification.",
+  "scope": "Battery/resource refinement plus the requested anticipatory walking, spatial evidence and navigation/safety integration; existing UI architecture retained.",
+  "controlled_timing_traces": {
+    "http_1600ms_plus_40ms_firmware_age": {
+      "result_age_ms": 1640,
+      "state": "stale"
+    },
+    "http_250ms_plus_40ms_firmware_age": {
+      "result_age_ms": 290,
+      "state": "valid"
+    },
+    "remaining_eta_after_1200ms_valid_age": {
+      "raw_range_cm": 400,
+      "closing_rate_estimate_cm_s": 100,
+      "remaining_eta_estimate_ms": 1800
+    },
+    "note": "Deterministic software fixtures, not physical device measurements."
+  }
+}

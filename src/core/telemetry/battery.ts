@@ -47,6 +47,14 @@ export function socFromOcv(v: number): number {
   return 100;
 }
 
+/** Plain-language reason a bus voltage cannot be a single Li-ion cell. */
+export function batteryIssue(v: number) {
+  if (v < 0.5) return 'The sensor reads 0 V: the battery is disconnected from the sensor.';
+  if (v < BATTERY_CONFIG.minValidV) return `The sensor reads ${v.toFixed(2)} V, below a usable cell. Charge the stick or check the battery wiring.`;
+  if (v <= 5.6) return `The sensor reads ${v.toFixed(2)} V, which is the 5 V supply, not the battery. Wire the INA219 on the battery side.`;
+  return `The sensor reads ${v.toFixed(2)} V, more than one cell. This estimate supports single-cell packs only.`;
+}
+
 export interface BatteryRaw {
   busV: number | null;
   currentMa: number | null;
@@ -78,12 +86,13 @@ export class BatteryEstimator {
 
   update(raw: BatteryRaw): BatteryState {
     const C = BATTERY_CONFIG;
+    // An unusable reading is reported as an error WITH its reason and no percentage: an old estimate
+    // shown next to a sensor error would look current.
     if (!raw.ok || raw.busV == null || !Number.isFinite(raw.busV)) {
-      return this.remember({ status: 'sensor_error', percent: this.shown, voltage: null, currentMa: null, charging: null, chargingSource: null, measuredAt: raw.at, quality: 'poor' });
+      return this.remember({ status: 'sensor_error', percent: null, voltage: null, currentMa: null, charging: null, chargingSource: null, measuredAt: raw.at, quality: 'poor', issue: 'The battery sensor (INA219) is not answering.' });
     }
     if (raw.busV < C.minValidV || raw.busV > C.maxValidV) {
-      // 0 V = sensor/battery disconnected; >4.4 V = measuring the wrong rail. Never turn this into a percentage.
-      return this.remember({ status: 'sensor_error', percent: this.shown, voltage: raw.busV, currentMa: raw.currentMa, charging: null, chargingSource: null, measuredAt: raw.at, quality: 'poor' });
+      return this.remember({ status: 'sensor_error', percent: null, voltage: raw.busV, currentMa: raw.currentMa, charging: null, chargingSource: null, measuredAt: raw.at, quality: 'poor', issue: batteryIssue(raw.busV) });
     }
 
     const i = raw.currentMa == null ? null : raw.currentMa * C.currentSign;

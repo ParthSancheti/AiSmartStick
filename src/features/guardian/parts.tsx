@@ -18,7 +18,7 @@ import { cx } from '../../components/glass';
 
 export function GScreen({ children, wide }: { children: ReactNode; wide?: boolean }) {
   return (
-    <div className="absolute inset-0 overflow-y-auto no-scrollbar" style={{ paddingTop: 'calc(var(--island, 0px) + 10px)' }}>
+    <div className="absolute inset-0 overflow-y-auto no-scrollbar" style={{ paddingTop: 'calc(var(--island, var(--sat)) + 10px)' }}>
       <div className={cx('mx-auto px-4 pb-32', wide ? 'max-w-[980px]' : 'max-w-[680px]')}>{children}</div>
     </div>
   );
@@ -136,7 +136,7 @@ export function PersonAvatar({ size = 44 }: { size?: number }) {
   const ok = !!dev && (dev.link === 'connected' || dev.link === 'degraded') && dev.phoneInternet && feedFresh(dev.updatedAt, now);
   return (
     <span className="relative inline-grid shrink-0 place-items-center rounded-full glass" style={{ width: size, height: size }} aria-label={`${name || 'User'}: ${ok ? 'online' : 'not live'}`}>
-      <span className="text-[17px] font-bold text-teal-ink">{(name || '?')[0]}</span>
+      {name ? <span className="text-[17px] font-bold text-teal-ink">{[...name.trim()][0]?.toUpperCase()}</span> : <svg width={size * 0.5} height={size * 0.5} viewBox="0 0 24 24" fill="currentColor" className="text-teal-ink" aria-hidden><circle cx="12" cy="8" r="4.2" /><path d="M3.6 20.4c.9-4.1 4.3-6.6 8.4-6.6s7.5 2.5 8.4 6.6c.1.6-.3 1.1-.9 1.1H4.5c-.6 0-1-.5-.9-1.1z" /></svg>}
       <span className="absolute bottom-0 right-0 block h-3.5 w-3.5 rounded-full border-2 border-surface" style={{ background: ok ? 'var(--ok)' : 'var(--amber)' }} />
     </span>
   );
@@ -228,8 +228,8 @@ export function EventRow({ e, now }: { e: ActivityEvent; now: number }) {
         <Icon size={17} />
       </span>
       <div className="min-w-0 flex-1">
-        <div className="flex items-baseline justify-between gap-3">
-          <p className="text-[15.5px] font-semibold leading-snug text-ink">{e.title}</p>
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+          <p className="min-w-0 text-[15.5px] font-semibold leading-snug text-ink">{e.title}</p>
           <time className="shrink-0 text-[13px] text-ink-3 tabular" dateTime={new Date(e.ts).toISOString()}>
             {now - e.ts < 3_600_000 ? timeAgo(e.ts, now) : clock(e.ts)}
           </time>
@@ -243,7 +243,7 @@ export function EventRow({ e, now }: { e: ActivityEvent; now: number }) {
 export function GuardianToast() {
   const toast = useUI((s) => s.guardianToast);
   return (
-    <div className="pointer-events-none absolute inset-x-0 z-[60] flex justify-center px-4" style={{ top: 'calc(var(--island, 0px) + 10px)' }} aria-live="polite">
+    <div className="pointer-events-none absolute inset-x-0 z-[60] flex justify-center px-4" style={{ top: 'calc(var(--island, var(--sat)) + 10px)' }} aria-live="polite">
       <AnimatePresence>
         {toast && (
           <motion.div

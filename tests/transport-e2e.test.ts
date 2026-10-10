@@ -1,38 +1,22 @@
 /**
  * Protocol conformance: HttpTransport (the app's real device transport) against a local HTTP server
- * that implements DEVICE_PROTOCOL.md exactly as the ECU firmware does (HMAC request auth, nonce
- * replay protection, challenge proof, telemetry, command envelope + idempotent ack).
- * This is the "device ↔ Android" integration test that can run without hardware.
+ * that implements DEVICE_PROTOCOL.md v1 exactly as firmware 1.2 does (REQUIRE_AUTH 0: plain unsigned
+ * requests, telemetry, command envelope + idempotent ack). Firmware 1.1 (signed requests) is
+ * simulated by answering 401. This is the "device ↔ app" integration test that runs without hardware.
  */
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import http from 'node:http';
-import { createHash, createHmac } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
-import { HttpTransport } from '../src/core/transport/httpTransport';
+import { HttpTransport, OLD_FIRMWARE_MESSAGE } from '../src/core/transport/httpTransport';
 import type { LinkState } from '../src/core/types';
 
-const KEY = Buffer.alloc(32, 7);
-const KEY_B64 = KEY.toString('base64');
 const DEVICE_ID = 'AISS-E2E001';
-const hmac = (m: string) => createHmac('sha256', KEY).update(m).digest('hex');
 
 let server: http.Server;
 let port = 0;
-let protocolVersion = 1;
-let requireAuth = true;
-const nonces = new Set<string>();
+const stick = { protocolVersion: 1, oldFirmware: false, failing: false, signedRequests: 0 };
 const executed = new Map<string, number>();
 let seq = 0;
-
-function authorized(req: http.IncomingMessage, body: string) {
-  const h = req.headers;
-  const ts = String(h['x-aiss-ts'] ?? ''), nonce = String(h['x-aiss-nonce'] ?? ''), sig = String(h['x-aiss-sig'] ?? '');
-  if (h['x-aiss-device'] !== DEVICE_ID || !nonce || nonces.has(nonce)) return false;
-  const canon = `${req.method}\n${req.url}\n${ts}\n${nonce}\n${createHash('sha256').update(body).digest('hex')}`;
-  if (hmac(canon) !== sig) return false;
-  nonces.add(nonce);
-  return true;
-}
 
 beforeAll(async () => {
   server = http.createServer((req, res) => {
@@ -43,12 +27,14 @@ beforeAll(async () => {
         res.writeHead(status, { 'content-type': 'application/json' });
         res.end(JSON.stringify(o));
       };
+      if (Object.keys(req.headers).some((h) => h.startsWith('x-aiss-sig') || h.startsWith('x-aiss-nonce'))) stick.signedRequests++;
       const url = new URL(req.url!, 'http://x');
+      if (stick.failing) return json(500, { error: 'busy' });
       if (url.pathname === '/api/v1/device') {
-        const ch = url.searchParams.get('challenge');
-        return json(200, { deviceId: DEVICE_ID, model: 'AISS-ESP32CAM-1', firmware: '1.1.0-ecu', protocolVersion, paired: true, uptimeMs: 1, proof: ch ? hmac(ch + DEVICE_ID) : undefined });
+        return json(200, { deviceId: DEVICE_ID, model: 'AISS-ESP32CAM-1', firmware: stick.oldFirmware ? '1.1.0-ecu' : '1.2.0', protocolVersion: stick.protocolVersion, paired: false, ...(stick.oldFirmware ? {} : { auth: false }), uptimeMs: 1 });
       }
-      if (requireAuth && !authorized(req, body)) return json(401, { error: 'unauthorized' });
+      // Firmware 1.1: everything but /device needs a signature the v1 app no longer sends.
+      if (stick.oldFirmware) return json(401, { error: 'unauthorized' });
       if (url.pathname === '/api/v1/telemetry') {
         return json(200, {
           v: 1, deviceId: DEVICE_ID, seq: ++seq, uptimeMs: 1000 + seq,
@@ -56,7 +42,7 @@ beforeAll(async () => {
           imu: { ax: 0, ay: 0, az: 1, gx: 0, gy: 0, gz: 0, pitch: 2, roll: 0, ok: true },
           ultrasonic: { distanceCm: 80, echoUs: 4640, status: 'ok', sampleAgeMs: 10, zone: 'warning' },
           button: [], safety: [], rssi: -50,
-          health: { camera: 'ok', i2c: 'ok', motor: 'idle', firmware: '1.1.0-ecu', configVersion: 0, errors: [] },
+          health: { camera: 'ok', i2c: 'ok', motor: 'idle', firmware: '1.2.0', configVersion: 0, errors: [] },
         });
       }
       if (url.pathname === '/api/v1/command') {
@@ -64,7 +50,6 @@ beforeAll(async () => {
         const n = executed.get(env.commandId) ?? 0;
         executed.set(env.commandId, n + 1);
         if (n > 0) return json(200, { commandId: env.commandId, status: 'duplicate' });
-        if (env.expiresAt < Number(req.headers['x-aiss-ts'])) return json(200, { commandId: env.commandId, status: 'expired' });
         if (env.type === 'haptic' && !['tap', 'confirm', 'warning', 'danger', 'sos', 'locate', 'nudge'].includes(env.payload.pattern)) return json(200, { commandId: env.commandId, status: 'rejected', error: 'unknown pattern' });
         return json(200, { commandId: env.commandId, status: 'completed' });
       }
@@ -75,8 +60,9 @@ beforeAll(async () => {
   port = (server.address() as AddressInfo).port;
 });
 afterAll(() => server.close());
+beforeEach(() => Object.assign(stick, { protocolVersion: 1, oldFirmware: false, failing: false, signedRequests: 0 }));
 
-const dev = (keyB64 = KEY_B64) => ({ deviceId: DEVICE_ID, model: 'm', firmware: 'f', protocolVersion: 1, keyB64, host: `127.0.0.1:${port}`, ownerUid: 'u', pairedAt: 0 });
+const dev = () => ({ deviceId: DEVICE_ID, model: 'm', firmware: 'f', protocolVersion: 1, host: `127.0.0.1:${port}`, ownerUid: 'u', pairedAt: 0 });
 
 async function waitFor<T>(fn: () => T | undefined, ms = 4000): Promise<T> {
   const t0 = Date.now();
@@ -88,67 +74,91 @@ async function waitFor<T>(fn: () => T | undefined, ms = 4000): Promise<T> {
   }
 }
 
-describe('HttpTransport ↔ ECU protocol', () => {
-  it('authenticates with the key proof, then streams validated telemetry', async () => {
-    protocolVersion = 1;
+describe('HttpTransport ↔ firmware 1.2 (unsigned v1 link)', () => {
+  it('streams telemetry without any signature; "connected" only once the first packet arrived', async () => {
     const t = new HttpTransport(dev(), 50);
-    const links: LinkState[] = [];
-    let packets = 0;
+    const events: string[] = [];
     let firmware = '';
-    t.on('link', (s) => links.push(s));
+    t.on('link', (s) => events.push(`link:${s}`));
     t.on('identity', (i) => (firmware = i.firmware));
-    t.on('packet', () => packets++);
+    t.on('packet', () => events.push('packet'));
     await t.connect();
-    await waitFor(() => (packets >= 3 ? true : undefined));
-    expect(links).toContain('connected');
-    expect(firmware).toBe('1.1.0-ecu');
+    await waitFor(() => (events.filter((e) => e === 'packet').length >= 3 ? true : undefined));
+    expect(events[0]).toBe('link:connecting');
+    expect(events.indexOf('link:connected')).toBeGreaterThan(0);
+    expect(events.indexOf('link:connected')).toBeLessThan(events.indexOf('packet'));
+    expect(firmware).toBe('1.2.0');
+    expect(stick.signedRequests).toBe(0);
     t.disconnect();
   });
 
   it('commands are acknowledged; a retried commandId is never executed twice; unknown patterns are rejected', async () => {
     const t = new HttpTransport(dev(), 50);
+    const links: LinkState[] = [];
+    t.on('link', (s) => links.push(s));
     await t.connect();
-    await waitFor(() => (executed.size >= 0 ? true : undefined));
+    await waitFor(() => (links.includes('connected') ? true : undefined));
     const a = await t.send({ type: 'locate' }, { commandId: 'cmd-1' });
     expect(a).toMatchObject({ commandId: 'cmd-1', status: 'completed' });
     const b = await t.send({ type: 'locate' }, { commandId: 'cmd-1' });
     expect(b.status).toBe('duplicate');
     const c = await t.send({ type: 'haptic', pattern: 'zap' as never });
     expect(c.status).toBe('rejected');
+    expect(stick.signedRequests).toBe(0);
     t.disconnect();
   });
 
-  it('a wrong key ends in auth_failed (never "connected")', async () => {
-    const t = new HttpTransport(dev(Buffer.alloc(32, 9).toString('base64')), 50);
-    const links: LinkState[] = [];
-    t.on('link', (s) => links.push(s));
+  it('old secure firmware (401) ends in auth_failed with the "flash firmware 1.2" message, never "connected"', async () => {
+    stick.oldFirmware = true;
+    const t = new HttpTransport(dev(), 50);
+    const links: [LinkState, string | undefined][] = [];
+    t.on('link', (s, d) => links.push([s, d]));
     await t.connect();
-    await waitFor(() => (links.includes('auth_failed') ? true : undefined));
-    expect(links).not.toContain('connected');
+    await waitFor(() => (links.some(([s]) => s === 'auth_failed') ? true : undefined));
+    expect(links.find(([s]) => s === 'auth_failed')?.[1]).toBe(OLD_FIRMWARE_MESSAGE);
+    expect(OLD_FIRMWARE_MESSAGE).toMatch(/1\.2/);
+    expect(links.map(([s]) => s)).not.toContain('connected');
     t.disconnect();
   });
 
   it('a firmware speaking another protocol version ends in protocol_mismatch', async () => {
-    protocolVersion = 2;
+    stick.protocolVersion = 2;
     const t = new HttpTransport(dev(), 50);
     const links: LinkState[] = [];
     t.on('link', (s) => links.push(s));
     await t.connect();
     await waitFor(() => (links.includes('protocol_mismatch') ? true : undefined));
     expect(links).not.toContain('connected');
-    protocolVersion = 1;
     t.disconnect();
   });
 
-  it('replayed signed requests are refused by the device (nonce ring)', async () => {
-    // Build one valid signed telemetry request, send it twice.
-    const ts = String(Date.now());
-    const nonce = 'aaaaaaaaaaaaaaaaaaaaaaaa';
-    const canon = `GET\n/api/v1/telemetry\n${ts}\n${nonce}\n${createHash('sha256').update('').digest('hex')}`;
-    const headers = { 'x-aiss-device': DEVICE_ID, 'x-aiss-ts': ts, 'x-aiss-nonce': nonce, 'x-aiss-sig': hmac(canon) };
-    const r1 = await fetch(`http://127.0.0.1:${port}/api/v1/telemetry`, { headers });
-    const r2 = await fetch(`http://127.0.0.1:${port}/api/v1/telemetry`, { headers });
-    expect(r1.status).toBe(200);
-    expect(r2.status).toBe(401);
+  it('a stale record from the old HMAC pairing (with keyB64) still connects; the key is ignored', async () => {
+    const t = new HttpTransport({ ...dev(), keyB64: Buffer.alloc(32, 7).toString('base64') } as ReturnType<typeof dev>, 50);
+    const links: LinkState[] = [];
+    t.on('link', (s) => links.push(s));
+    await t.connect();
+    await waitFor(() => (links.includes('connected') ? true : undefined));
+    expect(stick.signedRequests).toBe(0);
+    t.disconnect();
+  });
+
+  it('missed telemetry → degraded, then back to connected when the stick answers again', async () => {
+    const t = new HttpTransport(dev(), 50);
+    const links: LinkState[] = [];
+    t.on('link', (s) => links.push(s));
+    await t.connect();
+    await waitFor(() => (links.includes('connected') ? true : undefined));
+    stick.failing = true;
+    await waitFor(() => (links.includes('degraded') ? true : undefined), 5000);
+    stick.failing = false;
+    await waitFor(() => (links.lastIndexOf('connected') > links.indexOf('degraded') ? true : undefined), 5000);
+    t.disconnect();
+  });
+
+  it('commands and frames are refused while not connected (no fake success)', async () => {
+    stick.oldFirmware = true;
+    const t = new HttpTransport(dev(), 50);
+    await expect(t.send({ type: 'locate' })).rejects.toThrow('stick-offline');
+    await expect(t.captureFrame()).rejects.toThrow('stick-offline');
   });
 });

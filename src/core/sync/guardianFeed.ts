@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { addDoc, collection, doc, getDoc, limit, onSnapshot, orderBy, query, updateDoc, where } from 'firebase/firestore';
+import { addDoc, collection, doc, limit, onSnapshot, orderBy, query, updateDoc, where } from 'firebase/firestore';
 import { fb } from '../firebase/app';
 import { paths, type WalkSessionDoc, type ActivityDoc, type LiveDeviceDoc, type LiveLocationDoc, type LiveNavigationDoc, type LiveSafetyDoc, type RelationshipDoc, type SosDoc, type UserDoc } from '../../../shared/firestoreSchema';
 import type { ActivityEvent } from '../types';
@@ -30,6 +30,8 @@ export interface FeedState {
   userName: string;
   heardAs: string;
   userPhone: string | null;
+  /** The person's profile photo (picked in the app, else Google), or null. */
+  userPhoto: string | null;
   medicalId: string | null;
   permissions: RelationshipDoc['permissions'] | null;
   device: LiveDeviceDoc | null;
@@ -53,6 +55,7 @@ const empty = (): FeedState => ({
   userName: '',
   heardAs: '',
   userPhone: null,
+  userPhoto: null,
   medicalId: null,
   permissions: null,
   device: null,
@@ -125,12 +128,13 @@ export function startRealFeed(rel: RelationshipDoc) {
       useFeed.setState({ userSafety: d ? { sosTriggers: d.sosTriggers, sosCancelSec: d.sosCancelSec } : null });
     }, () => undefined),
   );
-  void getDoc(doc(db, paths.user(uid)))
-    .then((s) => {
+  // Live: a name, phone or photo the person changes on their phone shows here at once.
+  unsubs.push(
+    onSnapshot(doc(db, paths.user(uid)), (s) => {
       const u = s.data() as UserDoc | undefined;
-      if (u) useFeed.setState({ userName: u.displayName || rel.userName, userPhone: u.phone });
-    })
-    .catch(() => undefined);
+      if (u) useFeed.setState({ userName: u.displayName || rel.userName, userPhone: u.phone, userPhoto: (typeof u.photoData === 'string' && u.photoData.startsWith('data:image/') ? u.photoData : null) ?? u.photoURL ?? null });
+    }, () => undefined),
+  );
 }
 
 async function sosPatch(patch: Partial<SosDoc>) {

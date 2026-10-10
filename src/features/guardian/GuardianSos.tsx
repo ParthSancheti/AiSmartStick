@@ -81,7 +81,7 @@ export function GuardianSos() {
       exit={{ opacity: 0 }}
       style={{ background: 'radial-gradient(120% 60% at 50% 0%, var(--sos), var(--sos-deep) 70%)' }}
     >
-      <div className="mx-auto max-w-[560px] px-5 pb-8" style={{ paddingTop: 'calc(var(--island, 0px) + 22px)' }}>
+      <div className="mx-auto max-w-[560px] px-5 pb-8" style={{ paddingTop: 'calc(var(--island, var(--sat)) + 22px)' }}>
         <div className="flex flex-col items-center text-center">
           <div className="relative mb-4 grid h-24 w-24 place-items-center">
             {!reduce &&

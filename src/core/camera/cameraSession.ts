@@ -176,7 +176,8 @@ export function stopCameraResponder() {
   responderUnsub = null;
 }
 
-async function askUser(name: string): Promise<boolean> {
+/** Camera use on someone else's request: the stick user allows it with one button press. */
+export async function askUser(name: string): Promise<boolean> {
   showUserBanner({ tone: 'teal', icon: 'eye', title: `${name} wants to see your camera`, body: 'Press the stick button once to allow' }, 15000);
   return new Promise((resolve) => {
     const off = onStickButton((p) => {

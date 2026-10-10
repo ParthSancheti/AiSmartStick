@@ -5,10 +5,10 @@
 #include <Arduino.h>
 #include "BoardConfig.h"
 #include "SafetyLogic.h"
+#include "OperatingMode.h"
 
 namespace ecu {
 
-enum class Mode : uint8_t { Normal, Sleep, Setup, SafeMode };
 inline const char *modeName(Mode m) { return m == Mode::Sleep ? "sleep" : m == Mode::Setup ? "setup" : m == Mode::SafeMode ? "safe" : "normal"; }
 
 struct Sensors {

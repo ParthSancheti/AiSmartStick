@@ -46,7 +46,7 @@ export interface AssistantTurnResponse {
 
 export type VisionTask = 'describe_scene' | 'read_text' | 'identify_object' | 'read_sign' | 'describe_environment';
 
-/** What the stick MEASURED at capture time (vision says WHAT, ultrasonic says HOW FAR, IMU says HOW IT IS HELD). */
+/** Separate photo and sensor evidence: visual identity, unidentified forward range, and stick pose; timestamps need not coincide. */
 export interface SensorContext {
   forwardDistanceCm: number | null;
   ultrasonicStatus: string;
@@ -67,7 +67,7 @@ export interface VisionRequest {
   sensors?: SensorContext;
 }
 
-/** Sensor-fusion object: the camera identifies, the ultrasonic sensor ranges (centre beam only). */
+/** Scene evidence: each object has its own source; a forward ultrasonic reflection has no camera-object identity. */
 export interface FusedObject {
   label: string;
   position: 'left' | 'center' | 'right';

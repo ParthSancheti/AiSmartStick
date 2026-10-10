@@ -1,6 +1,7 @@
 #include "Net.h"
 #include <WiFi.h>
 #include <WiFiUdp.h>
+#include <esp_wifi.h>
 #include "BoardConfig.h"
 #include "Identity.h"
 #include "Ecu.h"
@@ -21,7 +22,29 @@ const char *stateName() {
   }
 }
 bool inSetup() { return st == State::SetupAp; }
-int rssi() { return st == State::Connected ? WiFi.RSSI() : 0; }
+
+// Serial proof that the phone really joined the stick's Wi-Fi (and got an address).
+static void onApEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
+  if (event == ARDUINO_EVENT_WIFI_AP_STACONNECTED) {
+    const uint8_t *m = info.wifi_ap_staconnected.mac;
+    Serial.printf("[WIFI] phone joined %s (%02X:%02X:%02X:%02X:%02X:%02X), clients=%d\n", STICK_AP_SSID, m[0], m[1], m[2], m[3], m[4], m[5], (int)WiFi.softAPgetStationNum());
+  } else if (event == ARDUINO_EVENT_WIFI_AP_STADISCONNECTED) {
+    Serial.printf("[WIFI] phone left, clients=%d\n", (int)WiFi.softAPgetStationNum());
+  } else if (event == ARDUINO_EVENT_WIFI_AP_STAIPASSIGNED) {
+    Serial.printf("[WIFI] phone got IP %s\n", IPAddress(info.wifi_ap_staipassigned.ip.addr).toString().c_str());
+  }
+}
+static bool apEventsOn = false;
+// Station mode: the router's signal. Access-point mode: the signal of the (first) phone that joined.
+// 0 = unknown (reported as null in telemetry, never as a made-up value).
+int rssi() {
+  if (st == State::Connected) return WiFi.RSSI();
+  if (st == State::SetupAp) {
+    wifi_sta_list_t list;
+    if (esp_wifi_ap_get_sta_list(&list) == ESP_OK && list.num > 0) return list.sta[0].rssi;
+  }
+  return 0;
+}
 
 void startStation() {
   WiFi.softAPdisconnect(true);
@@ -36,11 +59,16 @@ void startStation() {
 }
 
 void startSetupAp() {
+  if (!apEventsOn) {
+    apEventsOn = true;
+    WiFi.onEvent(onApEvent);
+  }
   WiFi.disconnect(true);
   WiFi.mode(WIFI_AP);
-  WiFi.softAP("SmartStick_AI", "Stick@1234");
+  // Fixed, well-known AP: the phone joins it directly (v1 simple link, no keys).
+  bool ok = WiFi.softAP(STICK_AP_SSID, STICK_AP_PASS, STICK_AP_CHANNEL, 0, STICK_AP_MAX_STA);
   st = State::SetupAp;
-  Serial.printf("[dashcam] AP SmartStick_AI at %s (PASSWORD: Stick@1234)\n", WiFi.softAPIP().toString().c_str());
+  Serial.printf("[dashcam] AP %s %s at %s (password %s, channel %d)\n", STICK_AP_SSID, ok ? "up" : "FAILED", WiFi.softAPIP().toString().c_str(), STICK_AP_PASS, STICK_AP_CHANNEL);
 }
 
 void tick() {

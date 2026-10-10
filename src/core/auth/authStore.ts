@@ -6,6 +6,8 @@ export interface AuthUser {
   displayName: string | null;
   email: string | null;
   photoURL: string | null;
+  /** The Google account name (displayName may be the name the person typed in the app). */
+  providerName?: string | null;
 }
 
 interface AuthState {
@@ -21,9 +23,12 @@ export const useAuth = create<AuthState>(() => ({ status: 'loading', user: null,
 
 export const currentUid = () => useAuth.getState().user?.uid ?? null;
 
-/** Initials for the avatar when there is no photo (never a random stock avatar). */
+/**
+ * Initials for the avatar when there is no photo (never a random stock avatar). Empty when no name is
+ * known: the avatar then shows a person icon, never a "?".
+ */
 export function initialsOf(name: string | null | undefined) {
-  if (!name) return '?';
+  if (!name) return '';
   const parts = name.trim().split(/\s+/).slice(0, 2);
-  return parts.map((p) => p[0]?.toUpperCase() ?? '').join('') || '?';
+  return parts.map((p) => [...p][0]?.toUpperCase() ?? '').join('');
 }

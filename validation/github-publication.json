@@ -1,0 +1,50 @@
+{
+  "repository": "ParthSancheti/AiSmartStick",
+  "branch": "refinement/walking-guidance-and-battery",
+  "base_main_commit": "8baa6ba3fbe1afcb0f2f69ea1cc5f64f69b293ba",
+  "matching_native_source_commit": "c37f44268a6b969e6802f6c24e7d75f88950dc95",
+  "source_upload_sha256": "49e40156b90931012effd8924c04408b404f0f6ea02172f559407d253f6f16ac",
+  "node": "22.23.3",
+  "frozen_installs": {
+    "app": "passed",
+    "functions": "passed"
+  },
+  "checks": {
+    "app_tests": {
+      "passed": 673,
+      "failed": 0,
+      "files": 62
+    },
+    "firmware_host_checks": {
+      "passed": 109,
+      "failed": 0
+    },
+    "production_typecheck_and_web_build": "passed",
+    "capacitor_android_sync": "passed",
+    "functions_build": "passed",
+    "gradle_9_6_distribution_and_version": "passed using configured HTTPS proxy",
+    "native_source_contract_parity": "31 concrete AissNative +10 AissLocation methods and both registrations checked"
+  },
+  "previous_unchanged_source_checks": {
+    "firestore_rules_tests": {
+      "passed": 15,
+      "failed": 0
+    },
+    "demo_build": "passed",
+    "chromium_smoke_page_errors": 0
+  },
+  "unverified": [
+    "APK build: Android SDK and JDK compiler unavailable",
+    "ESP32 target compile/flash: authoritative toolchain download previously blocked; no board",
+    "physical battery, walking response, screen-off, audio, SOS and cloud account setup"
+  ],
+  "publication_excludes": [
+    "local environment files",
+    "Firebase project binding",
+    "Android google-services configuration",
+    "signing material",
+    "generated caches",
+    "old bundled index.zip"
+  ],
+  "deployments_performed": false
+}

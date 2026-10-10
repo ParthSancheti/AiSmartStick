@@ -28,7 +28,7 @@ export function evaluateSafety(i: SafetyInput): SafetyEvaluation {
   if (i.sosPhase === 'countdown' || i.sosPhase === 'active') return { state: 'sos', reasons: ['SOS in progress'] };
   if (i.link === 'unpaired') return { state: 'unknown', reasons: ['No stick paired yet'] };
   if (!i.everConnected && i.now - i.bootedAt < 15000 && ['searching', 'connecting'].includes(i.link)) return { state: 'initializing', reasons: ['Connecting to the stick'] };
-  if (i.link === 'auth_failed') return { state: 'critical', reasons: ['Stick could not be verified'] };
+  if (i.link === 'auth_failed') return { state: 'critical', reasons: ['Stick needs firmware 1.2'] };
   if (i.link === 'protocol_mismatch') return { state: 'critical', reasons: ['Stick firmware needs an update'] };
   if (i.link !== 'connected' && i.link !== 'degraded') return { state: i.everConnected ? 'connectionLost' : 'unknown', reasons: [i.everConnected ? 'Stick disconnected from the phone' : 'Stick not connected'] };
 

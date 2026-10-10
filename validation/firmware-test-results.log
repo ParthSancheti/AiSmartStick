@@ -1,0 +1,6 @@
+
+> ai-smart-stick@0.2.0 test:firmware
+> g++ -std=c++17 -O1 -Wall -Wextra -Ifirmware/ai_smart_stick_v1 firmware/tests/test_safety.cpp -o /tmp/aiss_fw_test && /tmp/aiss_fw_test && g++ -std=c++17 -O1 -Wall -Wextra -Ifirmware/tests/host -Ifirmware/ai_smart_stick_v1 firmware/tests/test_control.cpp -o /tmp/aiss_control_test && /tmp/aiss_control_test
+
+64 passed, 0 failed
+control integration: 45 passed, 0 failed

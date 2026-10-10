@@ -30,6 +30,12 @@ export class AissNativeWeb extends WebPlugin implements AissNativePlugin {
   async openWifiSettings(): Promise<void> {
     return this.no();
   }
+  async openLocationSettings(): Promise<void> {
+    return this.no();
+  }
+  async openAppSettings(): Promise<void> {
+    return this.no();
+  }
   async checkPermissions() {
     return { location: 'prompt', nearbyWifi: 'denied', phone: 'denied', sms: 'denied' } as const;
   }
@@ -45,6 +51,13 @@ export class AissNativeWeb extends WebPlugin implements AissNativePlugin {
   async connectToSetupNetwork(): Promise<{ connected: boolean }> {
     return this.no();
   }
+  async setStatusBarIcons(): Promise<void> {}
+  async getFontScale(): Promise<{ fontScale: number }> {
+    return { fontScale: 1 };
+  }
+  async getCurrentWifiSsid(): Promise<{ wifiEnabled: boolean; stickNetwork: boolean; bound: boolean }> {
+    return this.no();
+  }
   async setupRequest(): Promise<{ status: number; body: string }> {
     return this.no();
   }
@@ -52,6 +65,13 @@ export class AissNativeWeb extends WebPlugin implements AissNativePlugin {
     return this.no();
   }
   async releaseSetupNetwork() {}
+  async startStream(): Promise<{ running: boolean }> {
+    return this.no();
+  }
+  async stopStream() {}
+  async setProcessBinding(): Promise<{ bound: boolean; reason?: string }> {
+    return { bound: false, reason: 'Requires the AI SmartStick Android app' };
+  }
   async startDiscovery(): Promise<void> {
     return this.no();
   }

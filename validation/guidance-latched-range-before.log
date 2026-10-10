@@ -1,0 +1,34 @@
+
+ RUN  v5.0.2 /workspace/smartstick-refinement
+
+ ❯ tests/guidanceRuntime.test.ts (21 tests | 1 failed) 32ms
+   ❯ walking guidance runtime and existing telemetry integration (21)
+     × uses a generic latched warning when newer far range no longer supports very-close speech 6ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/guidanceRuntime.test.ts > walking guidance runtime and existing telemetry integration > uses a generic latched warning when newer far range no longer supports very-close speech
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ tests/guidanceRuntime.test.ts:181:31
+    179|     vi.advanceTimersByTime(100); send(250, {}, 'danger');
+    180|     expect(useWalkingGuidance.getState()).toMatchObject({ severity: 'd…
+    181|     expect(close.isCurrent()).toBe(false);
+       |                               ^
+    182|     // Keep the board's de-escalation warning fresh through the existi…
+    183|     for (let n = 0; n < 5; n++) { vi.advanceTimersByTime(500); send(25…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 20 passed (21)
+   Start at  10:14:28
+   Duration  417ms (transform 74%, import 15%, tests 10%, worker 1%)
+
