@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12+: never copy the pairing key store (encrypted with a Keystore key that does not move
+     with it) to the cloud or to a new phone. A restored copy could never be decrypted. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="aiss_secure.xml" />
+        <exclude domain="sharedpref" path="__androidx_security_crypto_encrypted_prefs__.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="aiss_secure.xml" />
+        <exclude domain="sharedpref" path="__androidx_security_crypto_encrypted_prefs__.xml" />
+    </device-transfer>
+</data-extraction-rules>

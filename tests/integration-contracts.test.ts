@@ -86,11 +86,12 @@ describe('mock transport honours the ECU command contract', () => {
 
 describe('sensor fusion', () => {
   const sensors = { forwardDistanceCm: 118, ultrasonicStatus: 'ok', zone: 'warning', pitchDeg: 3, rollDeg: 0, headingDeg: null, speedMps: 1.1, measuredAt: 0 };
-  it('ranges only the centre object with the measured distance', () => {
+  it('keeps forward ultrasonic range separate from camera object identity', () => {
     const f = fuseScene({ hazards: [{ type: 'person', position: 'center', distance: 'near', confidence: 'high' }, { type: 'pole', position: 'left', distance: 'near', confidence: 'medium' }] }, sensors, 0);
-    expect(f.objects[0]).toMatchObject({ label: 'person', radarDistanceCm: 118, source: ['vision', 'ultrasonic'], confidence: 0.9 });
+    expect(f.objects[0]).toMatchObject({ label: 'person', radarDistanceCm: null, source: ['vision'], confidence: 0.9 });
     expect(f.objects[1].radarDistanceCm).toBeNull();
-    expect(measuredSuffix(f)).toMatch(/1\.2 meters/);
+    expect(f.objects[2]).toMatchObject({ label: 'unidentified obstacle', radarDistanceCm: 118, source: ['ultrasonic'] });
+    expect(measuredSuffix(f, 0)).toMatch(/separate stick reading was.*1\.2 meters/);
   });
   it('reports a measured obstacle the camera did not explain', () => {
     const f = fuseScene({ hazards: [] }, sensors, 0);

@@ -1,0 +1,556 @@
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (../../tmp/aiss-walking-vision-before/vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v5.0.2 /tmp/aiss-walking-vision-before
+
+ ❯ tests/walkingVisionEvidence.test.ts (26 tests | 26 failed) 27ms
+   ❯ honest directional obstacle evidence (20)
+     × keeps all undetected directions unknown even with healthy sensors and no echo 8ms
+     × accounts for every overlapping image band: [ 'LEFT' ] 1ms
+     × accounts for every overlapping image band: [ 'CENTER' ] 0ms
+     × accounts for every overlapping image band: [ 'RIGHT' ] 1ms
+     × accounts for every overlapping image band: [ 'LEFT', 'CENTER' ] 0ms
+     × accounts for every overlapping image band: [ 'CENTER', 'RIGHT' ] 0ms
+     × accounts for every overlapping image band: [ 'LEFT', 'CENTER', 'RIGHT' ] 0ms
+     × does not count a box merely touching an image band boundary as occupying it 0ms
+     × retains independent front sonar obstruction without claiming the range of a left object 2ms
+     × does not assign a single front sonar measurement to any of several central objects 1ms
+     × does not turn stale sonar data into obstruction evidence 2ms
+     × does not turn invalid sonar data into obstruction evidence 0ms
+     × does not turn unknown sonar data into obstruction evidence 0ms
+     × keeps tentative observations from becoming current obstacle or clearance claims 0ms
+     × keeps lost observations from becoming current obstacle or clearance claims 0ms
+     × keeps lost observations from becoming current obstacle or clearance claims 0ms
+     × keeps stale observations from becoming current obstacle or clearance claims 0ms
+     × keeps invalid observations from becoming current obstacle or clearance claims 0ms
+     × keeps invalid observations from becoming current obstacle or clearance claims 0ms
+     × never labels a confirmed upper-image object safe or derives a physical distance from its box 1ms
+   ❯ temporal tracking evidence (6)
+     × cannot confirm a track by processing the same frame timestamp twice 3ms
+     × requires fresh confirmation again after a frame gap exceeds the freshness budget 0ms
+     × makes one missed observation unavailable to guidance even before the track becomes LOST 0ms
+     × leaves earlier published snapshots unchanged when tracks update or a caller mutates its copy 1ms
+     × clears an old velocity when the observation interval cannot support that calculation 1ms
+     × does not create tracks from nonfinite or degenerate boxes 1ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 26 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/walkingVisionEvidence.test.ts > honest directional obstacle evidence > keeps all undetected directions unknown even with healthy sensors and no echo
+AssertionError: expected { left: 'FREE', center: 'FREE', …(1) } to deeply equal { left: 'UNKNOWN', …(2) }
+
+- Expected
++ Received
+
+  {
+-   "center": "UNKNOWN",
+-   "left": "UNKNOWN",
+-   "right": "UNKNOWN",
++   "center": "FREE",
++   "left": "FREE",
++   "right": "FREE",
+  }
+
+ ❯ tests/walkingVisionEvidence.test.ts:32:51
+     30| describe('honest directional obstacle evidence', () => {
+     31|   it('keeps all undetected directions unknown even with healthy sensor…
+     32|     expect(fuseSensors([], ctx(), now).pathState).toEqual({ left: 'UNK…
+       |                                                   ^
+     33|     expect(fuseSensors([], ctx({ value: 300 }), now).pathState).toEqua…
+     34|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/26]⎯
+
+ FAIL  tests/walkingVisionEvidence.test.ts > honest directional obstacle evidence > accounts for every overlapping image band: [ 'LEFT' ]
+AssertionError: expected undefined to deeply equal [ 'LEFT' ]
+
+- Expected:
+[
+  "LEFT",
+]
+
++ Received:
+undefined
+
+ ❯ tests/walkingVisionEvidence.test.ts:45:49
+     43|   ])('accounts for every overlapping image band: $sides', ({ box, side…
+     44|     const fused = fuseSensors([track(box)], ctx(), now);
+     45|     expect(fused.fusedObjects[0].occupiedSides).toEqual(sides);
+       |                                                 ^
+     46|     expect(fused.pathState).toEqual(path);
+     47|     expect(fused.fusedObjects[0].evidence).toBe('confirmed');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/26]⎯
+
+ FAIL  tests/walkingVisionEvidence.test.ts > honest directional obstacle evidence > accounts for every overlapping image band: [ 'CENTER' ]
+AssertionError: expected undefined to deeply equal [ 'CENTER' ]
+
+- Expected:
+[
+  "CENTER",
+]
+
++ Received:
+undefined
+
+ ❯ tests/walkingVisionEvidence.test.ts:45:49
+     43|   ])('accounts for every overlapping image band: $sides', ({ box, side…
+     44|     const fused = fuseSensors([track(box)], ctx(), now);
+     45|     expect(fused.fusedObjects[0].occupiedSides).toEqual(sides);
+       |                                                 ^
+     46|     expect(fused.pathState).toEqual(path);
+     47|     expect(fused.fusedObjects[0].evidence).toBe('confirmed');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/26]⎯
+
+ FAIL  tests/walkingVisionEvidence.test.ts > honest directional obstacle evidence > accounts for every overlapping image band: [ 'RIGHT' ]
+AssertionError: expected undefined to deeply equal [ 'RIGHT' ]
+
+- Expected:
+[
+  "RIGHT",
+]
+
++ Received:
+undefined
+
+ ❯ tests/walkingVisionEvidence.test.ts:45:49
+     43|   ])('accounts for every overlapping image band: $sides', ({ box, side…
+     44|     const fused = fuseSensors([track(box)], ctx(), now);
+     45|     expect(fused.fusedObjects[0].occupiedSides).toEqual(sides);
+       |                                                 ^
+     46|     expect(fused.pathState).toEqual(path);
+     47|     expect(fused.fusedObjects[0].evidence).toBe('confirmed');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/26]⎯
+
+ FAIL  tests/walkingVisionEvidence.test.ts > honest directional obstacle evidence > accounts for every overlapping image band: [ 'LEFT', 'CENTER' ]
+AssertionError: expected undefined to deeply equal [ 'LEFT', 'CENTER' ]
+
+- Expected:
+[
+  "LEFT",
+  "CENTER",
+]
+
++ Received:
+undefined
+
+ ❯ tests/walkingVisionEvidence.test.ts:45:49
+     43|   ])('accounts for every overlapping image band: $sides', ({ box, side…
+     44|     const fused = fuseSensors([track(box)], ctx(), now);
+     45|     expect(fused.fusedObjects[0].occupiedSides).toEqual(sides);
+       |                                                 ^
+     46|     expect(fused.pathState).toEqual(path);
+     47|     expect(fused.fusedObjects[0].evidence).toBe('confirmed');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/26]⎯
+
+ FAIL  tests/walkingVisionEvidence.test.ts > honest directional obstacle evidence > accounts for every overlapping image band: [ 'CENTER', 'RIGHT' ]
+AssertionError: expected undefined to deeply equal [ 'CENTER', 'RIGHT' ]
+
+- Expected:
+[
+  "CENTER",
+  "RIGHT",
+]
+
++ Received:
+undefined
+
+ ❯ tests/walkingVisionEvidence.test.ts:45:49
+     43|   ])('accounts for every overlapping image band: $sides', ({ box, side…
+     44|     const fused = fuseSensors([track(box)], ctx(), now);
+     45|     expect(fused.fusedObjects[0].occupiedSides).toEqual(sides);
+       |                                                 ^
+     46|     expect(fused.pathState).toEqual(path);
+     47|     expect(fused.fusedObjects[0].evidence).toBe('confirmed');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/26]⎯
+
+ FAIL  tests/walkingVisionEvidence.test.ts > honest directional obstacle evidence > accounts for every overlapping image band: [ 'LEFT', 'CENTER', 'RIGHT' ]
+AssertionError: expected undefined to deeply equal [ 'LEFT', 'CENTER', 'RIGHT' ]
+
+- Expected:
+[
+  "LEFT",
+  "CENTER",
+  "RIGHT",
+]
+
++ Received:
+undefined
+
+ ❯ tests/walkingVisionEvidence.test.ts:45:49
+     43|   ])('accounts for every overlapping image band: $sides', ({ box, side…
+     44|     const fused = fuseSensors([track(box)], ctx(), now);
+     45|     expect(fused.fusedObjects[0].occupiedSides).toEqual(sides);
+       |                                                 ^
+     46|     expect(fused.pathState).toEqual(path);
+     47|     expect(fused.fusedObjects[0].evidence).toBe('confirmed');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/26]⎯
+
+ FAIL  tests/walkingVisionEvidence.test.ts > honest directional obstacle evidence > does not count a box merely touching an image band boundary as occupying it
+TypeError: getOccupiedSides is not a function
+ ❯ tests/walkingVisionEvidence.test.ts:51:12
+     49|
+     50|   it('does not count a box merely touching an image band boundary as o…
+     51|     expect(getOccupiedSides(box(0, 0.35))).toEqual(['LEFT']);
+       |            ^
+     52|     expect(getOccupiedSides(box(0.35, 0.3))).toEqual(['CENTER']);
+     53|     expect(getOccupiedSides(box(0.65, 0.35))).toEqual(['RIGHT']);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/26]⎯
+
+ FAIL  tests/walkingVisionEvidence.test.ts > honest directional obstacle evidence > retains independent front sonar obstruction without claiming the range of a left object
+AssertionError: expected { left: 'BLOCKED', …(2) } to deeply equal { left: 'BLOCKED', …(2) }
+
+- Expected
++ Received
+
+  {
+    "center": "BLOCKED",
+    "left": "BLOCKED",
+-   "right": "UNKNOWN",
++   "right": "FREE",
+  }
+
+ ❯ tests/walkingVisionEvidence.test.ts:58:29
+     56|   it('retains independent front sonar obstruction without claiming the…
+     57|     const fused = fuseSensors([track(box(0.05))], ctx({ value: 65 }), …
+     58|     expect(fused.pathState).toEqual({ left: 'BLOCKED', center: 'BLOCKE…
+       |                             ^
+     59|     expect(fused.fusedObjects[0].ultrasonicDistanceCm).toBeNull();
+     60|     expect(fused.fusedObjects[0].hazardLevel).toBe('warning');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/26]⎯
+
+ FAIL  tests/walkingVisionEvidence.test.ts > honest directional obstacle evidence > does not assign a single front sonar measurement to any of several central objects
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ tests/walkingVisionEvidence.test.ts:68:88
+     66|     ], ctx({ value: 40 }), now);
+     67|     expect(fused.pathState.center).toBe('BLOCKED');
+     68|     expect(fused.fusedObjects.every((object) => object.ultrasonicDista…
+       |                                                                                        ^
+     69|     expect(fused.fusedObjects.every((object) => object.hazardLevel !==…
+     70|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/26]⎯
+
+ FAIL  tests/walkingVisionEvidence.test.ts > honest directional obstacle evidence > does not turn stale sonar data into obstruction evidence
+ FAIL  tests/walkingVisionEvidence.test.ts > honest directional obstacle evidence > does not turn invalid sonar data into obstruction evidence
+ FAIL  tests/walkingVisionEvidence.test.ts > honest directional obstacle evidence > does not turn unknown sonar data into obstruction evidence
+AssertionError: expected 'FREE' to be 'UNKNOWN' // Object.is equality
+
+Expected: "UNKNOWN"
+Received: "FREE"
+
+ ❯ tests/walkingVisionEvidence.test.ts:73:78
+     71|
+     72|   it.each(['stale', 'invalid', 'unknown'] as const)('does not turn %s …
+     73|     expect(fuseSensors([], ctx({ state, value: 40 }), now).pathState.c…
+       |                                                                              ^
+     74|   });
+     75|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/26]⎯
+
+ FAIL  tests/walkingVisionEvidence.test.ts > honest directional obstacle evidence > keeps tentative observations from becoming current obstacle or clearance claims
+AssertionError: expected undefined to be 'tentative' // Object.is equality
+
+- Expected:
+"tentative"
+
++ Received:
+undefined
+
+ ❯ tests/walkingVisionEvidence.test.ts:85:44
+     83|   ])('keeps $evidence observations from becoming current obstacle or c…
+     84|     const fused = fuseSensors([track(box(0.4), overrides)], ctx(), now…
+     85|     expect(fused.fusedObjects[0].evidence).toBe(evidence);
+       |                                            ^
+     86|     expect(fused.fusedObjects[0].hazardLevel).toBe('unknown');
+     87|     expect(fused.pathState).toEqual({ left: 'UNKNOWN', center: 'UNKNOW…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/26]⎯
+
+ FAIL  tests/walkingVisionEvidence.test.ts > honest directional obstacle evidence > keeps lost observations from becoming current obstacle or clearance claims
+ FAIL  tests/walkingVisionEvidence.test.ts > honest directional obstacle evidence > keeps lost observations from becoming current obstacle or clearance claims
+AssertionError: expected undefined to be 'lost' // Object.is equality
+
+- Expected:
+"lost"
+
++ Received:
+undefined
+
+ ❯ tests/walkingVisionEvidence.test.ts:85:44
+     83|   ])('keeps $evidence observations from becoming current obstacle or c…
+     84|     const fused = fuseSensors([track(box(0.4), overrides)], ctx(), now…
+     85|     expect(fused.fusedObjects[0].evidence).toBe(evidence);
+       |                                            ^
+     86|     expect(fused.fusedObjects[0].hazardLevel).toBe('unknown');
+     87|     expect(fused.pathState).toEqual({ left: 'UNKNOWN', center: 'UNKNOW…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[13/26]⎯
+
+ FAIL  tests/walkingVisionEvidence.test.ts > honest directional obstacle evidence > keeps stale observations from becoming current obstacle or clearance claims
+AssertionError: expected undefined to be 'stale' // Object.is equality
+
+- Expected:
+"stale"
+
++ Received:
+undefined
+
+ ❯ tests/walkingVisionEvidence.test.ts:85:44
+     83|   ])('keeps $evidence observations from becoming current obstacle or c…
+     84|     const fused = fuseSensors([track(box(0.4), overrides)], ctx(), now…
+     85|     expect(fused.fusedObjects[0].evidence).toBe(evidence);
+       |                                            ^
+     86|     expect(fused.fusedObjects[0].hazardLevel).toBe('unknown');
+     87|     expect(fused.pathState).toEqual({ left: 'UNKNOWN', center: 'UNKNOW…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[14/26]⎯
+
+ FAIL  tests/walkingVisionEvidence.test.ts > honest directional obstacle evidence > keeps invalid observations from becoming current obstacle or clearance claims
+ FAIL  tests/walkingVisionEvidence.test.ts > honest directional obstacle evidence > keeps invalid observations from becoming current obstacle or clearance claims
+AssertionError: expected undefined to be 'invalid' // Object.is equality
+
+- Expected:
+"invalid"
+
++ Received:
+undefined
+
+ ❯ tests/walkingVisionEvidence.test.ts:85:44
+     83|   ])('keeps $evidence observations from becoming current obstacle or c…
+     84|     const fused = fuseSensors([track(box(0.4), overrides)], ctx(), now…
+     85|     expect(fused.fusedObjects[0].evidence).toBe(evidence);
+       |                                            ^
+     86|     expect(fused.fusedObjects[0].hazardLevel).toBe('unknown');
+     87|     expect(fused.pathState).toEqual({ left: 'UNKNOWN', center: 'UNKNOW…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[15/26]⎯
+
+ FAIL  tests/walkingVisionEvidence.test.ts > honest directional obstacle evidence > never labels a confirmed upper-image object safe or derives a physical distance from its box
+AssertionError: expected 'safe' to be 'awareness' // Object.is equality
+
+Expected: "awareness"
+Received: "safe"
+
+ ❯ tests/walkingVisionEvidence.test.ts:93:47
+     91|     const fused = fuseSensors([track({ x: 0.4, y: 0.1, w: 0.2, h: 0.2 …
+     92|     expect(fused.fusedObjects[0].depth).toBe('FAR');
+     93|     expect(fused.fusedObjects[0].hazardLevel).toBe('awareness');
+       |                                               ^
+     94|     expect(fused.fusedObjects[0].ultrasonicDistanceCm).toBeNull();
+     95|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[16/26]⎯
+
+ FAIL  tests/walkingVisionEvidence.test.ts > temporal tracking evidence > cannot confirm a track by processing the same frame timestamp twice
+AssertionError: expected { trackId: 1, label: 'person', …(9) } to match object { state: 'TENTATIVE', hits: 1 }
+(19 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "hits": 1,
+-   "state": "TENTATIVE",
++   "hits": 2,
++   "state": "CONFIRMED",
+  }
+
+ ❯ tests/walkingVisionEvidence.test.ts:102:53
+    100|     const tracker = new ObjectTracker();
+    101|     tracker.update([observation()], now);
+    102|     expect(tracker.update([observation()], now)[0]).toMatchObject({ st…
+       |                                                     ^
+    103|     expect(tracker.update([observation()], now - 10)[0]).toMatchObject…
+    104|     expect(tracker.update([observation()], now + 100)[0]).toMatchObjec…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[17/26]⎯
+
+ FAIL  tests/walkingVisionEvidence.test.ts > temporal tracking evidence > requires fresh confirmation again after a frame gap exceeds the freshness budget
+AssertionError: expected 1 not to be 1 // Object.is equality
+ ❯ tests/walkingVisionEvidence.test.ts:112:33
+    110|     const old = tracker.update([observation()], now + 100)[0];
+    111|     const resumed = tracker.update([observation()], now + 100 + VISION…
+    112|     expect(resumed.trackId).not.toBe(old.trackId);
+       |                                 ^
+    113|     expect(resumed).toMatchObject({ state: 'TENTATIVE', hits: 1, veloc…
+    114|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[18/26]⎯
+
+ FAIL  tests/walkingVisionEvidence.test.ts > temporal tracking evidence > makes one missed observation unavailable to guidance even before the track becomes LOST
+AssertionError: expected undefined to be 'lost' // Object.is equality
+
+- Expected:
+"lost"
+
++ Received:
+undefined
+
+ ❯ tests/walkingVisionEvidence.test.ts:123:44
+    121|     expect(missed[0].state).toBe('CONFIRMED');
+    122|     const fused = fuseSensors(missed, ctx(), now + 100);
+    123|     expect(fused.fusedObjects[0].evidence).toBe('lost');
+       |                                            ^
+    124|     expect(fused.pathState.center).toBe('UNKNOWN');
+    125|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[19/26]⎯
+
+ FAIL  tests/walkingVisionEvidence.test.ts > temporal tracking evidence > leaves earlier published snapshots unchanged when tracks update or a caller mutates its copy
+AssertionError: expected { trackId: 1, label: 'person', …(9) } to match object { state: 'TENTATIVE', hits: 1, …(1) }
+(14 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "currentBox": {
+      "h": 0.1,
+      "w": 0.2,
+-     "x": 0.4,
++     "x": 0.45,
+      "y": 0.8,
+    },
+-   "hits": 1,
+-   "state": "TENTATIVE",
++   "hits": 2,
++   "state": "CONFIRMED",
+  }
+
+ ❯ tests/walkingVisionEvidence.test.ts:131:22
+    129|     const first = tracker.update([observation()], now);
+    130|     tracker.update([observation(box(0.45))], now + 100);
+    131|     expect(first[0]).toMatchObject({ state: 'TENTATIVE', hits: 1, curr…
+       |                      ^
+    132|     first[0].currentBox.x = 0.99;
+    133|     first[0].velocity.x = 100;
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[20/26]⎯
+
+ FAIL  tests/walkingVisionEvidence.test.ts > temporal tracking evidence > clears an old velocity when the observation interval cannot support that calculation
+AssertionError: expected { x: 0.5000000000000004, y: +0 } to deeply equal { x: +0, y: +0 }
+
+- Expected
++ Received
+
+  {
+-   "x": 0,
++   "x": 0.5000000000000004,
+    "y": 0,
+  }
+
+ ❯ tests/walkingVisionEvidence.test.ts:142:78
+    140|     tracker.update([observation()], now);
+    141|     expect(tracker.update([observation(box(0.45))], now + 100)[0].velo…
+    142|     expect(tracker.update([observation(box(0.45))], now + 1200)[0].vel…
+       |                                                                              ^
+    143|   });
+    144|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[21/26]⎯
+
+ FAIL  tests/walkingVisionEvidence.test.ts > temporal tracking evidence > does not create tracks from nonfinite or degenerate boxes
+AssertionError: expected [ { trackId: 1, …(10) }, …(2) ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   {
++     "ageFrames": 1,
++     "confidence": 0.9,
++     "currentBox": {
++       "h": 0.1,
++       "w": 0.2,
++       "x": NaN,
++       "y": 0.8,
++     },
++     "hits": 1,
++     "label": "person",
++     "lastSeenMs": 10000,
++     "misses": 0,
++     "previousBox": null,
++     "state": "TENTATIVE",
++     "trackId": 1,
++     "velocity": {
++       "x": 0,
++       "y": 0,
++     },
++   },
++   {
++     "ageFrames": 1,
++     "confidence": 0.9,
++     "currentBox": {
++       "h": 0.1,
++       "w": 0,
++       "x": 0.4,
++       "y": 0.8,
++     },
++     "hits": 1,
++     "label": "person",
++     "lastSeenMs": 10000,
++     "misses": 0,
++     "previousBox": null,
++     "state": "TENTATIVE",
++     "trackId": 2,
++     "velocity": {
++       "x": 0,
++       "y": 0,
++     },
++   },
++   {
++     "ageFrames": 1,
++     "confidence": 0.9,
++     "currentBox": {
++       "h": 0.1,
++       "w": 0.2,
++       "x": 2,
++       "y": 0.8,
++     },
++     "hits": 1,
++     "label": "person",
++     "lastSeenMs": 10000,
++     "misses": 0,
++     "previousBox": null,
++     "state": "TENTATIVE",
++     "trackId": 3,
++     "velocity": {
++       "x": 0,
++       "y": 0,
++     },
++   },
++ ]
+
+ ❯ tests/walkingVisionEvidence.test.ts:149:14
+    147|     expect(tracker.update([
+    148|       observation(box(NaN)), observation(box(0.4, 0)), observation(box…
+    149|     ], now)).toEqual([]);
+       |              ^
+    150|   });
+    151| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[22/26]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  26 failed (26)
+   Start at  09:15:21
+   Duration  318ms (transform 60%, tests 23%, import 14%, worker 3%)
+

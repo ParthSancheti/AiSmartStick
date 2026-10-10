@@ -12,3 +12,24 @@ node_modules/
 functions/node_modules/  
 npm-debug.log* 
 jdk21.zip  
+
+# Generated from node_modules/@mediapipe/tasks-vision by scripts/sync-vision-assets.mjs
+public/mediapipe/wasm/
+
+# Local report written by scripts/doctor.mjs (npm run doctor)
+doctor-report.txt
+
+# Local configuration, credentials and development state
+.env.*
+!.env.example
+*.jks
+*.keystore
+*.p12
+*.pfx
+.firebaserc
+.firebase/
+*-debug.log
+functions/iam_policy.json
+
+# Older bundled archive contains local .env files; use GitHub source archives.
+index.zip

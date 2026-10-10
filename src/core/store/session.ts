@@ -5,6 +5,18 @@ import { isWide } from '../util';
 import { useRuntime } from '../runtime/mode';
 import type { ImuCalibration } from '../telemetry/imu';
 
+
+export interface SavedPlace {
+  id: string; // 'home', 'college', or UUID
+  label: string; // "Home", "College", "Dad's House"
+  placeId: string;
+  name: string;
+  address: string | null;
+  lat: number;
+  lng: number;
+  updatedAt: number;
+}
+
 export interface Settings {
   theme: ThemePref;
   glass: 'auto' | GlassTier;
@@ -75,7 +87,7 @@ export const defaultSettings: Settings = {
   simSpeed: 6,
   sosTriggers: { button: true, voice: true, fall: true },
   sosCancelSec: 5,
-  sosMessage: 'Emergency! I need help. My live location is shared in the AI SmartStick app.',
+  sosMessage: 'Emergency! I need help.',
   siren: true,
   lowBatteryAt: 20,
   locationSharing: true,
@@ -92,14 +104,44 @@ const demoContacts: Contact[] = [
   { id: 'papa', name: 'Papa', relation: 'Father', phone: '+91 00000 00002', aliases: ['papa', 'dad', 'daddy', 'father', 'पापा'] },
 ];
 
+/**
+ * On the stick user's phone: the user themself (one source of truth for name, phone, places —
+ * Home greeting, avatar, assistant context and SOS all read it). On a guardian phone: the person
+ * they look after.
+ */
+export interface Person {
+  name: string;
+  /** Set only when the person typed their name (Settings): from then on the Google name never replaces it. */
+  nameEditedAt?: number;
+  phone: string;
+  email: string;
+  homeAddress: string;
+  workAddress: string;
+  savedPlaces: SavedPlace[];
+  medicalId: string;
+}
+
+export const emptyPerson = (): Person => ({ name: '', phone: '', email: '', homeAddress: '', workAddress: '', medicalId: '', savedPlaces: [] });
+
 interface SessionData {
   /** For the combined dev build only; shipped builds are single-role. */
   entryRole: Role | null;
+  lastAppPage?: string;
+  lastSubPage?: string;
+  /** Onboarding/setup progress, restored after the app is closed mid-setup. */
+  onboardingStep?: string;
   guardianOnboarded: boolean;
   userOnboarded: boolean;
   /** The other person in the relationship, as this phone knows them. Empty until paired (real mode). */
   guardian: { name: string; email: string; heardAs: string; phone: string | null };
-  person: { name: string; phone: string; email: string; homeAddress: string; workAddress: string; medicalId: string };
+  person: Person;
+  /**
+   * Last local change of the synced profile fields (phone, addresses, places) — stamped by
+   * core/sync/profileSync.ts, compared with the cloud's profileUpdatedAt (last writer wins).
+   */
+  profileEditedAt?: number;
+  /** Last local change of the cloud-synced settings (core/sync/settingsSync.ts, last writer wins). */
+  settingsEditedAt?: number;
   pairingCode: string | null;
   linked: boolean;
   contacts: Contact[];
@@ -120,18 +162,18 @@ const seeded: SessionData = demo
       guardianOnboarded: stage,
       userOnboarded: stage,
       guardian: { name: 'Demo Guardian', email: 'demo@example.com', heardAs: 'Mom', phone: '+91 00000 00001' },
-      person: { name: 'Aarav', phone: '', email: '', homeAddress: '', workAddress: '', medicalId: '' },
+      person: { name: 'Aarav', phone: '', email: '', homeAddress: '', workAddress: '', medicalId: '', savedPlaces: [] },
       pairingCode: '482913',
       linked: stage,
       contacts: demoContacts,
       settings: defaultSettings,
     }
   : {
-      entryRole: null,
+      entryRole: 'user',
       guardianOnboarded: false,
       userOnboarded: false,
       guardian: { name: '', email: '', heardAs: '', phone: null },
-      person: { name: '', phone: '', email: '', homeAddress: '', workAddress: '', medicalId: '' },
+      person: emptyPerson(),
       pairingCode: null,
       linked: false,
       contacts: [],
@@ -152,17 +194,24 @@ export const useSession = create<SessionState>()(
       storage: createJSONStorage(() => localStorage),
       merge: (persisted, current) => {
         const p = (persisted ?? {}) as Partial<SessionData>;
-        return { ...current, ...p, settings: { ...defaultSettings, ...current.settings, ...(p.settings ?? {}) } };
+        // Installs that persisted no role (the removed entry flow set it) are the stick user's phone.
+        const entryRole = p.entryRole ?? current.entryRole;
+        return { ...current, ...p, entryRole, settings: { ...defaultSettings, ...current.settings, ...(p.settings ?? {}) } };
       },
       partialize: (s) => ({
         settings: s.settings,
         contacts: s.contacts,
         person: s.person,
+        profileEditedAt: s.profileEditedAt,
+        settingsEditedAt: s.settingsEditedAt,
         guardian: s.guardian,
         userOnboarded: s.userOnboarded,
         guardianOnboarded: s.guardianOnboarded,
         entryRole: s.entryRole,
         linked: s.linked,
+        lastAppPage: s.lastAppPage,
+        lastSubPage: s.lastSubPage,
+        onboardingStep: s.onboardingStep,
       }),
     },
   ),

@@ -22,14 +22,40 @@ export async function placeCall(name: string, number: string | null): Promise<Ca
   return result;
 }
 
-export async function sendSms(name: string, number: string | null, body: string): Promise<SmsResult | 'demo' | 'no_number'> {
+/** How long an SOS waits on Android's SMS permission dialog before sending anyway (composer fallback). */
+export const SOS_SMS_PERMISSION_WAIT_MS = 5000;
+
+/**
+ * `permissionWaitMs` (SOS): never wait longer than this for the SMS permission dialog. A blind user
+ * may not see it; the plugin then opens the Messages app with the text instead of waiting forever.
+ */
+export async function sendSms(name: string, number: string | null, body: string, opts: { direct?: boolean; permissionWaitMs?: number } = {}): Promise<SmsResult | 'demo' | 'no_number'> {
   if (isDemo()) {
     logEvent({ kind: 'message', severity: 'info', title: `Message to ${name}`, detail: `${body} (demo, not sent)` });
     return 'demo';
   }
   if (!number) return 'no_number';
-  const { result } = await AissNative.sendSms({ number, body, direct: getSettings().smsMode === 'direct' });
-  logEvent({ kind: 'message', severity: 'info', title: result === 'sent' ? `Text sent to ${name}` : `Opened a text to ${name}`, detail: body });
+  // direct = send without a tap when SEND_SMS is granted; the plugin falls back to the composer truthfully.
+  const direct = opts.direct ?? getSettings().smsMode === 'direct';
+  // Sending without a tap needs Android's SMS permission: ask for it right here if it is missing
+  // (a no-op when already granted), otherwise Android only lets the app open the Messages app.
+  if (direct) {
+    const ask = AissNative.requestPermissions({ permissions: ['sms'] }).catch(() => undefined);
+    if (opts.permissionWaitMs == null) await ask;
+    else {
+      let t: ReturnType<typeof setTimeout> | undefined;
+      await Promise.race([ask, new Promise((r) => (t = setTimeout(r, opts.permissionWaitMs)))]);
+      clearTimeout(t);
+    }
+  }
+  let { result, error } = await AissNative.sendSms({ number, body, direct });
+  if (result === 'failed' && direct) {
+    // The radio refused it (no signal, no balance): the Messages app can still retry it.
+    logEvent({ kind: 'message', severity: 'warning', title: `Text to ${name} failed`, detail: error ?? 'SMS failed' });
+    ({ result, error } = await AissNative.sendSms({ number, body, direct: false }));
+  }
+  const title = result === 'sent' ? `Text sent to ${name}` : result === 'queued' ? `Sending a text to ${name}` : result === 'composer_opened' ? `Opened a text to ${name}` : `Could not text ${name}`;
+  logEvent({ kind: 'message', severity: result === 'failed' ? 'warning' : 'info', title, detail: error ? `${body} (${error})` : body });
   return result;
 }
 

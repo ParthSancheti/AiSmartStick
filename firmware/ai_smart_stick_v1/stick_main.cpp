@@ -39,15 +39,18 @@ static void applyConfig() {
 }
 
 static void setMode(ecu::Mode m) {
+  if (m == ecu::Mode::Normal) m = ecu::normalModeAfterWake(health::safeMode());
   if (S.mode == m) return;
   S.mode = m;
+  // Sleep stops the motor. An unchanged warning/danger zone must produce its cue again on wake.
+  lastZone = aiss::Zone::Unknown;
   if (m == ecu::Mode::Sleep) {
     ultrasonic::setEnabled(false);
     motor::stop(motor::SAFETY);
-    camera::powerDown();
-  } else if (m == ecu::Mode::Normal) {
+    camera::requestPower(false);
+  } else if (ecu::localSafetyActive(m)) {
     ultrasonic::setEnabled(true);
-    if (!health::safeMode()) camera::powerUp();
+    camera::requestPower(m == ecu::Mode::Normal);
     motor::play("confirm", motor::FEEDBACK);
   }
 }
@@ -55,7 +58,7 @@ static void setMode(ecu::Mode m) {
 // P0: obstacle zone → motor (local, deterministic, no network involved)
 static void safetyZone(aiss::Zone z) {
   if (z == lastZone) return;
-  const bool alerts = config::active().obstacleHaptics && S.mode == ecu::Mode::Normal;
+  const bool alerts = config::active().obstacleHaptics && ecu::localSafetyActive(S.mode);
   if (z == aiss::Zone::Danger) {
     if (alerts) motor::play("zone_danger", motor::SAFETY, true);
     ecu::pushSafety(1, obstacle.filteredCm(), 1.0f);
@@ -66,7 +69,7 @@ static void safetyZone(aiss::Zone z) {
     if (alerts) motor::play("zone_awareness", motor::SAFETY, false);   // single cue, no nagging
   } else {
     motor::stop(motor::SAFETY);
-    if (z == aiss::Zone::Unknown && lastZone != aiss::Zone::Unknown && S.mode == ecu::Mode::Normal) {
+    if (z == aiss::Zone::Unknown && lastZone != aiss::Zone::Unknown && ecu::localSafetyActive(S.mode)) {
       ecu::pushSafety(2, 0, 1.0f);   // sensor fault: reported, never treated as "clear"
       ecu::setError(ecu::E_US_STALE, true);
     }
@@ -84,8 +87,27 @@ void setup() {
   // Factory reset: hold the button WHILE powering on (never reachable by a long press during use,
   // so it cannot collide with the 3 s SOS hold).
   uint32_t t0 = millis();
+  bool heldAtBoot = digitalRead(PIN_BUTTON) == LOW;
+  if (heldAtBoot) {
+    Serial.println("[boot] button held: keep holding for factory reset");
+    motor::pulse(120);   // "I feel the button": the user knows the hold is being counted
+  }
   while (digitalRead(PIN_BUTTON) == LOW && millis() - t0 < BOOT_RESET_HOLD_MS + 50) delay(10);
   bool bootReset = millis() - t0 >= BOOT_RESET_HOLD_MS;
+  if (bootReset) {
+    Serial.println("[boot] factory reset");
+    motor::pulse(600);   // long buzz: reset done, release the button
+    uint32_t r0 = millis();
+    while (digitalRead(PIN_BUTTON) == LOW && millis() - r0 < 15000) delay(10);
+  }
+  // A hold that began at power-on must never turn into a click or the 3 s SOS hold.
+  if (heldAtBoot) button::suppressUntilRelease();
+
+  // Camera before Wi-Fi and the other drivers, like the old working sketch: its frame buffer is
+  // allocated while memory is still free and in one piece.
+  if (health::safeMode()) S.mode = ecu::Mode::SafeMode;   // camera stays off, safety + telemetry run
+  else camera::begin();
+  S.camOk = camera::ok();
 
   WiFi.mode(WIFI_STA);
   identity::load();
@@ -95,9 +117,6 @@ void setup() {
   ultrasonic::begin();
   imu::begin();
   battery::begin();
-  if (health::safeMode()) S.mode = ecu::Mode::SafeMode;   // camera stays off, safety + telemetry run
-  else camera::begin();
-  S.camOk = camera::ok();
 
   net::startSetupAp();
   Serial.printf("[%s] Dashcam AP started.\n", identity::deviceId());
@@ -126,7 +145,7 @@ void loop() {
     S.echoUs = us.echoUs;
     S.usSampleAt = now;
   }
-  if (S.mode == ecu::Mode::Normal || S.mode == ecu::Mode::SafeMode) {
+  if (ecu::localSafetyActive(S.mode)) {
     aiss::Zone z = us.fresh ? obstacle.update(us.kind, us.cm, now) : obstacle.update(2, NAN, now);  // no fresh sample → stale check only
     S.zone = z;
     safetyZone(z);
@@ -161,11 +180,12 @@ void loop() {
   if (button::down()) {
     uint32_t held = button::heldMs();
     // Immediate local feedback that the SOS hold registered (the phone decides and runs the countdown).
-    if (identity::provisioned() && held >= BTN_SOS_FEEDBACK_MS && lastSosFeedbackPress != now - held) {
+    // v1 simple link (REQUIRE_AUTH 0): the stick is never "provisioned", but the SOS hold must still buzz.
+    if ((REQUIRE_AUTH == 0 || identity::provisioned()) && held >= BTN_SOS_FEEDBACK_MS && lastSosFeedbackPress != now - held) {
       lastSosFeedbackPress = now - held;
       motor::play("sos", motor::FEEDBACK);
     }
-    if (!identity::provisioned() && !net::inSetup() && held >= BTN_SETUP_HOLD_MS) {
+    if (REQUIRE_AUTH != 0 && !identity::provisioned() && !net::inSetup() && held >= BTN_SETUP_HOLD_MS) {
       ecu::pushButton(2, now);
       motor::play("confirm", motor::FEEDBACK);
       net::startSetupAp();
@@ -191,6 +211,7 @@ void loop() {
   ecu::setError(ecu::E_I2C, !S.i2cOk);
   if (now - tHealth >= HEALTH_PERIOD_MS) { tHealth = now; health::tick(); }
   net::tick();
+  api::serviceCameraPower();       // queues work only; never initializes/deinitializes the camera here
   // Dashcam mode: never switch to station.
   // if (api::takeProvisioned()) leaveApAt = now + 1500;
   // if (leaveApAt && (int32_t)(now - leaveApAt) >= 0) { leaveApAt = 0; S.mode = ecu::Mode::Normal; net::startStation(); motor::play("confirm", motor::FEEDBACK); }

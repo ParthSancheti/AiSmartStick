@@ -18,16 +18,21 @@ export function useGuardianVision(canvasRef: RefObject<HTMLCanvasElement | null>
     if (!frame) return;
     let cancelled = false;
     void (async () => {
-      const bmp = await createImageBitmap(frame.blob);
-      const c = canvasRef.current;
-      if (cancelled || !c) {
-        bmp.close();
-        return;
+      try {
+        const bmp = await createImageBitmap(frame.blob);
+        try {
+          const c = canvasRef.current;
+          if (cancelled || !c) return;
+          if (c.width !== bmp.width) c.width = bmp.width;
+          if (c.height !== bmp.height) c.height = bmp.height;
+          c.getContext('2d')?.drawImage(bmp, 0, 0);
+        } finally {
+          // Canvas/context failures must release the decoded frame too.
+          bmp.close();
+        }
+      } catch {
+        if (!cancelled) useVision.setState({ error: 'failed' });
       }
-      if (c.width !== bmp.width) c.width = bmp.width;
-      if (c.height !== bmp.height) c.height = bmp.height;
-      c.getContext('2d')?.drawImage(bmp, 0, 0);
-      bmp.close();
     })();
     return () => {
       cancelled = true;

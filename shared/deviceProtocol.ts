@@ -20,6 +20,19 @@ export const DEVICE_API = {
 /** SoftAP the stick raises after a 5 s button hold: "AISmartStick-4F2A". */
 export const SETUP_AP_PREFIX = 'AISmartStick-';
 export const SETUP_AP_HOST = '192.168.4.1';
+/**
+ * Dashcam topology (current firmware, Net.cpp startSetupAp): the stick ALWAYS runs its own access
+ * point and never joins another network. The phone binds this one network for stick traffic
+ * (WifiNetworkSpecifier) while mobile data stays the default route for Firebase, Maps and Gemini.
+ * v1 simple link (firmware 1.2+): joining this Wi-Fi is all the pairing there is — no keys.
+ */
+export const STICK_AP_SSID = 'SmartStick_AI';
+export const STICK_AP_PASSPHRASE = 'Stick@1234';
+/**
+ * Provisioning still validates station credentials (SSID + 8–63 char passphrase) although dashcam mode
+ * never joins another network: the app sends this SSID and a random, never-used value per pairing.
+ */
+export const DASHCAM_STATION_SSID = 'dashcam-ap-only';
 /** The stick announces itself on the phone's hotspot with UDP broadcast on this port. */
 export const DISCOVERY_UDP_PORT = 4210;
 /** mDNS host: aismartstick-<last4>.local */
@@ -142,9 +155,17 @@ export interface DeviceInfoPacket {
   protocolVersion: number;
   paired: boolean;
   uptimeMs: number;
-  /** HMAC-SHA256(deviceKey, challenge + deviceId), hex. Proves the stick holds the key. */
+  /**
+   * Firmware 1.2+: false = v1 simple link (any phone on the stick's Wi-Fi may read and command it,
+   * no keys). Missing on firmware 1.1 (signed requests; telemetry answers 401 without a key).
+   */
+  auth?: boolean;
+  /** Legacy (firmware 1.1, REQUIRE_AUTH 1): HMAC-SHA256(deviceKey, challenge + deviceId), hex. */
   proof?: string;
 }
+
+/** First firmware with the simple (key-less) link the app uses. */
+export const MIN_STICK_FIRMWARE = '1.2.0';
 
 export type DeviceCommand =
   | { type: 'haptic'; pattern: HapticSemantic; intensity?: number }
@@ -178,7 +199,7 @@ export interface CommandAck {
   result?: Record<string, unknown>;
 }
 
-/** Sent once over the stick's setup AP. */
+/** LEGACY (firmware 1.1 secure pairing). The v1 simple link does not provision anything. */
 export interface ProvisioningPacket {
   v: 1;
   /** Phone hotspot SSID and password the stick should join. */
@@ -234,7 +255,7 @@ export const CAPTURE_HEADERS = {
   seq: 'x-aiss-seq',
 } as const;
 
-/** Request auth headers (see DEVICE_PROTOCOL.md §Authentication). */
+/** LEGACY request auth headers (firmware built with REQUIRE_AUTH 1). The v1 app sends none. */
 export const AUTH_HEADERS = {
   device: 'x-aiss-device',
   ts: 'x-aiss-ts',

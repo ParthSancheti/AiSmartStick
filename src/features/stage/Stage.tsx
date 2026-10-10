@@ -1,4 +1,5 @@
 import { Moon, Sun } from 'lucide-react';
+import { toggleThemeWithTransition } from '../../util/theme';
 import { useSession } from '../../core/store/session';
 import { useUI } from '../../core/store/ui';
 import { Atmosphere } from '../../components/Atmosphere';
@@ -44,7 +45,7 @@ export function Stage() {
           <button
             type="button"
             aria-label={dark ? 'Switch to light theme' : 'Switch to dark theme'}
-            onClick={() => useSession.getState().updateSettings({ theme: dark ? 'light' : 'dark' })}
+            onClick={(e) => toggleThemeWithTransition(e)}
             className="glass grid h-10 w-10 place-items-center rounded-full text-ink"
             data-theme-pref={theme}
           >

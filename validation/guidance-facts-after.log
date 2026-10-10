@@ -1,0 +1,9 @@
+
+ RUN  v5.0.2 /workspace/smartstick-refinement
+
+
+ Test Files  4 passed (4)
+      Tests  73 passed (73)
+   Start at  10:16:26
+   Duration  737ms (transform 68%, import 19%, tests 9%, worker 4%)
+

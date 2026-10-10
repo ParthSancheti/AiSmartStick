@@ -51,7 +51,7 @@ function GoogleG() {
 
 function Shell({ children, onBack }: { children: React.ReactNode; onBack?: () => void }) {
   return (
-    <div className="absolute inset-0 flex flex-col" style={{ paddingTop: 'calc(var(--island, 0px) + 12px)' }}>
+    <div className="absolute inset-0 flex flex-col" style={{ paddingTop: 'calc(var(--island, var(--sat)) + 12px)' }}>
       <div className="flex h-12 items-center px-4">
         {onBack ? (
           <button type="button" onClick={onBack} aria-label="Back" className="glass grid h-10 w-10 place-items-center rounded-full">

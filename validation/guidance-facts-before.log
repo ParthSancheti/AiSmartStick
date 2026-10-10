@@ -1,0 +1,154 @@
+
+ RUN  v5.0.2 /workspace/smartstick-refinement
+
+ ❯ tests/guidanceRuntime.test.ts (20 tests | 7 failed) 41ms
+   ❯ walking guidance runtime and existing telemetry integration (20)
+     × invalidates queued approach speech when range recedes at the same awareness severity 9ms
+     × invalidates measured-close speech when no echo retains the MCU danger 1ms
+     × invalidates a queued camera-warning claim when forward measured evidence takes precedence 1ms
+     × does not revive a queued warning after the wall clock moves before its evaluation 1ms
+     × expires a measured warning between freshness checks at dequeue time 1ms
+     × expires a visual-warning claim at frame freshness even while sonar remains fresh 1ms
+     × expires a side hint when its pre-request pose becomes stale before the frame itself 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 7 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/guidanceRuntime.test.ts > walking guidance runtime and existing telemetry integration > invalidates queued approach speech when range recedes at the same awareness severity
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ tests/guidanceRuntime.test.ts:157:37
+    155|     expect(getCurrentSensorContext().ultrasonicApproach).toMatchObject…
+    156|     expect(useWalkingGuidance.getState()).toMatchObject({ severity: 'a…
+    157|     expect(approaching.isCurrent()).toBe(false);
+       |                                     ^
+    158|     expect(h.announce).toHaveBeenCalledTimes(1); // Preserve the exist…
+    159|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/7]⎯
+
+ FAIL  tests/guidanceRuntime.test.ts > walking guidance runtime and existing telemetry integration > invalidates measured-close speech when no echo retains the MCU danger
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ tests/guidanceRuntime.test.ts:169:34
+    167|     vi.advanceTimersByTime(100); send(null, {}, 'danger');
+    168|     expect(useWalkingGuidance.getState()).toMatchObject({ severity: 'd…
+    169|     expect(measured.isCurrent()).toBe(false);
+       |                                  ^
+    170|     expect(h.announce).toHaveBeenCalledTimes(1);
+    171|     expect(h.cancelInvalid).toHaveBeenCalled();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/7]⎯
+
+ FAIL  tests/guidanceRuntime.test.ts > walking guidance runtime and existing telemetry integration > invalidates a queued camera-warning claim when forward measured evidence takes precedence
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ tests/guidanceRuntime.test.ts:182:32
+    180|     vi.advanceTimersByTime(100); send(70);
+    181|     expect(useWalkingGuidance.getState()).toMatchObject({ severity: 'w…
+    182|     expect(visual.isCurrent()).toBe(false);
+       |                                ^
+    183|     expect(h.announce).toHaveBeenCalledTimes(1);
+    184|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/7]⎯
+
+ FAIL  tests/guidanceRuntime.test.ts > walking guidance runtime and existing telemetry integration > does not revive a queued warning after the wall clock moves before its evaluation
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ tests/guidanceRuntime.test.ts:203:32
+    201|     vi.setSystemTime(Date.now() - 1);
+    202|     expect(useWalkingGuidance.getState().severity).toBe('danger');
+    203|     expect(danger.isCurrent()).toBe(false);
+       |                                ^
+    204|   });
+    205|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/7]⎯
+
+ FAIL  tests/guidanceRuntime.test.ts > walking guidance runtime and existing telemetry integration > expires a measured warning between freshness checks at dequeue time
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ tests/guidanceRuntime.test.ts:213:34
+    211|     vi.setSystemTime(deadline + 1); // The freshness interval has not …
+    212|     expect(useWalkingGuidance.getState()).toMatchObject({ severity: 'd…
+    213|     expect(measured.isCurrent()).toBe(false);
+       |                                  ^
+    214|   });
+    215|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/7]⎯
+
+ FAIL  tests/guidanceRuntime.test.ts > walking guidance runtime and existing telemetry integration > expires a visual-warning claim at frame freshness even while sonar remains fresh
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ tests/guidanceRuntime.test.ts:225:32
+    223|     expect(useWalkingGuidance.getState().validUntil).toBeGreaterThan(D…
+    224|     expect(useWalkingGuidance.getState().severity).toBe('warning');
+    225|     expect(visual.isCurrent()).toBe(false);
+       |                                ^
+    226|   });
+    227|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/7]⎯
+
+ FAIL  tests/guidanceRuntime.test.ts > walking guidance runtime and existing telemetry integration > expires a side hint when its pre-request pose becomes stale before the frame itself
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ tests/guidanceRuntime.test.ts:255:34
+    253|     expect(useWalkingGuidance.getState().validUntil).toBeGreaterThan(D…
+    254|     expect(Date.now() - captured.frameTimestamp!).toBeLessThan(1500);
+    255|     expect(sideHint.isCurrent()).toBe(false);
+       |                                  ^
+    256|   });
+    257|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/7]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  7 failed | 13 passed (20)
+   Start at  10:12:43
+   Duration  518ms (transform 73%, import 15%, tests 10%, worker 1%)
+

@@ -1,0 +1,679 @@
+{
+  "baseline": "Uploaded smartstick.zip",
+  "baseline_sha256": "49e40156b90931012effd8924c04408b404f0f6ea02172f559407d253f6f16ac",
+  "entries": [
+    {
+      "path": "BATTERY_EFFICIENCY_REFINEMENT_REPORT.md",
+      "status": "added",
+      "reason": "Reproducible validation evidence, measurement method, or requested refinement report.",
+      "before_sha256": null,
+      "after_sha256": "e4ae5e431d8575da3572ec9f6390df42824ba51ef0b96d1730100c1d1a5f3115"
+    },
+    {
+      "path": "README.md",
+      "status": "modified",
+      "reason": "Link refinement reports and state confirmed hardware limits.",
+      "before_sha256": "84b48e393c3a68688d409e3f0c3d3def5110fd9073efb9123500abfd1f249b76",
+      "after_sha256": "f1643cce9fa1968db85534c687616f1de28cb97127a390a34a6aa981c70db1d4"
+    },
+    {
+      "path": "WALKING_GUIDANCE_REFINEMENT_REPORT.md",
+      "status": "added",
+      "reason": "Reproducible validation evidence, measurement method, or requested refinement report.",
+      "before_sha256": null,
+      "after_sha256": "ecc47599fd3ba3dc35e8f174a9c284903eadfc9132ead6653138e07d0282d3da"
+    },
+    {
+      "path": "firmware/ai_smart_stick_v1/Api.cpp",
+      "status": "modified",
+      "reason": "Share camera guard and service deferred power lifecycle on existing HTTP task.",
+      "before_sha256": "1aca760887cdfb8355385bbe9753e1b6a47db5fd9417be2bd2174067cef13581",
+      "after_sha256": "5cec5fbea757d36285718dbc18d552d4c74184d0e860891a788ca8f8e4355674"
+    },
+    {
+      "path": "firmware/ai_smart_stick_v1/Api.h",
+      "status": "modified",
+      "reason": "Declare nonblocking camera power service.",
+      "before_sha256": "8caabd7174e20bf948261d98c3fd10248024b54edf133d084af1cb29e9dfde2e",
+      "after_sha256": "75767e185dc668d8d5c26fae6b9d008c1b90969cd325d3b703998cf163619fb6"
+    },
+    {
+      "path": "firmware/ai_smart_stick_v1/CameraAccess.h",
+      "status": "added",
+      "reason": "Nonblocking camera/capture/power ownership with latest requested power state.",
+      "before_sha256": null,
+      "after_sha256": "405096170b1ea0dfc378b758130660879121fb48bd281dcb287c5786dcd48e69"
+    },
+    {
+      "path": "firmware/ai_smart_stick_v1/Drivers.cpp",
+      "status": "modified",
+      "reason": "Guard camera capture and lifecycle transitions outside local safety task.",
+      "before_sha256": "da5c946fbf44290ba636216ba662bfe9eab32d306130b7f1cd07f4b5b3bcecd9",
+      "after_sha256": "d93f5ad1c9e8dac629d59fabb84ea21ad482a8d2e88338b9fecdf0c797129b0f"
+    },
+    {
+      "path": "firmware/ai_smart_stick_v1/Drivers.h",
+      "status": "modified",
+      "reason": "Declare shared camera guard and lifecycle operations.",
+      "before_sha256": "7b62b6aa33d3911ed485691eee1adb81eee1d40370153c4d16f8ebc262d25168",
+      "after_sha256": "1be578dd4cb6842b8cab97d64a9a507e19a8a2e5fb614e259a862c69424f82d3"
+    },
+    {
+      "path": "firmware/ai_smart_stick_v1/Ecu.h",
+      "status": "modified",
+      "reason": "Consume shared operating-mode safety definition.",
+      "before_sha256": "341e2ea476696e0411fbb795ff1680200c129fca516adb005321e77632096472",
+      "after_sha256": "08b35c386b2b3ea6370aa7fbf1df4b71e283afd9578c0a1a116c2982313a941d"
+    },
+    {
+      "path": "firmware/ai_smart_stick_v1/OperatingMode.h",
+      "status": "added",
+      "reason": "Preserve local safety in Normal/SafeMode and camera-free SafeMode wake.",
+      "before_sha256": null,
+      "after_sha256": "398bc477b539d27a6605b7d4df6a47a3ca868aab7f5a136a80aaae840170b13a"
+    },
+    {
+      "path": "firmware/ai_smart_stick_v1/stick_main.cpp",
+      "status": "modified",
+      "reason": "Fix suppressed SafeMode/wake alerts and request camera power without blocking local safety.",
+      "before_sha256": "83c892597cfe63a62bd7342f421814fd9d0b8d57f192187a7f5d78107fc032d5",
+      "after_sha256": "6b09fb2c1dae775c6582a249ed6bbad79bc6dbf773b4b2fcb014ec16b7a7631e"
+    },
+    {
+      "path": "firmware/tests/host/Arduino.h",
+      "status": "added",
+      "reason": "External hardware stub to exercise actual MCU control source on the host; no target behavior.",
+      "before_sha256": null,
+      "after_sha256": "90a42a963a2fa5b28fdefb474ecc08508d28e05c2a3c2d0c95496e69deb833b9"
+    },
+    {
+      "path": "firmware/tests/host/WiFi.h",
+      "status": "added",
+      "reason": "External hardware stub to exercise actual MCU control source on the host; no target behavior.",
+      "before_sha256": null,
+      "after_sha256": "8038ab8476a9f990f19ebbb5fd2e992e34c3be15f9cf688b8b663e404bc870b9"
+    },
+    {
+      "path": "firmware/tests/host/esp_camera.h",
+      "status": "added",
+      "reason": "External hardware stub to exercise actual MCU control source on the host; no target behavior.",
+      "before_sha256": null,
+      "after_sha256": "031998a3cdbac38c6b5a233cebfda7a35d7b9ab640c1bbdafe5f71f8d5733c0f"
+    },
+    {
+      "path": "firmware/tests/host/esp_http_server.h",
+      "status": "added",
+      "reason": "External hardware stub to exercise actual MCU control source on the host; no target behavior.",
+      "before_sha256": null,
+      "after_sha256": "aeff851d9e9eb5d8fe5c9d389f7c0947ef8f298b6e4fabc2133e4e87d58fc152"
+    },
+    {
+      "path": "firmware/tests/host/esp_task_wdt.h",
+      "status": "added",
+      "reason": "External hardware stub to exercise actual MCU control source on the host; no target behavior.",
+      "before_sha256": null,
+      "after_sha256": "94e1999c4d08d05ef2937ce2985efb8ff044c0c37dd41f808f87b9f2309f9d71"
+    },
+    {
+      "path": "firmware/tests/test_control.cpp",
+      "status": "added",
+      "reason": "45 checks driving actual main control source with external hardware stubs.",
+      "before_sha256": null,
+      "after_sha256": "78e734d1c44f4447424e72e2e60459053db6480fa934cdb3fcf16919da9f47a1"
+    },
+    {
+      "path": "firmware/tests/test_safety.cpp",
+      "status": "modified",
+      "reason": "Retain existing25 logic checks and add39 camera/mode guard checks.",
+      "before_sha256": "1c2aca5ecd4589ba389d752ebe1016c40983690ea449ba20e1b451adf228e013",
+      "after_sha256": "2fedc96300ee8b31e93569c3dd5a36b85aef2490515a7b3378b8e56f69db5ced"
+    },
+    {
+      "path": "functions/lib/assistant.js",
+      "status": "modified",
+      "reason": "Existing Functions build generated/synchronized output from authoritative source.",
+      "before_sha256": "227263eadf6c09c4f255f80fd2be53486a8ea2211324d7e480cefae62db1881c",
+      "after_sha256": "7fa736606037fb8d002729c706f605a9cf8029f0b073e22906c943f047f661e9"
+    },
+    {
+      "path": "functions/lib/assistant.js.map",
+      "status": "modified",
+      "reason": "Existing Functions build generated/synchronized output from authoritative source.",
+      "before_sha256": "183508c18b4cc19750df615b1550e0b65a96d27b794dfb06f9d6d6cd42df4e13",
+      "after_sha256": "12ede03ecba31c315393bdf3486006e42172e6133b28d00db3d2fb916a56be41"
+    },
+    {
+      "path": "functions/lib/shared/tools.js",
+      "status": "modified",
+      "reason": "Existing Functions build generated/synchronized output from authoritative source.",
+      "before_sha256": "58ceb352ed8fdb1606280d4c50a5743a4396841a59bdbd63f721acb0051b9dad",
+      "after_sha256": "746910d0ee223ecd874dce862800be1164b1390393e299a637cb70ec68d7129d"
+    },
+    {
+      "path": "functions/lib/shared/tools.js.map",
+      "status": "modified",
+      "reason": "Existing Functions build generated/synchronized output from authoritative source.",
+      "before_sha256": "9bdce284a11582415eca823642cab53192002392c89b0ff8631a0d955788b657",
+      "after_sha256": "cfac54ec9095b468813ca40013cd8a68ddfad1b638286edf67aa10c71ef89dd5"
+    },
+    {
+      "path": "functions/src/assistant.ts",
+      "status": "modified",
+      "reason": "Correct existing vision instructions about metric range, source identity and independent timestamps.",
+      "before_sha256": "170e1160322b86d25b59d57c4a9da790994b00a7dbf9f5ba727301c7e833d404",
+      "after_sha256": "f800d4c8ec6f87222cba06810acb80d60a3a8b7ef2cb0c1196c778cf3b677ea3"
+    },
+    {
+      "path": "functions/src/shared/assistantContract.ts",
+      "status": "modified",
+      "reason": "Existing Functions build generated/synchronized output from authoritative source.",
+      "before_sha256": "fa67432dc091713dfa5ca0ab6373c1bd556980882827b958ab3d713a36e90f2a",
+      "after_sha256": "20c5dcafe4b1aeb4b7c597159f6ecc3255952909198efffe20747ed3f96bdb5f"
+    },
+    {
+      "path": "functions/src/shared/tools.ts",
+      "status": "modified",
+      "reason": "Existing Functions build generated/synchronized output from authoritative source.",
+      "before_sha256": "74652f74ca75bad2ac87de530e887d9470600001a110c6ec0d23ff96a1789843",
+      "after_sha256": "413ffa0d7b6e6124dbfab77303a2d911e9160b1a8725f403a4dd371c58381244"
+    },
+    {
+      "path": "package.json",
+      "status": "modified",
+      "reason": "Add actual-control-loop host checks to existing firmware test command; dependencies unchanged.",
+      "before_sha256": "7ef186a7b156bad921021cdf7930e6c407f9620f535d80f810518a56ede6e6c6",
+      "after_sha256": "49564f48b4ed6b819cc4e6aab260f126fcbd0c58dee7190bfe2cdb6bc72b6674"
+    },
+    {
+      "path": "shared/assistantContract.ts",
+      "status": "modified",
+      "reason": "Correct misleading identity/range-association comments without changing wire fields.",
+      "before_sha256": "fa67432dc091713dfa5ca0ab6373c1bd556980882827b958ab3d713a36e90f2a",
+      "after_sha256": "20c5dcafe4b1aeb4b7c597159f6ecc3255952909198efffe20747ed3f96bdb5f"
+    },
+    {
+      "path": "src/core/ai/executor.ts",
+      "status": "modified",
+      "reason": "Keep user-requested photo evidence source/timing explicit and separate from current ranging.",
+      "before_sha256": "8c840ee041e6279fbfc362369d43a52db6412f8d5256310b58cdea14136832f2",
+      "after_sha256": "a17683ba85c4a136bee26d5266c996d07b6f2f8ad6c12162d66248303756a420"
+    },
+    {
+      "path": "src/core/ai/tools.ts",
+      "status": "modified",
+      "reason": "Forbid invented monocular metric distance or safe side-clearance instructions.",
+      "before_sha256": "37c745f2ee19f755aae4f45d27d6a342b306371aadd32adfd0d05f112333f117",
+      "after_sha256": "55e3011516ab48ecd67bf9ffecb02e9d3d180b0b3dcedc1ad84b877c74f4a1b4"
+    },
+    {
+      "path": "src/core/ai/voiceOut.ts",
+      "status": "modified",
+      "reason": "Guard, deduplicate and cancel obsolete delayed announcements through the existing audio owner.",
+      "before_sha256": "17a6d82dbbc6e63b75343ce2dd777f4ef5ad50e1516fde2c72413a211a8de040",
+      "after_sha256": "743673b6215388f137ef2b1ac439edeecec34b3d86e1dcfca91c3fe30ffdf5e8"
+    },
+    {
+      "path": "src/core/audio/audioManager.ts",
+      "status": "modified",
+      "reason": "Drop obsolete owned speech without unchanged renders; remove temporary PCM copies and disconnect nodes.",
+      "before_sha256": "54ecd6519f023e750c584302bea029873ea7adcab9a3cc1145f140b65c3f0b04",
+      "after_sha256": "d9710556cb4a9361d1f5ed3f86367590e23a8cd4767d90161e34c61aed381e49"
+    },
+    {
+      "path": "src/core/device/bridge.ts",
+      "status": "modified",
+      "reason": "Propagate optional request timing and remove duplicate obstacle speech/unsupported clear-side advice.",
+      "before_sha256": "88bc1c5812b0975fa682003aed56455123d9c1a243bdfb9a24889cbf7c2a2649",
+      "after_sha256": "c30f54d0264b085830524d0e28f0882cd94c32c5182198279d70743372787fa1"
+    },
+    {
+      "path": "src/core/device/deviceConfig.ts",
+      "status": "modified",
+      "reason": "Use/re-export unchanged sensitivity constants from a dependency-independent module.",
+      "before_sha256": "8cac7bd1e61d8b721edb7008058f8da0bf707bc220910ccf1deb1c30565f979b",
+      "after_sha256": "a6fa619a490d7e8ec0aacfdaf1773d4f6745cc6968d39d1c8272ac542af4bc82"
+    },
+    {
+      "path": "src/core/guidance/guidanceEngine.ts",
+      "status": "modified",
+      "reason": "Immediate raw guidance and lifecycle cleanup; recheck queued spoken facts and source freshness at dequeue.",
+      "before_sha256": "f2ec2a9cdb094be0b0c2f266febd5dbf7bc1a931d205114b9d6942a2e56b4b11",
+      "after_sha256": "289b0a9fa983c7388e1dc2d91be35513ed5cb00bba4ab21dcf33fe80aff64b5e"
+    },
+    {
+      "path": "src/core/guidance/guidanceState.ts",
+      "status": "added",
+      "reason": "Bound independent evidence and conservative holds; reject route validity across clock rollback.",
+      "before_sha256": null,
+      "after_sha256": "53da3d705d771eeacc8c0c41dbd9fdb06b8936138674f3110dd80a01a0662a58"
+    },
+    {
+      "path": "src/core/navigation/realNavigator.ts",
+      "status": "modified",
+      "reason": "Guard GPS/route ownership and arrival, suppress obsolete turns, coordinate and clean up safety holds.",
+      "before_sha256": "463c3bd1401742641aa7819ece42e6cc0854a6a33d4c1ef18a236fa19f5275e5",
+      "after_sha256": "8dc720fc897f421860abe1b5baaabdcba53ec1a4b00cd989e918e7a9ff23438b"
+    },
+    {
+      "path": "src/core/navigation/stickHaptics.ts",
+      "status": "modified",
+      "reason": "Recheck ownership and hazard policy before every delayed stick tap.",
+      "before_sha256": "2e94f8a7997f053400dad6d7db914e1bc45fcf9925d4884c480d0d6da31deed2",
+      "after_sha256": "d0f54c3d08246f7b145e207ca217a76d49293557d2c20ffecc9119e6c8b201ba"
+    },
+    {
+      "path": "src/core/telemetry/obstaclePolicy.ts",
+      "status": "added",
+      "reason": "Share unchanged existing sensitivity constants without importing network/bridge ownership.",
+      "before_sha256": null,
+      "after_sha256": "50f689aefdedf12adadf4643b0cbbede2f8cdfab85725aa4d6ce2546f1970ae6"
+    },
+    {
+      "path": "src/core/telemetry/pipeline.ts",
+      "status": "modified",
+      "reason": "Reset raw conditioning and apply conservative request-age measurement stamps while retaining actual link receipt time.",
+      "before_sha256": "493bf7537b6db6a380b4655a3cb69d06525a9a48b4676ef282c781a4ada85819",
+      "after_sha256": "0c61297589e397c13e6d44a867ff2b54438dcf7a8fa286ffece943846f58c4b1"
+    },
+    {
+      "path": "src/core/transport/httpTransport.ts",
+      "status": "modified",
+      "reason": "Share pending physical photos and propagate request timing so delayed sensor data is not rejuvenated.",
+      "before_sha256": "36d0071b9d03405a2eee9e7c835a5243dc6d7fb12947dec010361a240b84a484",
+      "after_sha256": "b05f0c9b77bb17272461c8f2e9750eb267150c733b51375d920dda3f65455da2"
+    },
+    {
+      "path": "src/core/transport/legacyTransport.ts",
+      "status": "modified",
+      "reason": "Age existing unverified test telemetry by full request/body delay and ignore JSON completing after disconnect.",
+      "before_sha256": "8001301e1527b75f8874a7998051f5798c97e362f031f7c344d1534af1de1482",
+      "after_sha256": "21c9682377ea5c786ca49724784cd83a295b8bddf07d97d96d551d683ba3a9d0"
+    },
+    {
+      "path": "src/core/transport/types.ts",
+      "status": "modified",
+      "reason": "Carry optional conservative HTTP request timing internally; firmware wire protocol unchanged.",
+      "before_sha256": "95c4d4e44324b54703d3d987b1e260d063ddf352cb502f81e38ffa0b67b691b3",
+      "after_sha256": "77d8ce68f469ef115518ec4e4ec119e0e73f1dd5ad6bc40cff8e9acba7154d20"
+    },
+    {
+      "path": "src/core/vision/detector.ts",
+      "status": "modified",
+      "reason": "Recover worker generations/errors and release failed transfers/bitmaps/timers.",
+      "before_sha256": "d02e5c18e0897a02c965b89fecbdc45a9258bddb981dde5d08feaed803b1cffb",
+      "after_sha256": "dc334270fd34bebe097e87958297fc28778e41b27e9ac775e951147753d00f1d"
+    },
+    {
+      "path": "src/core/vision/detector.worker.ts",
+      "status": "modified",
+      "reason": "Release worker-owned bitmap in finally on all inference outcomes.",
+      "before_sha256": "5268b7716e34ad71eaf60db8be2137c3a0df686a658844381c1f5ace2eadd0f4",
+      "after_sha256": "7ec5774d705e2ba1f1c5a3905f79b110ce8ec6b83e5770cd32c02ce4a3903990"
+    },
+    {
+      "path": "src/core/vision/framePipeline.ts",
+      "status": "modified",
+      "reason": "Share pending frames and reject stale/reused/invalid frame identity; finite FPS metrics.",
+      "before_sha256": "afc8ab125ca408db69f44d6c0abcf6e3c5d3191a9eeed9b99e72dc567d3a41ef",
+      "after_sha256": "140d66aa9ee8bc669cf46a4728910440e2c9884c1db24c7e57ce30757fbe160e"
+    },
+    {
+      "path": "src/core/vision/fusion.ts",
+      "status": "modified",
+      "reason": "Keep photo labels and unidentified sonar reflections/source timestamps separate.",
+      "before_sha256": "a7d06625b8347693267d8ed30afbcc05d23e25cd8aba83a664e521a9f3a2a41f",
+      "after_sha256": "9e31df650169b70e0f8ed27ab35fbad2e8bec403d052810a84b4090d26ef516c"
+    },
+    {
+      "path": "src/core/vision/fusionEngine.ts",
+      "status": "modified",
+      "reason": "Unknown unseen lanes, overlapping image-band occupancy and fresh evidence without sonar label association.",
+      "before_sha256": "45cdd2f23458373a094acb4f4d1c8868d9da98af14a96c44bbd68db24ca10e9b",
+      "after_sha256": "3898febf9a7867a47f92ad645e4c1f3f86a840dc9e15ef2e5e69d5aedf36df6b"
+    },
+    {
+      "path": "src/core/vision/objectTracker.ts",
+      "status": "modified",
+      "reason": "Prevent repeated confirmation, stale velocity/history and mutation of published snapshots.",
+      "before_sha256": "c2a9feb0804b3d18dbbd01926d026a2e6a1faa2f076fcd780f4e63edc637e9b1",
+      "after_sha256": "cc580348e74dda93f5bbcacc1b96195107daf4379c88cd2574d501a93d4f63cb"
+    },
+    {
+      "path": "src/core/vision/sensorConditioning.ts",
+      "status": "modified",
+      "reason": "Bound sample-time approach estimation, raw hazards, invalid IMU and lifecycle reset; reject aged/future data without changing sample identity.",
+      "before_sha256": "14c0a721a436e05339de0fa2ca2f19bc07de04d241200ebc94fff1c9c3a6940a",
+      "after_sha256": "a95e99fba4834fa7dc518e4d1f55f92aa23a562b856926bf67dd41483b5a6411"
+    },
+    {
+      "path": "src/core/vision/spatial.ts",
+      "status": "modified",
+      "reason": "Validate image boxes and compute all overlapping image bands.",
+      "before_sha256": "cd57ca9e8d140353a1cf9dd2a9f2a31cb19fc81e6ee8ac4446bdffdf2141c897",
+      "after_sha256": "0b5f62e03cec40da5247ba9df5b43ebb9966a9368e1aba019b92be94a2860717"
+    },
+    {
+      "path": "src/core/vision/types.ts",
+      "status": "modified",
+      "reason": "Make visual evidence, image-band coverage, source pose/dimensions and freshness explicit.",
+      "before_sha256": "bbd231de91e514bdf75146514d6e8a0af7221e6c87083bde0abd7b029516ccdf",
+      "after_sha256": "ff842d50f5c4255c208e8696d49d442eb239a1ddd57270f565d94a2c0e3b40da"
+    },
+    {
+      "path": "src/core/vision/visionLoop.ts",
+      "status": "modified",
+      "reason": "Serialize lifecycle work and capture for walking/navigation with debug-only image URL allocation.",
+      "before_sha256": "4adf96e51780b49634f8587a02eb08496770e2a6d7dcf1afbe7327296d6adad6",
+      "after_sha256": "5b9dbb55800a76b5e6704a515973eba3c2d29ec179b655187c2e7131ba7523e5"
+    },
+    {
+      "path": "src/core/vision/visionScheduling.ts",
+      "status": "added",
+      "reason": "Conservative walking/navigation/proximity policy retaining the existing steady cadence.",
+      "before_sha256": null,
+      "after_sha256": "8dc1c5775a1079bd211e3b1cc921915c4852a47b1de8a26d2ed492498c777c1f"
+    },
+    {
+      "path": "src/features/debug/DetectionDebugView.tsx",
+      "status": "modified",
+      "reason": "Minimum diagnostic rows in existing overlay; skip hidden visual clock updates and guessed resolution.",
+      "before_sha256": "77be53f0c4ce966b2888d214cb6342efa5c3772b85a01b0fa6bb18bd35a7f466",
+      "after_sha256": "b756d1fec34be7e932b87297dc47e3d23a6ca4a4a3a3da8f5381b424c6eed8b7"
+    },
+    {
+      "path": "src/hooks/useGuardianVision.ts",
+      "status": "modified",
+      "reason": "Release decode resources even on drawing failure and ignore obsolete/unmounted errors.",
+      "before_sha256": "a0a23059dc480f5c6d6f9ae4bf0029e365667c29f526edb82a01f5791651250f",
+      "after_sha256": "79f08227314db74d0ab22056839bff9fb39811c83880ce04c7b2f7002621d8ea"
+    },
+    {
+      "path": "tests/announcementValidity.test.ts",
+      "status": "added",
+      "reason": "12 delayed retry/cancellation/dedupe validity scenarios.",
+      "before_sha256": null,
+      "after_sha256": "6571d9a6454cfca119c43051f52f0e08d5a7e493c5292345f5db4e8c58e04e8d"
+    },
+    {
+      "path": "tests/assistantDestination.test.ts",
+      "status": "modified",
+      "reason": "Add newly required cancellation export to existing voice mock; assertions unchanged.",
+      "before_sha256": "3e42ad2ef70f201be965283276277cf85a3df2d422540ce7d75c591499491f4c",
+      "after_sha256": "e816ae7a6255eeb2f6d5d99f65b03c2fe4a65db0202ac6390cbe2d4869750412"
+    },
+    {
+      "path": "tests/audioPcm.test.ts",
+      "status": "added",
+      "reason": "PCM equivalence, lifecycle and source cleanup.",
+      "before_sha256": null,
+      "after_sha256": "32cc4bc129dda4ac68131c305b3cd4c71469ac28347261ba6f5f7f01b1a17079"
+    },
+    {
+      "path": "tests/audioValidity.test.ts",
+      "status": "added",
+      "reason": "14 actual queue/current speech cancellation, race and preservation scenarios.",
+      "before_sha256": null,
+      "after_sha256": "9375a774c6e5de0cc41ee6d694c5459c63a71325a51673b874e32eadbd96234e"
+    },
+    {
+      "path": "tests/captureSingleFlight.test.ts",
+      "status": "added",
+      "reason": "Transport capture sharing and pending slot recovery.",
+      "before_sha256": null,
+      "after_sha256": "2b1e1afa9c6f6dc1483b120f1a41fbb919dad7404bce5ae1c06d6219d52bf24d"
+    },
+    {
+      "path": "tests/cloudVisionEvidence.test.ts",
+      "status": "added",
+      "reason": "Executable existing-cloud vision source/metric-distance instructions.",
+      "before_sha256": null,
+      "after_sha256": "527b4a3b6429187b3fbfe6771f6d69ea41d94f4b8b88e05c3e3c717e2d389fa9"
+    },
+    {
+      "path": "tests/destinationFallback.test.ts",
+      "status": "modified",
+      "reason": "Add newly required cancellation export to existing voice mock; assertions unchanged.",
+      "before_sha256": "220133b7366cae0d9e8abcabd0aecf15dad7cbde939006f643a30de2618a4f51",
+      "after_sha256": "46e04d66c8a0d4965259af068cf0098c0bda19881aa025008331d1c88fb8771c"
+    },
+    {
+      "path": "tests/guardianVisionCleanup.test.ts",
+      "status": "added",
+      "reason": "Canvas decode/bitmap cleanup and unmount races.",
+      "before_sha256": null,
+      "after_sha256": "6ec959e261bbd781ad36397a8a406f6c2a0d7af39de550b72904239848c4e23b"
+    },
+    {
+      "path": "tests/guidanceRuntime.test.ts",
+      "status": "added",
+      "reason": "11 raw telemetry/runtime/lifecycle/pose integration scenarios.",
+      "before_sha256": null,
+      "after_sha256": "98d07e06f422667c40dba575b3bde9a031e023fd4a9c7210b7ce43fc6ed7310a"
+    },
+    {
+      "path": "tests/integration-contracts.test.ts",
+      "status": "modified",
+      "reason": "Correct old false scene object/range association assertion.",
+      "before_sha256": "6ea787e8cea08e353584dc51c4e19baa79a5128c699334370e939412e928da0c",
+      "after_sha256": "7330f6947e3a69520f258a7a5bba23493a77dd81f0e9e12cb2b20c3d2401a856"
+    },
+    {
+      "path": "tests/legacyTransportFreshness.test.ts",
+      "status": "added",
+      "reason": "Focused regression coverage for delayed telemetry, wall-clock changes or queued spoken-fact validity.",
+      "before_sha256": null,
+      "after_sha256": "96cc1c2c1112eaf6b1bca5bdf5abfab929358ceef6a2f583af2187ad7fca3689"
+    },
+    {
+      "path": "tests/liveStreamConsumers.test.ts",
+      "status": "modified",
+      "reason": "Distinct physical timestamps in existing fixtures; assertions preserved.",
+      "before_sha256": "e3cda204861c953a67fb577f2bb87812677f8fa7c39475204c438c253a1fa766",
+      "after_sha256": "de2c284298f523e79b30ab0b8bca5db652f0c9167a69a18e9e29d7d8ae18f83a"
+    },
+    {
+      "path": "tests/navigation.test.ts",
+      "status": "modified",
+      "reason": "Add newly required cancellation export to existing voice mock; assertions unchanged.",
+      "before_sha256": "a8aba1f55f7729f15709c2f2d84b644bc89fd4cb82314979f6ef44c5eeeb3cb7",
+      "after_sha256": "5fe570a2903858793286b9fb97e20d4e5e390a6a68a196af147182c367c9a383"
+    },
+    {
+      "path": "tests/navigationScenarios.test.ts",
+      "status": "added",
+      "reason": "23 route ownership, GPS, arrival and immediate obstacle-pause scenarios.",
+      "before_sha256": null,
+      "after_sha256": "42adecc1c74d3ad4f4d86d521bb04c3a8ece7d23a69001dac575ea6ec66c468f"
+    },
+    {
+      "path": "tests/sceneEvidenceFreshness.test.ts",
+      "status": "added",
+      "reason": "Independent source timestamps and delayed scene evidence scenarios.",
+      "before_sha256": null,
+      "after_sha256": "a6f052ce819c9af0c90b9efef673653327f7479a9cc0f3e9272159f9c64aef09"
+    },
+    {
+      "path": "tests/sosSms.test.ts",
+      "status": "modified",
+      "reason": "Add newly required cancellation export to existing voice mock; assertions unchanged.",
+      "before_sha256": "a89a3e4e4676bd4f45b38c9ff81187dd6305d127bd3ea6f326c55ba636de6374",
+      "after_sha256": "37294afd129b9ad3ec75def1c3251801237873ddc9834e5adf8bd7736f36ec81"
+    },
+    {
+      "path": "tests/stick-e2e.test.ts",
+      "status": "modified",
+      "reason": "Add newly required cancellation export to existing voice mock; assertions unchanged.",
+      "before_sha256": "13ccc35b33acaf383540b438af44433fa5e05c5474bab167c7368bbca0b772e6",
+      "after_sha256": "f14e94f00c1265d0cf383b7d76308b0ec3de5fa6407d8e7802ee93411ebc5f35"
+    },
+    {
+      "path": "tests/stickHaptics.test.ts",
+      "status": "added",
+      "reason": "6 delayed stick-cue ownership/hazard cancellation scenarios.",
+      "before_sha256": null,
+      "after_sha256": "5372c78112e5a8d41afdeb33b4f6846c957084091611daeb950192e9b6e7bec4"
+    },
+    {
+      "path": "tests/telemetryFreshness.test.ts",
+      "status": "added",
+      "reason": "Focused regression coverage for delayed telemetry, wall-clock changes or queued spoken-fact validity.",
+      "before_sha256": null,
+      "after_sha256": "5496b3f8f83a2091eafe40fa9c5f59bdac1b261cd153f0b82d109096b0d38741"
+    },
+    {
+      "path": "tests/transportFreshness.test.ts",
+      "status": "added",
+      "reason": "Focused regression coverage for delayed telemetry, wall-clock changes or queued spoken-fact validity.",
+      "before_sha256": null,
+      "after_sha256": "fb94cbb269ab2af8521458add716df088fc48a98c427c8155f1640527b4296f1"
+    },
+    {
+      "path": "tests/ultrasonicApproach.test.ts",
+      "status": "added",
+      "reason": "18 physical sample timing, trend, rejection and reset scenarios.",
+      "before_sha256": null,
+      "after_sha256": "21dbc0d9c860e82c5574490b5348c5f397683d18d1d3b745ecd099cf011d82b0"
+    },
+    {
+      "path": "tests/visionDetectorLifecycle.test.ts",
+      "status": "added",
+      "reason": "Worker failure/transfer/generation ownership checks.",
+      "before_sha256": null,
+      "after_sha256": "9e358cae8c7a7c2be8ba873746d1810768396cd55b96712191f89a00aee23bef"
+    },
+    {
+      "path": "tests/visionEngine.test.ts",
+      "status": "modified",
+      "reason": "Correct old false sonar-to-visual-object contract assertion; preserve other regression checks.",
+      "before_sha256": "9cc0a4e7c29fc34870b6f4b2322f9ceb475492f301c0e54e773a6bc72611dc5b",
+      "after_sha256": "46b593008330e4bf9828ec3bc7d17263b9415f194d50385c838db66a8fbedd2e"
+    },
+    {
+      "path": "tests/visionLifecycle.test.ts",
+      "status": "added",
+      "reason": "Existing lifecycle checks with valid conditioned context, debug ownership and distinct frame times.",
+      "before_sha256": null,
+      "after_sha256": "31bdf9209c3eaf8070ffd423f385ea80c535143f5b45413e2ca6e7aa7ebecf36"
+    },
+    {
+      "path": "tests/visionWorkerCleanup.test.ts",
+      "status": "added",
+      "reason": "Worker bitmap cleanup on all outcomes.",
+      "before_sha256": null,
+      "after_sha256": "cb35d9c7d66054e2c9edfa8a0783df396c3dcab2ce7498b847540b8f79d53238"
+    },
+    {
+      "path": "tests/walkingGuidance.test.ts",
+      "status": "added",
+      "reason": "25 pure local guidance, conservative hold and pose scenarios.",
+      "before_sha256": null,
+      "after_sha256": "09ec1f06af9bc303b4343087714662cc8e946d9773a0e2d0fca633bd367da811"
+    },
+    {
+      "path": "tests/walkingVisionEvidence.test.ts",
+      "status": "added",
+      "reason": "26 evidence/freshness/tracker regression scenarios.",
+      "before_sha256": null,
+      "after_sha256": "0f74fe6677d54242f1b07922c7fdea42f35addbdd1cf8de993462734c808fb08"
+    },
+    {
+      "path": "tests/walkingVisionScheduling.test.ts",
+      "status": "added",
+      "reason": "27 walking/cadence/lifecycle/frame identity scenarios.",
+      "before_sha256": null,
+      "after_sha256": "e7cb177bd44ac5175144b20d7c3b255cd25574717c4337afde428230166f1f2a"
+    },
+    {
+      "path": "validation/app-test-results.log",
+      "status": "added",
+      "reason": "Reproducible validation evidence, measurement method, or requested refinement report.",
+      "before_sha256": null,
+      "after_sha256": "08961437b630ef88c6e6677afbe42dc4bed502dcd628f19480d9f4f67010dda1"
+    },
+    {
+      "path": "validation/browser-smoke.cjs",
+      "status": "added",
+      "reason": "Reproducible validation evidence, measurement method, or requested refinement report.",
+      "before_sha256": null,
+      "after_sha256": "1d1cf67303fa419adbfaf5f250f892e66485a900c0c5da8903959c684a2a8f7c"
+    },
+    {
+      "path": "validation/check-results.json",
+      "status": "added",
+      "reason": "Reproducible validation evidence, measurement method, or requested refinement report.",
+      "before_sha256": null,
+      "after_sha256": "13494c30e9e26048ed8f1ecf7576ff84374e9755f79465d23e7c45176816d12e"
+    },
+    {
+      "path": "validation/demo-build-results.log",
+      "status": "added",
+      "reason": "Recorded validation results or a reproducible measurement/report artifact.",
+      "before_sha256": null,
+      "after_sha256": "73f338a4df708c74448f8da943caa9f5f00857832efac0ca19053fc53bb43d8e"
+    },
+    {
+      "path": "validation/firmware-test-results.log",
+      "status": "added",
+      "reason": "Reproducible validation evidence, measurement method, or requested refinement report.",
+      "before_sha256": null,
+      "after_sha256": "e049746ac098eb5d6b9b5229b075459a05f6c56b9a731acbc85ca7f3309bb73f"
+    },
+    {
+      "path": "validation/guidance-facts-after.log",
+      "status": "added",
+      "reason": "Recorded validation results or a reproducible measurement/report artifact.",
+      "before_sha256": null,
+      "after_sha256": "02ea9ab14e480e30ffb3a08a9714665dcd7d9ab9a96570030e29e7c06eb1e77d"
+    },
+    {
+      "path": "validation/guidance-facts-before.log",
+      "status": "added",
+      "reason": "Recorded validation results or a reproducible measurement/report artifact.",
+      "before_sha256": null,
+      "after_sha256": "b87d7ec17bf6d9eefab851587af3d29b4b1a7540c67cd958172e0b18e8018603"
+    },
+    {
+      "path": "validation/guidance-latched-range-before.log",
+      "status": "added",
+      "reason": "Recorded validation results or a reproducible measurement/report artifact.",
+      "before_sha256": null,
+      "after_sha256": "a4669a1cdafbacc1d5e504e4183dec35babb2fc1fa0f50b02858c1c56aa0dc80"
+    },
+    {
+      "path": "validation/pcm-allocation-check.mjs",
+      "status": "added",
+      "reason": "Reproducible validation evidence, measurement method, or requested refinement report.",
+      "before_sha256": null,
+      "after_sha256": "5943d8655109f59e4e2ff95f13924d62e0088107de0f247749f6dc59d5d0d42c"
+    },
+    {
+      "path": "validation/pcm-allocation-results.json",
+      "status": "added",
+      "reason": "Reproducible validation evidence, measurement method, or requested refinement report.",
+      "before_sha256": null,
+      "after_sha256": "920f54b85cbbf5aad2e42337dd3f445bb2325fc32988188cbe0c56bf77b5d119"
+    },
+    {
+      "path": "validation/production-build-results.log",
+      "status": "added",
+      "reason": "Recorded validation results or a reproducible measurement/report artifact.",
+      "before_sha256": null,
+      "after_sha256": "19978cf30c0e9b46b4b883c36ccb741f95b6390cd68ede2430dbdcf2c98e6895"
+    },
+    {
+      "path": "validation/walking-vision-after.log",
+      "status": "added",
+      "reason": "Reproducible validation evidence, measurement method, or requested refinement report.",
+      "before_sha256": null,
+      "after_sha256": "617500fa12fc96a35800eee51ee11bed0dba456fcaf7b790bda20a14dd57c155"
+    },
+    {
+      "path": "validation/walking-vision-before.log",
+      "status": "added",
+      "reason": "Reproducible validation evidence, measurement method, or requested refinement report.",
+      "before_sha256": null,
+      "after_sha256": "656a9888c2c73eb6e423d8d847d8e8ff2a6ad24bbf0c571bcd2a27cf55178af8"
+    }
+  ],
+  "note": "This manifest omits its own hash to avoid self-reference. Original files are all retained; new local caches/dist/node_modules/emulator logs are excluded from deliverable."
+}

@@ -1,0 +1,19 @@
+{
+  "method": "Execute unchanged PCM decoding bodies from baseline and refinement with counted Float32Array construction and fake Web Audio buffers; 1000 completed 100 ms mono 24 kHz chunks. Host synthetic allocation/resource counts only, no device battery or latency measurement.",
+  "before": {
+    "chunks": 1000,
+    "samplesPerChunk": 2400,
+    "temporaryPcmBytes": 9600000,
+    "playbackPcmBytes": 9600000,
+    "samplesCopied": 2400000,
+    "sourceDisconnects": 0
+  },
+  "after": {
+    "chunks": 1000,
+    "samplesPerChunk": 2400,
+    "temporaryPcmBytes": 0,
+    "playbackPcmBytes": 9600000,
+    "samplesCopied": 0,
+    "sourceDisconnects": 1000
+  }
+}

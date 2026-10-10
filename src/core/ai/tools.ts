@@ -32,7 +32,7 @@ export const functionDeclarations = [
   {
     name: 'describe_scene',
     description:
-      "Take a photo with the stick camera and describe what is in front of the user: obstacles, steps, vehicles, people, doors, signs. Use short calm sentences, distances in steps or metres, and left/right. Never claim it is safe to cross a road.",
+      "Take a photo with the stick camera and describe visible obstacles, steps, vehicles, people, doors and signs in short calm sentences. Left/right describe image position only. Never infer metres, step distances, side clearance or a safe path from the photo. Report a measured forward ultrasonic reflection separately, without identifying it as a camera object. Never claim it is safe to cross a road.",
   },
   { name: 'read_text', description: 'Take a photo with the stick camera and read out any printed text: signs, labels, menus, documents.' },
   { name: 'identify_currency', description: 'Take a close photo and say which Indian banknote or coin the user is holding.' },

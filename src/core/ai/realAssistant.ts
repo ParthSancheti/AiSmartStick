@@ -13,9 +13,10 @@ import { onStickButton } from '../device/bridge';
 import { startRecognition, abortRecognition } from '../voice/recognition';
 import { loopEarcon } from '../feedback/earcons';
 import { reverseLookup } from '../maps/mapsService';
-import { freshnessLabel } from '../location/locationService';
+import { freshnessLabel, acquireFix } from '../location/locationService';
 import { firebaseConfigured } from '../runtime/env';
 import { TOOL_BY_NAME } from '../../../shared/tools';
+import { isAffirmative, isNegative } from './navIntent';
 
 /**
  * REAL assistant turn loop (Gemini via Cloud Function `assistantTurn`):
@@ -26,6 +27,8 @@ import { TOOL_BY_NAME } from '../../../shared/tools';
 const MAX_ROUNDS = 4;
 const NEW_CONVERSATION_AFTER_MS = 10 * 60_000;
 let lastTurnAt = 0;
+/** The conversation the last turn went to; a different one was reopened from History. */
+let lastCid: string | null = null;
 let stopThinking: (() => void) | null = null;
 
 const set = useAssistant.setState;
@@ -56,9 +59,11 @@ function unavailableReason(): string | null {
 }
 
 async function turn(input: AssistantTurnRequest['input'], lang: ReplyLang) {
-  const cid = Date.now() - lastTurnAt > NEW_CONVERSATION_AFTER_MS ? null : useAssistant.getState().conversationId;
+  const cur = useAssistant.getState().conversationId;
+  const cid = cur && cur !== lastCid ? cur : Date.now() - lastTurnAt > NEW_CONVERSATION_AFTER_MS ? null : cur;
   const res = await call<AssistantTurnRequest, AssistantTurnResponse>('assistantTurn', { conversationId: cid ?? undefined, lang, input, context: context() }, 45000);
   set({ conversationId: res.conversationId });
+  lastCid = res.conversationId;
   lastTurnAt = Date.now();
   return res;
 }
@@ -81,13 +86,14 @@ async function confirm(prompt: string, lang: ReplyLang): Promise<boolean> {
     const off = onStickButton((p) => {
       if (p === 'single') finish(true);
       else if (p === 'double') finish(false);
+      else return false; // the 3 s SOS hold must always reach the SOS handler
       return true;
     });
     set({ phase: 'listening', heard: '' });
     startRecognition({
       lang: lang === 'hi' ? 'hi-IN' : 'en-IN',
       onInterim: (t) => set({ heard: t }),
-      onFinal: (t) => finish(/\b(yes|yeah|haan|ha|han|ok|okay|sure|send|confirm|कर|हाँ|हां)\b/i.test(t)),
+      onFinal: (t) => finish(!isNegative(t) && (isAffirmative(t) || /^(send( it)?|confirm)$/i.test(t.trim()))),
       onError: () => undefined,
     });
     const t = setTimeout(() => finish(false), 10000);
@@ -146,6 +152,8 @@ export async function realUtterance(text: string, lang: ReplyLang, source: 'voic
 
 /** Double press: "Where am I?" — straight from GPS + Maps, no model round trip. */
 export async function realWhereAmI(lang: ReplyLang) {
+  // No fix in the store yet: actively ask the phone for one (up to 6 s) before giving up.
+  if (!useLocation.getState().fix) await acquireFix({ maxAgeMs: 60_000, timeoutMs: 6000 }).catch(() => undefined);
   const l = useLocation.getState();
   const d = useDevice.getState();
   if (!l.fix) return speakReply(lang === 'hi' ? 'अभी GPS लोकेशन नहीं मिली है।' : l.permission === 'denied' ? 'Location permission is off, so I cannot tell where you are.' : 'I do not have a GPS position yet. Please wait a moment.', lang);

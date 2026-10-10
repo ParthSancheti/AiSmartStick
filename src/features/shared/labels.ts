@@ -23,7 +23,7 @@ export function linkLabel(l: LinkState | 'unknown'): { text: string; tone: Tone 
     case 'disconnected':
       return { text: 'Disconnected', tone: 'sos' };
     case 'auth_failed':
-      return { text: 'Not verified', tone: 'sos' };
+      return { text: 'Needs firmware 1.2', tone: 'sos' };
     case 'unpaired':
       return { text: 'Not set up', tone: 'muted' };
     default:

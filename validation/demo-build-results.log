@@ -1,0 +1,69 @@
+
+> ai-smart-stick@0.2.0 build:demo
+> VITE_APP_MODE=demo vite build --outDir dist-demo
+
+vite v8.3.0 building client environment for production...
+transforming...
+✓ 2578 modules transformed.
+rendering chunks...
+computing gzip size...
+dist-demo/index.html                              1.92 kB │ gzip:   0.79 kB
+dist-demo/assets/logo-round-DKO_vOrv.png         52.09 kB
+dist-demo/assets/detector.worker-CSXpSaIb.js    155.34 kB
+dist-demo/assets/logo-iNvIScYk.png            1,056.63 kB
+dist-demo/assets/index-jeN4U_Y5.css              89.26 kB │ gzip:  15.88 kB
+dist-demo/assets/index.esm-kr7ItIC2.js            0.07 kB │ gzip:   0.09 kB
+dist-demo/assets/web-C-b-5kYN.js                  0.77 kB │ gzip:   0.23 kB
+dist-demo/assets/web-CqEJgDet.js                  0.84 kB │ gzip:   0.40 kB
+dist-demo/assets/web-6gawg8ym.js                  1.10 kB │ gzip:   0.53 kB
+dist-demo/assets/web-C0xWYv7t.js                  1.19 kB │ gzip:   0.54 kB
+dist-demo/assets/preload-helper-BZ1Pz5am.js       1.21 kB │ gzip:   0.69 kB
+dist-demo/assets/imageCompress-CjQ6RfkC.js        1.28 kB │ gzip:   0.72 kB
+dist-demo/assets/env-BgrAn6PL.js                  1.68 kB │ gzip:   0.77 kB
+dist-demo/assets/web-DYTiSOXh.js                  1.68 kB │ gzip:   0.69 kB
+dist-demo/assets/web-C1xFclKE.js                  1.85 kB │ gzip:   0.67 kB
+dist-demo/assets/web-BfJSbaQq.js                  1.92 kB │ gzip:   0.77 kB
+dist-demo/assets/web-i9eqyzQd.js                  2.08 kB │ gzip:   0.85 kB
+dist-demo/assets/aissNativeWeb-lDtnUHbz.js        2.12 kB │ gzip:   0.82 kB
+dist-demo/assets/web-CIspeJ-U.js                  2.31 kB │ gzip:   1.06 kB
+dist-demo/assets/dist-C5Vgn5nD.js                 7.75 kB │ gzip:   3.10 kB
+dist-demo/assets/react-BmOvOpaA.js                9.11 kB │ gzip:   3.53 kB
+dist-demo/assets/web-CChSwHEd.js                 12.07 kB │ gzip:   2.79 kB
+dist-demo/assets/index.esm-BZKwTGnG.js           16.45 kB │ gzip:   5.55 kB
+dist-demo/assets/index.esm-PWTeMjtu.js           29.04 kB │ gzip:   9.69 kB
+dist-demo/assets/index.esm-DIAjPqij.js           96.56 kB │ gzip:  28.13 kB
+dist-demo/assets/app-KzNYFvK7.js                530.25 kB │ gzip: 156.26 kB
+dist-demo/assets/index-BUHAMdsn.js            1,462.21 kB │ gzip: 407.28 kB
+
+[plugin builtin:vite-reporter] 
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+[33m[INEFFECTIVE_DYNAMIC_IMPORT] [0msrc/core/store/session.ts is dynamically imported by src/core/auth/authService.ts but also statically imported by src/App.tsx, src/components/DemoPanel.tsx, src/core/ai/assistant.ts, src/core/ai/executor.ts, src/core/ai/liveSession.ts, ..., dynamic import will not move module into another chunk.
+
+[33m[INEFFECTIVE_DYNAMIC_IMPORT] [0msrc/core/store/ui.ts is dynamically imported by src/core/ai/executor.ts but also statically imported by src/App.tsx, src/components/DemoPanel.tsx, src/core/ai/assistant.ts, src/core/camera/cameraSession.ts, src/core/device/bridge.ts, ..., dynamic import will not move module into another chunk.
+
+[33m[INEFFECTIVE_DYNAMIC_IMPORT] [0msrc/core/store/activity.ts is dynamically imported by src/core/auth/authService.ts but also statically imported by src/core/ai/assistant.ts, src/core/ai/executor.ts, src/core/camera/cameraSession.ts, src/core/device/bridge.ts, src/core/device/deviceConfig.ts, ..., dynamic import will not move module into another chunk.
+
+[33m[INEFFECTIVE_DYNAMIC_IMPORT] [0msrc/core/store/assistant.ts is dynamically imported by src/core/auth/authService.ts but also statically imported by src/core/ai/assistant.ts, src/core/ai/executor.ts, src/core/ai/history.ts, src/core/ai/liveSession.ts, src/core/ai/realAssistant.ts, ..., dynamic import will not move module into another chunk.
+
+[33m[INEFFECTIVE_DYNAMIC_IMPORT] [0msrc/core/native/aissNative.ts is dynamically imported by src/core/location/locationService.ts but also statically imported by src/core/audio/audioRoute.ts, src/core/camera/liveStream.ts, src/core/device/discovery.ts, src/core/device/pairedDevice.ts, src/core/device/realDevice.ts, ..., dynamic import will not move module into another chunk.
+
+[33m[INEFFECTIVE_DYNAMIC_IMPORT] [0msrc/core/backend/api.ts is dynamically imported by src/core/auth/authService.ts, src/core/sync/guardianFeed.ts but also statically imported by src/core/ai/executor.ts, src/core/ai/liveSession.ts, src/core/ai/realAssistant.ts, src/core/maps/mapsService.ts, src/core/pairing/pairingService.ts, ..., dynamic import will not move module into another chunk.
+
+[33m[INEFFECTIVE_DYNAMIC_IMPORT] [0mnode_modules/@capacitor/device/dist/esm/index.js is dynamically imported by src/core/setup/permissions.ts but also statically imported by src/core/native/deviceInfo.ts, dynamic import will not move module into another chunk.
+
+[33m[INEFFECTIVE_DYNAMIC_IMPORT] [0msrc/core/ai/assistant.ts is dynamically imported by src/core/sync/guardianFeed.ts but also statically imported by src/components/DemoPanel.tsx, src/core/device/bridge.ts, src/features/user/CameraView.tsx, src/features/user/UserHome.tsx, src/features/user/home/HomeCards.tsx, ..., dynamic import will not move module into another chunk.
+
+[33m[INEFFECTIVE_DYNAMIC_IMPORT] [0msrc/core/device/bridge.ts is dynamically imported by src/core/sync/guardianFeed.ts but also statically imported by src/components/DemoPanel.tsx, src/core/ai/realAssistant.ts, src/core/boot.ts, src/core/camera/cameraSession.ts, src/core/camera/liveStream.ts, ..., dynamic import will not move module into another chunk.
+
+[33m[INEFFECTIVE_DYNAMIC_IMPORT] [0msrc/core/auth/authService.ts is dynamically imported by src/features/user/onboarding/HomeLocationStep.tsx but also statically imported by src/core/boot.ts, src/features/guardian/GuardianOnboarding.tsx, src/features/guardian/GuardianSettings.tsx, src/features/guardian/parts.tsx, src/features/user/UserHome.tsx, ..., dynamic import will not move module into another chunk.
+
+[33m[INEFFECTIVE_DYNAMIC_IMPORT] [0mnode_modules/@capacitor-firebase/messaging/dist/esm/index.js is dynamically imported by src/core/setup/permissions.ts but also statically imported by src/core/native/notifications.ts, dynamic import will not move module into another chunk.
+
+[33m[INEFFECTIVE_DYNAMIC_IMPORT] [0msrc/core/profile/photoCache.ts is dynamically imported by src/core/auth/authService.ts but also statically imported by src/components/Avatar.tsx, src/core/sync/profileSync.ts, src/features/user/UserOnboarding.tsx, dynamic import will not move module into another chunk.
+
+[33m[INEFFECTIVE_DYNAMIC_IMPORT] [0msrc/core/sync/settingsSync.ts is dynamically imported by src/core/auth/authService.ts but also statically imported by src/core/boot.ts, src/features/guardian/GuardianSettings.tsx, dynamic import will not move module into another chunk.
+
+✓ built in 802ms

@@ -14,10 +14,48 @@ export interface TtsEngine {
 
 const tag = (lang: ReplyLang) => (lang === 'hi' ? 'hi-IN' : 'en-IN');
 
+export function pickVoiceIndex(voices: { name?: string; voiceURI?: string; lang?: string }[], lang: string, online: boolean): number | undefined {
+  // Google's natural "network" voices (neural) when online, else the best offline Google voice.
+  const want = lang.toLowerCase();
+  let bestI: number | undefined;
+  let bestScore = -Infinity;
+  voices.forEach((v, i) => {
+    const l = (v.lang ?? '').replace('_', '-').toLowerCase();
+    if (!l.startsWith(want.slice(0, 2))) return;
+    const n = `${v.name ?? ''} ${v.voiceURI ?? ''}`.toLowerCase();
+    let score = l === want ? 100 : want.startsWith('en') && /en-(gb|us)/.test(l) ? 40 : 20;
+    if (/network/.test(n)) score += online ? 30 : -50;
+    if (/local/.test(n)) score += 10;
+    if (/-x-/.test(n)) score += 5;
+    if (/legacy|compact|espeak|pico/.test(n)) score -= 60;
+    if (score > bestScore) {
+      bestScore = score;
+      bestI = i;
+    }
+  });
+  return bestI;
+}
+
 class NativeTts implements TtsEngine {
   readonly name = 'native' as const;
+  private voices: Promise<SpeechSynthesisVoice[]> | null = null;
+  private async voiceFor(lang: string) {
+    this.voices ??= TextToSpeech.getSupportedVoices()
+      .then((r) => r.voices ?? [])
+      .catch(() => []);
+    return pickVoiceIndex(await this.voices, lang, typeof navigator === 'undefined' || navigator.onLine !== false);
+  }
   async speak(text: string, o: { lang: ReplyLang; rate: number; volume: number }) {
-    await TextToSpeech.speak({ text, lang: tag(o.lang), rate: o.rate, volume: o.volume, pitch: 1.0, category: 'playback' });
+    const lang = tag(o.lang);
+    const voice = await this.voiceFor(lang).catch(() => undefined);
+    // A touch slower than the engine default: calmer for spoken guidance.
+    const rate = Math.max(0.5, Math.min(2, o.rate * 0.95));
+    try {
+      await TextToSpeech.speak({ text, lang, rate, volume: o.volume, pitch: 1.0, category: 'playback', ...(voice != null ? { voice } : {}) });
+    } catch (e) {
+      if (voice == null) throw e;
+      await TextToSpeech.speak({ text, lang, rate, volume: o.volume, pitch: 1.0, category: 'playback' });
+    }
   }
   async stop() {
     await TextToSpeech.stop();

@@ -17,8 +17,12 @@ export const GEMINI_VISION_MODEL = defineString('GEMINI_VISION_MODEL', { default
 
 setGlobalOptions({ region: 'asia-south1', maxInstances: 20 });
 
-/** Callable defaults: signed-in user + valid App Check token, always. */
-export const CALLABLE = { enforceAppCheck: true, cors: true } as const;
+/**
+ * Callable defaults: signed-in user + valid App Check token. For testing with a sideloaded debug APK
+ * (no App Check debug token registered yet) set ENFORCE_APPCHECK=false in functions/.env and deploy;
+ * sign-in is still required. Turn it back on before giving the app to anyone else.
+ */
+export const CALLABLE = { enforceAppCheck: process.env.ENFORCE_APPCHECK !== 'false', cors: true } as const;
 
 export function requireAuth(req: CallableRequest<unknown>): string {
   const uid = req.auth?.uid;

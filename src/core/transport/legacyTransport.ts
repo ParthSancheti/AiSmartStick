@@ -31,11 +31,16 @@ export class LegacyTransport implements StickTransport {
     this.em.emit('identity', { deviceId: `LEGACY-${this.host}`, model: 'test-firmware', firmware: 'legacy', protocolVersion: 0 });
     let misses = 0;
     while (!signal.aborted) {
+      const requestStartedAt = Date.now();
+      const started = performance.now();
       try {
         const d = (await (await fetch(`http://${this.host}/data`, { signal: AbortSignal.any([signal, AbortSignal.timeout(1500)]) })).json()) as LegacyDataPacket;
+        if (signal.aborted) return;
+        const receivedAt = Date.now();
+        const timing = { requestStartedAt, roundTripMs: Math.ceil(performance.now() - started) };
         if (misses || this.seq === 0) this.em.emit('link', 'connected', 'Unverified test firmware');
         misses = 0;
-        this.em.emit('packet', this.map(d), Date.now());
+        this.em.emit('packet', this.map(d), receivedAt, timing);
       } catch {
         if (signal.aborted) return;
         if (++misses === 3) this.em.emit('link', 'reconnecting', 'Test firmware stopped answering');
@@ -45,6 +50,8 @@ export class LegacyTransport implements StickTransport {
   }
 
   private map(d: LegacyDataPacket): TelemetryPacket {
+    // Legacy seq/uptime are phone-generated identities, not physical sensor sample timestamps.
+    // This firmware exposes neither raw IMU vectors nor a verifiable sensor sample age.
     const now = Date.now() - this.boot;
     const pressed = d.button_state === true || d.button_state === 1;
     const button = [];

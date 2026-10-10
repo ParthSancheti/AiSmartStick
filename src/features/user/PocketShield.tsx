@@ -12,6 +12,7 @@ import { useRuntime } from '../../core/runtime/mode';
 import { BRAND } from '../../core/brand/brand';
 import { linkLabel } from '../shared/labels';
 import { Link2, Unlink, Navigation, Mic } from 'lucide-react';
+import { useBackHandler } from '../../core/backStack';
 
 /**
  * Dim touch shield for walking with the phone in a pocket. Swallows every
@@ -28,6 +29,8 @@ export function PocketShield() {
   const pointers = useRef(new Set<number>());
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [arming, setArming] = useState(false);
+  // Back must not reach the screens underneath (or close the app) while the phone is in a pocket.
+  useBackHandler(true, () => undefined);
 
   const exit = () => {
     haptics.play('success');
@@ -64,10 +67,10 @@ export function PocketShield() {
       aria-label="Pocket mode is active. Screen touches are ignored to prevent accidental interaction. Hold two fingers on the screen for 2 seconds to exit."
     >
       <div className="flex flex-col items-center justify-center gap-8 w-full max-w-sm">
-        <div className="flex items-center gap-3">
-          <div className="w-3 h-3 rounded-full bg-teal animate-pulse" />
-          <h1 className="text-[24px] font-bold tracking-widest uppercase text-white/90">{BRAND.name}</h1>
-          <span className="text-[20px] font-bold text-teal ml-2">ACTIVE</span>
+        <div className="flex max-w-full flex-wrap items-center justify-center gap-x-3 gap-y-1">
+          <div className="h-3 w-3 shrink-0 rounded-full bg-teal animate-pulse" />
+          <h1 className="min-w-0 break-words text-[21px] font-bold uppercase tracking-wider text-white/90">{BRAND.name}</h1>
+          <span className="text-[18px] font-bold text-teal">ACTIVE</span>
         </div>
 
         <div className="flex flex-col gap-6 w-full text-left">

@@ -1,0 +1,2652 @@
+
+> ai-smart-stick@0.2.0 test
+> vitest run --reporter=default --reporter=json --outputFile.json=/tmp/aiss-final-vitest-results.json
+
+
+ RUN  v5.0.2 /workspace/smartstick-refinement
+
+stdout | tests/transport-e2e.test.ts > HttpTransport ↔ firmware 1.2 (unsigned v1 link) > streams telemetry without any signature; "connected" only once the first packet arrived
+[SMARTSTICK] link connecting: Joining SmartStick_AI…
+
+stdout | tests/transport-e2e.test.ts > HttpTransport ↔ firmware 1.2 (unsigned v1 link) > streams telemetry without any signature; "connected" only once the first packet arrived
+[SMARTSTICK] first telemetry packet #1 (467 B via webview)
+[SMARTSTICK] link connected
+[INFO] device: CONNECTED { deviceId: 'AISS-E2E001' }
+
+stdout | tests/transport-e2e.test.ts > HttpTransport ↔ firmware 1.2 (unsigned v1 link) > streams telemetry without any signature; "connected" only once the first packet arrived
+[SMARTSTICK] link disconnected
+
+stdout | tests/transport-e2e.test.ts > HttpTransport ↔ firmware 1.2 (unsigned v1 link) > commands are acknowledged; a retried commandId is never executed twice; unknown patterns are rejected
+[SMARTSTICK] link connecting: Joining SmartStick_AI…
+
+stdout | tests/transport-e2e.test.ts > HttpTransport ↔ firmware 1.2 (unsigned v1 link) > commands are acknowledged; a retried commandId is never executed twice; unknown patterns are rejected
+[SMARTSTICK] first telemetry packet #4 (467 B via webview)
+[SMARTSTICK] link connected
+[INFO] device: CONNECTED { deviceId: 'AISS-E2E001' }
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > USER SYMPTOM: setup completes, then Home goes Connected with real battery / distance / tilt
+[SMARTSTICK] setup: asking for Location / Nearby devices permission (helps Android find the stick)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > USER SYMPTOM: setup completes, then Home goes Connected with real battery / distance / tilt
+[SMARTSTICK] setup: permissions: location granted, nearby granted
+
+stdout | tests/transport-e2e.test.ts > HttpTransport ↔ firmware 1.2 (unsigned v1 link) > commands are acknowledged; a retried commandId is never executed twice; unknown patterns are rejected
+[SMARTSTICK] link disconnected
+
+stdout | tests/transport-e2e.test.ts > HttpTransport ↔ firmware 1.2 (unsigned v1 link) > old secure firmware (401) ends in auth_failed with the "flash firmware 1.2" message, never "connected"
+[SMARTSTICK] link connecting: Joining SmartStick_AI…
+
+stdout | tests/transport-e2e.test.ts > HttpTransport ↔ firmware 1.2 (unsigned v1 link) > old secure firmware (401) ends in auth_failed with the "flash firmware 1.2" message, never "connected"
+[INFO] device: AUTH_FAILED { error: 'telemetry 401: old firmware' }
+[SMARTSTICK] link auth_failed: This stick runs the old secure firmware. Flash firmware 1.2.0 on the stick, then run “Set up SmartStick” again.
+
+stderr | tests/transport-e2e.test.ts > HttpTransport ↔ firmware 1.2 (unsigned v1 link) > old secure firmware (401) ends in auth_failed with the "flash firmware 1.2" message, never "connected"
+[WARN] stick requires signed requests (old firmware) { deviceId: 'AISS-E2E001', where: 'telemetry 401' }
+
+stdout | tests/transport-e2e.test.ts > HttpTransport ↔ firmware 1.2 (unsigned v1 link) > old secure firmware (401) ends in auth_failed with the "flash firmware 1.2" message, never "connected"
+[SMARTSTICK] link disconnected
+
+stdout | tests/transport-e2e.test.ts > HttpTransport ↔ firmware 1.2 (unsigned v1 link) > a firmware speaking another protocol version ends in protocol_mismatch
+[SMARTSTICK] link connecting: Joining SmartStick_AI…
+
+stdout | tests/transport-e2e.test.ts > HttpTransport ↔ firmware 1.2 (unsigned v1 link) > a firmware speaking another protocol version ends in protocol_mismatch
+[SMARTSTICK] link protocol_mismatch: The stick firmware speaks protocol v2; this app needs v1. Update the stick firmware.
+
+stdout | tests/transport-e2e.test.ts > HttpTransport ↔ firmware 1.2 (unsigned v1 link) > a firmware speaking another protocol version ends in protocol_mismatch
+[SMARTSTICK] link disconnected
+
+stdout | tests/transport-e2e.test.ts > HttpTransport ↔ firmware 1.2 (unsigned v1 link) > a stale record from the old HMAC pairing (with keyB64) still connects; the key is ignored
+[SMARTSTICK] link connecting: Joining SmartStick_AI…
+
+stdout | tests/transport-e2e.test.ts > HttpTransport ↔ firmware 1.2 (unsigned v1 link) > a stale record from the old HMAC pairing (with keyB64) still connects; the key is ignored
+[SMARTSTICK] first telemetry packet #5 (467 B via webview)
+[SMARTSTICK] link connected
+[INFO] device: CONNECTED { deviceId: 'AISS-E2E001' }
+
+stdout | tests/transport-e2e.test.ts > HttpTransport ↔ firmware 1.2 (unsigned v1 link) > a stale record from the old HMAC pairing (with keyB64) still connects; the key is ignored
+[SMARTSTICK] link disconnected
+
+stdout | tests/transport-e2e.test.ts > HttpTransport ↔ firmware 1.2 (unsigned v1 link) > missed telemetry → degraded, then back to connected when the stick answers again
+[SMARTSTICK] link connecting: Joining SmartStick_AI…
+
+stdout | tests/transport-e2e.test.ts > HttpTransport ↔ firmware 1.2 (unsigned v1 link) > missed telemetry → degraded, then back to connected when the stick answers again
+[SMARTSTICK] first telemetry packet #6 (467 B via webview)
+[SMARTSTICK] link connected
+[INFO] device: CONNECTED { deviceId: 'AISS-E2E001' }
+
+stdout | tests/transport-e2e.test.ts > HttpTransport ↔ firmware 1.2 (unsigned v1 link) > missed telemetry → degraded, then back to connected when the stick answers again
+[SMARTSTICK] link error: telemetry: HTTP 500 from something that is not the stick
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > USER SYMPTOM: setup completes, then Home goes Connected with real battery / distance / tilt
+[SMARTSTICK] setup: not on the stick's Wi-Fi yet (Setup request failed: connect timed out)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > USER SYMPTOM: setup completes, then Home goes Connected with real battery / distance / tilt
+[SMARTSTICK] setup: Wi-Fi on
+[SMARTSTICK] setup: asking Android to join SmartStick_AI (approve "Connect" if Android asks)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > USER SYMPTOM: setup completes, then Home goes Connected with real battery / distance / tilt
+[SMARTSTICK] setup: joined SmartStick_AI (request)
+
+stdout | tests/assistantDestination.test.ts > the assistant can always set a destination > "Set destination to City Hospital" with no GPS: destination set, directions wait for GPS
+[LOCATION] acquiring a fresh position { maxAgeMs: 60000, timeoutMs: 3000 }
+[INFO] location: acquiring a fresh position { maxAgeMs: 60000, timeoutMs: 3000 }
+[LOCATION] starting { request: false, platform: 'web', aissLocation: false }
+[INFO] location: starting { request: false, platform: 'web', aissLocation: false }
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > USER SYMPTOM: setup completes, then Home goes Connected with real battery / distance / tilt
+[SMARTSTICK] setup: stick AISS-4F2A1B, firmware 1.2.0, protocol v1, auth off
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > USER SYMPTOM: setup completes, then Home goes Connected with real battery / distance / tilt
+[SMARTSTICK] setup: first telemetry packet #1 received
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > USER SYMPTOM: setup completes, then Home goes Connected with real battery / distance / tilt
+[SMARTSTICK] setup: stick saved on this phone
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > USER SYMPTOM: setup completes, then Home goes Connected with real battery / distance / tilt
+[SMARTSTICK] link connecting: Joining SmartStick_AI…
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > USER SYMPTOM: setup completes, then Home goes Connected with real battery / distance / tilt
+[SMARTSTICK] join ok (bound)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > USER SYMPTOM: setup completes, then Home goes Connected with real battery / distance / tilt
+[SMARTSTICK] first telemetry packet #2 (636 B via native/bound)
+[SMARTSTICK] link connected
+[INFO] device: CONNECTED { deviceId: 'AISS-4F2A1B' }
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > USER SYMPTOM: setup completes, then Home goes Connected with real battery / distance / tilt
+[SMARTSTICK] link disconnected
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > cold app start with a saved stick record (no binding yet) → Connected with data
+[SMARTSTICK] setup: asking for Location / Nearby devices permission (helps Android find the stick)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > cold app start with a saved stick record (no binding yet) → Connected with data
+[SMARTSTICK] setup: permissions: location granted, nearby granted
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > cold app start with a saved stick record (no binding yet) → Connected with data
+[SMARTSTICK] setup: not on the stick's Wi-Fi yet (Setup request failed: connect timed out)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > cold app start with a saved stick record (no binding yet) → Connected with data
+[SMARTSTICK] setup: Wi-Fi on
+[SMARTSTICK] setup: asking Android to join SmartStick_AI (approve "Connect" if Android asks)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > cold app start with a saved stick record (no binding yet) → Connected with data
+[SMARTSTICK] setup: joined SmartStick_AI (request)
+
+stdout | tests/transport-e2e.test.ts > HttpTransport ↔ firmware 1.2 (unsigned v1 link) > missed telemetry → degraded, then back to connected when the stick answers again
+[SMARTSTICK] link error: telemetry: HTTP 500 from something that is not the stick
+[SMARTSTICK] link degraded: Missed telemetry
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > cold app start with a saved stick record (no binding yet) → Connected with data
+[SMARTSTICK] setup: stick AISS-4F2A1B, firmware 1.2.0, protocol v1, auth off
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > cold app start with a saved stick record (no binding yet) → Connected with data
+[SMARTSTICK] setup: first telemetry packet #1 received
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > cold app start with a saved stick record (no binding yet) → Connected with data
+[SMARTSTICK] setup: stick saved on this phone
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > cold app start with a saved stick record (no binding yet) → Connected with data
+[SMARTSTICK] link connecting: Joining SmartStick_AI…
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > cold app start with a saved stick record (no binding yet) → Connected with data
+[SMARTSTICK] join ok (bound)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > cold app start with a saved stick record (no binding yet) → Connected with data
+[SMARTSTICK] first telemetry packet #2 (636 B via native/bound)
+[SMARTSTICK] link connected
+[INFO] device: CONNECTED { deviceId: 'AISS-4F2A1B' }
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > cold app start with a saved stick record (no binding yet) → Connected with data
+[SMARTSTICK] link disconnected
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > cold app start with a saved stick record (no binding yet) → Connected with data
+[SMARTSTICK] link connecting: Joining SmartStick_AI…
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > cold app start with a saved stick record (no binding yet) → Connected with data
+[SMARTSTICK] join ok (request)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > cold app start with a saved stick record (no binding yet) → Connected with data
+[SMARTSTICK] first telemetry packet #3 (636 B via native/bound)
+[SMARTSTICK] link connected
+[INFO] device: CONNECTED { deviceId: 'AISS-4F2A1B' }
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > cold app start with a saved stick record (no binding yet) → Connected with data
+[SMARTSTICK] link disconnected
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > cold start while Android’s scan is stale (NOT_IN_RANGE) still asks Android once and connects
+[SMARTSTICK] setup: asking for Location / Nearby devices permission (helps Android find the stick)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > cold start while Android’s scan is stale (NOT_IN_RANGE) still asks Android once and connects
+[SMARTSTICK] setup: permissions: location granted, nearby granted
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > cold start while Android’s scan is stale (NOT_IN_RANGE) still asks Android once and connects
+[SMARTSTICK] setup: not on the stick's Wi-Fi yet (Setup request failed: connect timed out)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > cold start while Android’s scan is stale (NOT_IN_RANGE) still asks Android once and connects
+[SMARTSTICK] setup: Wi-Fi on
+[SMARTSTICK] setup: asking Android to join SmartStick_AI (approve "Connect" if Android asks)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > cold start while Android’s scan is stale (NOT_IN_RANGE) still asks Android once and connects
+[SMARTSTICK] setup: joined SmartStick_AI (request)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > cold start while Android’s scan is stale (NOT_IN_RANGE) still asks Android once and connects
+[SMARTSTICK] setup: stick AISS-4F2A1B, firmware 1.2.0, protocol v1, auth off
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > cold start while Android’s scan is stale (NOT_IN_RANGE) still asks Android once and connects
+[SMARTSTICK] setup: first telemetry packet #1 received
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > cold start while Android’s scan is stale (NOT_IN_RANGE) still asks Android once and connects
+[SMARTSTICK] setup: stick saved on this phone
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > cold start while Android’s scan is stale (NOT_IN_RANGE) still asks Android once and connects
+[SMARTSTICK] link connecting: Joining SmartStick_AI…
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > cold start while Android’s scan is stale (NOT_IN_RANGE) still asks Android once and connects
+[SMARTSTICK] join ok (bound)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > cold start while Android’s scan is stale (NOT_IN_RANGE) still asks Android once and connects
+[SMARTSTICK] first telemetry packet #2 (636 B via native/bound)
+[SMARTSTICK] link connected
+[INFO] device: CONNECTED { deviceId: 'AISS-4F2A1B' }
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > cold start while Android’s scan is stale (NOT_IN_RANGE) still asks Android once and connects
+[SMARTSTICK] link disconnected
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > cold start while Android’s scan is stale (NOT_IN_RANGE) still asks Android once and connects
+[SMARTSTICK] link connecting: Joining SmartStick_AI…
+
+stdout | tests/transport-e2e.test.ts > HttpTransport ↔ firmware 1.2 (unsigned v1 link) > missed telemetry → degraded, then back to connected when the stick answers again
+[SMARTSTICK] link connected
+
+stdout | tests/transport-e2e.test.ts > HttpTransport ↔ firmware 1.2 (unsigned v1 link) > missed telemetry → degraded, then back to connected when the stick answers again
+[SMARTSTICK] link disconnected
+
+ ✓ tests/transport-e2e.test.ts (7 tests) 2314ms
+   ✓ HttpTransport ↔ firmware 1.2 (unsigned v1 link) (7)
+     ✓ missed telemetry → degraded, then back to connected when the stick answers again 2061ms
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > cold start while Android’s scan is stale (NOT_IN_RANGE) still asks Android once and connects
+[SMARTSTICK] join ok (request)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > cold start while Android’s scan is stale (NOT_IN_RANGE) still asks Android once and connects
+[SMARTSTICK] first telemetry packet #3 (636 B via native/bound)
+[SMARTSTICK] link connected
+[INFO] device: CONNECTED { deviceId: 'AISS-4F2A1B' }
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > cold start while Android’s scan is stale (NOT_IN_RANGE) still asks Android once and connects
+[SMARTSTICK] link disconnected
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > phone joined SmartStick_AI by hand (no binding request at all) → Connected
+[SMARTSTICK] setup: asking for Location / Nearby devices permission (helps Android find the stick)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > phone joined SmartStick_AI by hand (no binding request at all) → Connected
+[SMARTSTICK] setup: permissions: location granted, nearby granted
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > phone joined SmartStick_AI by hand (no binding request at all) → Connected
+[SMARTSTICK] setup: the phone is already on SmartStick_AI: no Wi-Fi dialog needed
+
+stdout | tests/transport-native.test.ts > HttpTransport over the native bridge (Android path, v1 simple link) > reaches the stick Wi-Fi silently, streams unsigned telemetry and real JPEG frames
+[SMARTSTICK] link connecting: Joining SmartStick_AI…
+
+stdout | tests/transport-native.test.ts > HttpTransport over the native bridge (Android path, v1 simple link) > reaches the stick Wi-Fi silently, streams unsigned telemetry and real JPEG frames
+[SMARTSTICK] join ok (request)
+
+stdout | tests/transport-native.test.ts > HttpTransport over the native bridge (Android path, v1 simple link) > reaches the stick Wi-Fi silently, streams unsigned telemetry and real JPEG frames
+[SMARTSTICK] first telemetry packet #2 (430 B via native)
+[SMARTSTICK] link connected
+[INFO] device: CONNECTED { deviceId: 'AISS-NATIVE1' }
+
+stdout | tests/transport-native.test.ts > HttpTransport over the native bridge (Android path, v1 simple link) > reaches the stick Wi-Fi silently, streams unsigned telemetry and real JPEG frames
+[SMARTSTICK] link disconnected
+
+stdout | tests/transport-native.test.ts > HttpTransport over the native bridge (Android path, v1 simple link) > when Android will not say whether the stick is near, asks once directly (foreground)
+[SMARTSTICK] link connecting: Joining SmartStick_AI…
+
+stdout | tests/transport-native.test.ts > HttpTransport over the native bridge (Android path, v1 simple link) > when Android will not say whether the stick is near, asks once directly (foreground)
+[SMARTSTICK] join ok (request)
+
+stdout | tests/transport-native.test.ts > HttpTransport over the native bridge (Android path, v1 simple link) > when Android will not say whether the stick is near, asks once directly (foreground)
+[SMARTSTICK] first telemetry packet #7 (430 B via native)
+[SMARTSTICK] link connected
+[INFO] device: CONNECTED { deviceId: 'AISS-NATIVE1' }
+
+stdout | tests/transport-native.test.ts > HttpTransport over the native bridge (Android path, v1 simple link) > when Android will not say whether the stick is near, asks once directly (foreground)
+[SMARTSTICK] link disconnected
+
+stdout | tests/transport-native.test.ts > HttpTransport over the native bridge (Android path, v1 simple link) > stick out of range → reconnecting (no system sheet), then connects when it is back
+[SMARTSTICK] link connecting: Joining SmartStick_AI…
+
+stdout | tests/transport-native.test.ts > HttpTransport over the native bridge (Android path, v1 simple link) > stick out of range → reconnecting (no system sheet), then connects when it is back
+[SMARTSTICK] join failed (UNAVAILABLE)
+
+stdout | tests/transport-native.test.ts > HttpTransport over the native bridge (Android path, v1 simple link) > stick out of range → reconnecting (no system sheet), then connects when it is back
+[SMARTSTICK] link error: Looking for the stick’s Wi-Fi (SmartStick_AI). Switch the stick on and keep it close.
+[SMARTSTICK] link reconnecting: Looking for the stick’s Wi-Fi (SmartStick_AI). Switch the stick on and keep it close. · retrying in 1 s
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > phone joined SmartStick_AI by hand (no binding request at all) → Connected
+[SMARTSTICK] setup: stick AISS-4F2A1B, firmware 1.2.0, protocol v1, auth off
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > phone joined SmartStick_AI by hand (no binding request at all) → Connected
+[SMARTSTICK] setup: first telemetry packet #1 received
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > phone joined SmartStick_AI by hand (no binding request at all) → Connected
+[SMARTSTICK] setup: stick saved on this phone
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > phone joined SmartStick_AI by hand (no binding request at all) → Connected
+[SMARTSTICK] link connecting: Joining SmartStick_AI…
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > phone joined SmartStick_AI by hand (no binding request at all) → Connected
+[SMARTSTICK] join ok (bound)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > phone joined SmartStick_AI by hand (no binding request at all) → Connected
+[SMARTSTICK] first telemetry packet #2 (636 B via native/wifi)
+[SMARTSTICK] link connected
+[INFO] device: CONNECTED { deviceId: 'AISS-4F2A1B' }
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > phone joined SmartStick_AI by hand (no binding request at all) → Connected
+[SMARTSTICK] link disconnected
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > mobile data off, the stick is the default route and Android lists no 192.168.4.x network → Connected
+[SMARTSTICK] setup: asking for Location / Nearby devices permission (helps Android find the stick)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > mobile data off, the stick is the default route and Android lists no 192.168.4.x network → Connected
+[SMARTSTICK] setup: permissions: location granted, nearby granted
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > mobile data off, the stick is the default route and Android lists no 192.168.4.x network → Connected
+[SMARTSTICK] setup: the phone is already on SmartStick_AI: no Wi-Fi dialog needed
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > mobile data off, the stick is the default route and Android lists no 192.168.4.x network → Connected
+[SMARTSTICK] setup: stick AISS-4F2A1B, firmware 1.2.0, protocol v1, auth off
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > mobile data off, the stick is the default route and Android lists no 192.168.4.x network → Connected
+[SMARTSTICK] setup: first telemetry packet #1 received
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > mobile data off, the stick is the default route and Android lists no 192.168.4.x network → Connected
+[SMARTSTICK] setup: stick saved on this phone
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > mobile data off, the stick is the default route and Android lists no 192.168.4.x network → Connected
+[SMARTSTICK] link connecting: Joining SmartStick_AI…
+
+stdout | tests/assistantDestination.test.ts > the assistant can always set a destination > "Set destination to City Hospital" with no GPS: destination set, directions wait for GPS
+[LOCATION] acquire result { fresh: false, hasAny: false, ageS: null }
+[INFO] location: acquire result { fresh: false, hasAny: false, ageS: null }
+
+stdout | tests/assistantDestination.test.ts > the assistant can always set a destination > "Set destination to City Hospital" with no GPS: destination set, directions wait for GPS
+[INFO] voice navigation: destination set, waiting for GPS { placeId: 'pl_hosp' }
+[LOCATION] starting { request: false, platform: 'web', aissLocation: false }
+[INFO] location: starting { request: false, platform: 'web', aissLocation: false }
+
+stdout | tests/assistantDestination.test.ts > the assistant can always set a destination > search without GPS still offers a place; yes → start_navigation waits for GPS (no "unavailable")
+[LOCATION] acquiring a fresh position { maxAgeMs: 60000, timeoutMs: 3000 }
+[INFO] location: acquiring a fresh position { maxAgeMs: 60000, timeoutMs: 3000 }
+
+stdout | tests/assistantDestination.test.ts > the assistant can always set a destination > search without GPS still offers a place; yes → start_navigation waits for GPS (no "unavailable")
+[LOCATION] starting { request: false, platform: 'web', aissLocation: false }
+[INFO] location: starting { request: false, platform: 'web', aissLocation: false }
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > mobile data off, the stick is the default route and Android lists no 192.168.4.x network → Connected
+[SMARTSTICK] join failed (UNAVAILABLE)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > mobile data off, the stick is the default route and Android lists no 192.168.4.x network → Connected
+[SMARTSTICK] reached the stick without a binding (native-default)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > mobile data off, the stick is the default route and Android lists no 192.168.4.x network → Connected
+[SMARTSTICK] first telemetry packet #2 (636 B via native-default/default)
+[SMARTSTICK] link connected
+[INFO] device: CONNECTED { deviceId: 'AISS-4F2A1B' }
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > mobile data off, the stick is the default route and Android lists no 192.168.4.x network → Connected
+[SMARTSTICK] link disconnected
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > Wi-Fi lost mid-session → Reconnecting (with a reason) → re-bound → data flows again
+[SMARTSTICK] setup: asking for Location / Nearby devices permission (helps Android find the stick)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > Wi-Fi lost mid-session → Reconnecting (with a reason) → re-bound → data flows again
+[SMARTSTICK] setup: permissions: location granted, nearby granted
+
+stdout | tests/transport-native.test.ts > HttpTransport over the native bridge (Android path, v1 simple link) > stick out of range → reconnecting (no system sheet), then connects when it is back
+[SMARTSTICK] join ok (request)
+
+stdout | tests/transport-native.test.ts > HttpTransport over the native bridge (Android path, v1 simple link) > stick out of range → reconnecting (no system sheet), then connects when it is back
+[SMARTSTICK] first telemetry packet #9 (430 B via native)
+[SMARTSTICK] link connected
+[INFO] device: CONNECTED { deviceId: 'AISS-NATIVE1' }
+
+stdout | tests/transport-native.test.ts > HttpTransport over the native bridge (Android path, v1 simple link) > stick out of range → reconnecting (no system sheet), then connects when it is back
+[SMARTSTICK] link disconnected
+
+stdout | tests/transport-native.test.ts > HttpTransport over the native bridge (Android path, v1 simple link) > "not bound" (Wi-Fi lost) triggers an immediate re-bind instead of waiting for missed packets
+[SMARTSTICK] link connecting: Joining SmartStick_AI…
+
+stdout | tests/transport-native.test.ts > HttpTransport over the native bridge (Android path, v1 simple link) > "not bound" (Wi-Fi lost) triggers an immediate re-bind instead of waiting for missed packets
+[SMARTSTICK] join ok (request)
+
+stdout | tests/transport-native.test.ts > HttpTransport over the native bridge (Android path, v1 simple link) > "not bound" (Wi-Fi lost) triggers an immediate re-bind instead of waiting for missed packets
+[SMARTSTICK] first telemetry packet #11 (431 B via native)
+[SMARTSTICK] link connected
+[INFO] device: CONNECTED { deviceId: 'AISS-NATIVE1' }
+
+stdout | tests/transport-native.test.ts > HttpTransport over the native bridge (Android path, v1 simple link) > "not bound" (Wi-Fi lost) triggers an immediate re-bind instead of waiting for missed packets
+[SMARTSTICK] link error: Reconnecting to the stick’s Wi-Fi
+[SMARTSTICK] link reconnecting: Reconnecting to the stick’s Wi-Fi · retrying in 1 s
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > Wi-Fi lost mid-session → Reconnecting (with a reason) → re-bound → data flows again
+[SMARTSTICK] setup: not on the stick's Wi-Fi yet (Setup request failed: connect timed out)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > Wi-Fi lost mid-session → Reconnecting (with a reason) → re-bound → data flows again
+[SMARTSTICK] setup: Wi-Fi on
+[SMARTSTICK] setup: asking Android to join SmartStick_AI (approve "Connect" if Android asks)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > Wi-Fi lost mid-session → Reconnecting (with a reason) → re-bound → data flows again
+[SMARTSTICK] setup: joined SmartStick_AI (request)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > Wi-Fi lost mid-session → Reconnecting (with a reason) → re-bound → data flows again
+[SMARTSTICK] setup: stick AISS-4F2A1B, firmware 1.2.0, protocol v1, auth off
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > Wi-Fi lost mid-session → Reconnecting (with a reason) → re-bound → data flows again
+[SMARTSTICK] setup: first telemetry packet #1 received
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > Wi-Fi lost mid-session → Reconnecting (with a reason) → re-bound → data flows again
+[SMARTSTICK] setup: stick saved on this phone
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > Wi-Fi lost mid-session → Reconnecting (with a reason) → re-bound → data flows again
+[SMARTSTICK] link connecting: Joining SmartStick_AI…
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > Wi-Fi lost mid-session → Reconnecting (with a reason) → re-bound → data flows again
+[SMARTSTICK] join ok (bound)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > Wi-Fi lost mid-session → Reconnecting (with a reason) → re-bound → data flows again
+[SMARTSTICK] first telemetry packet #2 (636 B via native/bound)
+[SMARTSTICK] link connected
+[INFO] device: CONNECTED { deviceId: 'AISS-4F2A1B' }
+
+stdout | tests/transport-native.test.ts > HttpTransport over the native bridge (Android path, v1 simple link) > "not bound" (Wi-Fi lost) triggers an immediate re-bind instead of waiting for missed packets
+[SMARTSTICK] join ok (request)
+
+stdout | tests/transport-native.test.ts > HttpTransport over the native bridge (Android path, v1 simple link) > "not bound" (Wi-Fi lost) triggers an immediate re-bind instead of waiting for missed packets
+[SMARTSTICK] first telemetry packet #13 (431 B via native)
+[SMARTSTICK] link connected
+[INFO] device: CONNECTED { deviceId: 'AISS-NATIVE1' }
+
+stdout | tests/transport-native.test.ts > HttpTransport over the native bridge (Android path, v1 simple link) > "not bound" (Wi-Fi lost) triggers an immediate re-bind instead of waiting for missed packets
+[SMARTSTICK] link disconnected
+
+ ✓ tests/transport-native.test.ts (4 tests) 2398ms
+   ✓ HttpTransport over the native bridge (Android path, v1 simple link) (4)
+     ✓ stick out of range → reconnecting (no system sheet), then connects when it is back 1156ms
+     ✓ "not bound" (Wi-Fi lost) triggers an immediate re-bind instead of waiting for missed packets 1073ms
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > Wi-Fi lost mid-session → Reconnecting (with a reason) → re-bound → data flows again
+[SMARTSTICK] link error: Reconnecting to the stick’s Wi-Fi
+[SMARTSTICK] link reconnecting: Reconnecting to the stick’s Wi-Fi · retrying in 1 s
+
+stderr | tests/integration-contracts.test.ts > user-facing errors and logs > turns Firebase codes into plain language
+[ERROR] user-facing error { raw: 'permission-denied Missing or insufficient permissions.' }
+[ERROR] user-facing error { raw: ' functions/unavailable' }
+
+ ✓ tests/integration-contracts.test.ts (22 tests) 371ms
+   ✓ mock transport honours the ECU command contract (1)
+     ✓ is idempotent and rejects stale config versions 362ms
+stdout | tests/location.test.ts > Android native location (AissLocation) > asks once, starts LocationManager updates and goes live on the first fix
+[LOCATION] starting { request: true, platform: 'android', aissLocation: true }
+[INFO] location: starting { request: true, platform: 'android', aissLocation: true }
+
+stdout | tests/location.test.ts > Android native location (AissLocation) > asks once, starts LocationManager updates and goes live on the first fix
+[LOCATION] asking for permission { upgrade: false }
+[INFO] location: asking for permission { upgrade: false }
+
+stdout | tests/location.test.ts > Android native location (AissLocation) > asks once, starts LocationManager updates and goes live on the first fix
+[LOCATION] permission answer { state: 'granted', precise: true, coarse: true }
+[INFO] location: permission answer { state: 'granted', precise: true, coarse: true }
+
+stdout | tests/location.test.ts > Android native location (AissLocation) > asks once, starts LocationManager updates and goes live on the first fix
+[LOCATION] AissLocation started {
+  started: true,
+  reason: null,
+  enabled: true,
+  gps: true,
+  network: true,
+  providers: [ 'gps', 'network' ]
+}
+[INFO] location: AissLocation started {
+  started: true,
+  reason: null,
+  enabled: true,
+  gps: true,
+  network: true,
+  providers: [ 'gps', 'network' ]
+}
+
+stdout | tests/location.test.ts > Android native location (AissLocation) > asks once, starts LocationManager updates and goes live on the first fix
+[LOCATION] first live position from android { accuracyM: 8 }
+[INFO] location: first live position from android { accuracyM: 8 }
+
+stdout | tests/location.test.ts > Android native location (AissLocation) > "Approximate" (coarse-only) grant counts as granted; poor accuracy, flagged not precise
+[LOCATION] starting { request: true, platform: 'android', aissLocation: true }
+[INFO] location: starting { request: true, platform: 'android', aissLocation: true }
+
+stdout | tests/location.test.ts > Android native location (AissLocation) > "Approximate" (coarse-only) grant counts as granted; poor accuracy, flagged not precise
+[LOCATION] asking for permission { upgrade: false }
+[INFO] location: asking for permission { upgrade: false }
+
+stdout | tests/location.test.ts > Android native location (AissLocation) > "Approximate" (coarse-only) grant counts as granted; poor accuracy, flagged not precise
+[LOCATION] permission answer { state: 'granted', precise: false, coarse: true }
+[INFO] location: permission answer { state: 'granted', precise: false, coarse: true }
+
+stdout | tests/location.test.ts > Android native location (AissLocation) > "Approximate" (coarse-only) grant counts as granted; poor accuracy, flagged not precise
+[LOCATION] AissLocation started {
+  started: true,
+  reason: null,
+  enabled: true,
+  gps: true,
+  network: true,
+  providers: [ 'gps', 'network' ]
+}
+[INFO] location: AissLocation started {
+  started: true,
+  reason: null,
+  enabled: true,
+  gps: true,
+  network: true,
+  providers: [ 'gps', 'network' ]
+}
+
+stdout | tests/location.test.ts > Android native location (AissLocation) > "Approximate" (coarse-only) grant counts as granted; poor accuracy, flagged not precise
+[LOCATION] first live position from android { accuracyM: 1800 }
+[INFO] location: first live position from android { accuracyM: 1800 }
+
+stdout | tests/location.test.ts > Android native location (AissLocation) > already-granted permission: no dialog at all
+[LOCATION] starting { request: true, platform: 'android', aissLocation: true }
+[INFO] location: starting { request: true, platform: 'android', aissLocation: true }
+
+stdout | tests/location.test.ts > Android native location (AissLocation) > already-granted permission: no dialog at all
+[LOCATION] AissLocation started {
+  started: true,
+  reason: null,
+  enabled: true,
+  gps: true,
+  network: true,
+  providers: [ 'gps', 'network' ]
+}
+[INFO] location: AissLocation started {
+  started: true,
+  reason: null,
+  enabled: true,
+  gps: true,
+  network: true,
+  providers: [ 'gps', 'network' ]
+}
+
+stdout | tests/location.test.ts > Android native location (AissLocation) > "Don't ask again" → denied with an Open settings action; no watch started
+[LOCATION] starting { request: true, platform: 'android', aissLocation: true }
+[INFO] location: starting { request: true, platform: 'android', aissLocation: true }
+
+stdout | tests/location.test.ts > Android native location (AissLocation) > "Don't ask again" → denied with an Open settings action; no watch started
+[LOCATION] asking for permission { upgrade: false }
+[INFO] location: asking for permission { upgrade: false }
+
+stdout | tests/location.test.ts > Android native location (AissLocation) > "Don't ask again" → denied with an Open settings action; no watch started
+[LOCATION] permission answer { state: 'denied', precise: false, coarse: false }
+[INFO] location: permission answer { state: 'denied', precise: false, coarse: false }
+
+stdout | tests/location.test.ts > Android native location (AissLocation) > a cancelled dialog (another permission prompt was open) is retried once
+[LOCATION] starting { request: true, platform: 'android', aissLocation: true }
+[INFO] location: starting { request: true, platform: 'android', aissLocation: true }
+
+stdout | tests/location.test.ts > Android native location (AissLocation) > a cancelled dialog (another permission prompt was open) is retried once
+[LOCATION] asking for permission { upgrade: false }
+[INFO] location: asking for permission { upgrade: false }
+
+stdout | tests/location.test.ts > Android native location (AissLocation) > a cancelled dialog (another permission prompt was open) is retried once
+[LOCATION] permission answer { state: 'granted', precise: true, coarse: true }
+[INFO] location: permission answer { state: 'granted', precise: true, coarse: true }
+
+stdout | tests/location.test.ts > Android native location (AissLocation) > a cancelled dialog (another permission prompt was open) is retried once
+[LOCATION] AissLocation started {
+  started: true,
+  reason: null,
+  enabled: true,
+  gps: true,
+  network: true,
+  providers: [ 'gps', 'network' ]
+}
+[INFO] location: AissLocation started {
+  started: true,
+  reason: null,
+  enabled: true,
+  gps: true,
+  network: true,
+  providers: [ 'gps', 'network' ]
+}
+
+stdout | tests/location.test.ts > Android native location (AissLocation) > Location switch off → "Turn on" (not "permission denied"); switching on resumes
+[LOCATION] starting { request: true, platform: 'android', aissLocation: true }
+[INFO] location: starting { request: true, platform: 'android', aissLocation: true }
+
+stdout | tests/location.test.ts > Android native location (AissLocation) > Location switch off → "Turn on" (not "permission denied"); switching on resumes
+[LOCATION] AissLocation started {
+  started: true,
+  reason: null,
+  enabled: false,
+  gps: false,
+  network: false,
+  providers: [ 'gps', 'network' ]
+}
+[INFO] location: AissLocation started {
+  started: true,
+  reason: null,
+  enabled: false,
+  gps: false,
+  network: false,
+  providers: [ 'gps', 'network' ]
+}
+
+stdout | tests/location.test.ts > Android native location (AissLocation) > Location switch off → "Turn on" (not "permission denied"); switching on resumes
+[LOCATION] first live position from android { accuracyM: 8 }
+[INFO] location: first live position from android { accuracyM: 8 }
+
+stdout | tests/location.test.ts > Android native location (AissLocation) > provider disabled while walking → off; old cached fix is kept but not live
+[LOCATION] starting { request: true, platform: 'android', aissLocation: true }
+[INFO] location: starting { request: true, platform: 'android', aissLocation: true }
+
+stdout | tests/location.test.ts > Android native location (AissLocation) > provider disabled while walking → off; old cached fix is kept but not live
+[LOCATION] AissLocation started {
+  started: true,
+  reason: null,
+  enabled: true,
+  gps: true,
+  network: true,
+  providers: [ 'gps', 'network' ]
+}
+[INFO] location: AissLocation started {
+  started: true,
+  reason: null,
+  enabled: true,
+  gps: true,
+  network: true,
+  providers: [ 'gps', 'network' ]
+}
+
+stdout | tests/location.test.ts > Android native location (AissLocation) > provider disabled while walking → off; old cached fix is kept but not live
+[LOCATION] first live position from android { accuracyM: 8 }
+[INFO] location: first live position from android { accuracyM: 8 }
+
+stdout | tests/location.test.ts > Android native location (AissLocation) > a cached last-known fix is shown as stale and never fed to navigation
+[LOCATION] starting { request: true, platform: 'android', aissLocation: true }
+[INFO] location: starting { request: true, platform: 'android', aissLocation: true }
+
+stdout | tests/location.test.ts > Android native location (AissLocation) > a cached last-known fix is shown as stale and never fed to navigation
+[LOCATION] AissLocation started {
+  started: true,
+  reason: null,
+  enabled: true,
+  gps: true,
+  network: true,
+  providers: [ 'gps', 'network' ]
+}
+[INFO] location: AissLocation started {
+  started: true,
+  reason: null,
+  enabled: true,
+  gps: true,
+  network: true,
+  providers: [ 'gps', 'network' ]
+}
+
+stdout | tests/location.test.ts > Android native location (AissLocation) > concurrent starts (boot + screen + onboarding) start one watch
+[LOCATION] starting { request: true, platform: 'android', aissLocation: true }
+[INFO] location: starting { request: true, platform: 'android', aissLocation: true }
+
+stdout | tests/location.test.ts > Android native location (AissLocation) > concurrent starts (boot + screen + onboarding) start one watch
+[LOCATION] AissLocation started {
+  started: true,
+  reason: null,
+  enabled: true,
+  gps: true,
+  network: true,
+  providers: [ 'gps', 'network' ]
+}
+[INFO] location: AissLocation started {
+  started: true,
+  reason: null,
+  enabled: true,
+  gps: true,
+  network: true,
+  providers: [ 'gps', 'network' ]
+}
+
+stdout | tests/location.test.ts > Android native location (AissLocation) > permission granted later in Settings is picked up on resume without a new dialog
+[LOCATION] starting { request: true, platform: 'android', aissLocation: true }
+[INFO] location: starting { request: true, platform: 'android', aissLocation: true }
+
+stdout | tests/location.test.ts > Android native location (AissLocation) > permission granted later in Settings is picked up on resume without a new dialog
+[LOCATION] asking for permission { upgrade: false }
+[INFO] location: asking for permission { upgrade: false }
+
+stdout | tests/location.test.ts > Android native location (AissLocation) > permission granted later in Settings is picked up on resume without a new dialog
+[LOCATION] permission answer { state: 'denied', precise: false, coarse: false }
+[INFO] location: permission answer { state: 'denied', precise: false, coarse: false }
+
+stdout | tests/location.test.ts > Android native location (AissLocation) > permission granted later in Settings is picked up on resume without a new dialog
+[LOCATION] starting { request: false, platform: 'android', aissLocation: true }
+[INFO] location: starting { request: false, platform: 'android', aissLocation: true }
+
+stdout | tests/location.test.ts > Android native location (AissLocation) > permission granted later in Settings is picked up on resume without a new dialog
+[LOCATION] AissLocation started {
+  started: true,
+  reason: null,
+  enabled: true,
+  gps: true,
+  network: true,
+  providers: [ 'gps', 'network' ]
+}
+[INFO] location: AissLocation started {
+  started: true,
+  reason: null,
+  enabled: true,
+  gps: true,
+  network: true,
+  providers: [ 'gps', 'network' ]
+}
+
+stdout | tests/location.test.ts > Android native location (AissLocation) > resume never re-prompts after a dismissed dialog
+[LOCATION] starting { request: true, platform: 'android', aissLocation: true }
+[INFO] location: starting { request: true, platform: 'android', aissLocation: true }
+
+stdout | tests/location.test.ts > Android native location (AissLocation) > resume never re-prompts after a dismissed dialog
+[LOCATION] asking for permission { upgrade: false }
+[INFO] location: asking for permission { upgrade: false }
+
+stdout | tests/location.test.ts > Android native location (AissLocation) > resume never re-prompts after a dismissed dialog
+[LOCATION] permission answer { state: 'prompt', precise: false, coarse: false }
+[INFO] location: permission answer { state: 'prompt', precise: false, coarse: false }
+
+stdout | tests/location.test.ts > Android native location (AissLocation) > resume never re-prompts after a dismissed dialog
+[LOCATION] starting { request: false, platform: 'android', aissLocation: true }
+[INFO] location: starting { request: false, platform: 'android', aissLocation: true }
+
+stdout | tests/location.test.ts > Android native location (AissLocation) > explicit "Allow" asks again and starts
+[LOCATION] starting { request: true, platform: 'android', aissLocation: true }
+[INFO] location: starting { request: true, platform: 'android', aissLocation: true }
+
+stdout | tests/location.test.ts > Android native location (AissLocation) > explicit "Allow" asks again and starts
+[LOCATION] asking for permission { upgrade: false }
+[INFO] location: asking for permission { upgrade: false }
+
+stdout | tests/location.test.ts > Android native location (AissLocation) > explicit "Allow" asks again and starts
+[LOCATION] permission answer { state: 'prompt', precise: false, coarse: false }
+[INFO] location: permission answer { state: 'prompt', precise: false, coarse: false }
+
+stdout | tests/location.test.ts > Android native location (AissLocation) > explicit "Allow" asks again and starts
+[LOCATION] asking for permission { upgrade: false }
+[INFO] location: asking for permission { upgrade: false }
+
+stdout | tests/location.test.ts > Android native location (AissLocation) > explicit "Allow" asks again and starts
+[LOCATION] permission answer { state: 'granted', precise: false, coarse: true }
+[INFO] location: permission answer { state: 'granted', precise: false, coarse: true }
+
+stdout | tests/location.test.ts > Android native location (AissLocation) > explicit "Allow" asks again and starts
+[LOCATION] starting { request: false, platform: 'android', aissLocation: true }
+[INFO] location: starting { request: false, platform: 'android', aissLocation: true }
+
+stdout | tests/location.test.ts > Android native location (AissLocation) > explicit "Allow" asks again and starts
+[LOCATION] AissLocation started {
+  started: true,
+  reason: null,
+  enabled: true,
+  gps: true,
+  network: true,
+  providers: [ 'gps', 'network' ]
+}
+[INFO] location: AissLocation started {
+  started: true,
+  reason: null,
+  enabled: true,
+  gps: true,
+  network: true,
+  providers: [ 'gps', 'network' ]
+}
+
+stdout | tests/location.test.ts > Android native location (AissLocation) > stopLocation (sign-out) stops native updates and forgets the position
+[LOCATION] starting { request: true, platform: 'android', aissLocation: true }
+[INFO] location: starting { request: true, platform: 'android', aissLocation: true }
+
+stdout | tests/location.test.ts > Android native location (AissLocation) > stopLocation (sign-out) stops native updates and forgets the position
+[LOCATION] AissLocation started {
+  started: true,
+  reason: null,
+  enabled: true,
+  gps: true,
+  network: true,
+  providers: [ 'gps', 'network' ]
+}
+[INFO] location: AissLocation started {
+  started: true,
+  reason: null,
+  enabled: true,
+  gps: true,
+  network: true,
+  providers: [ 'gps', 'network' ]
+}
+
+stdout | tests/location.test.ts > Android native location (AissLocation) > stopLocation (sign-out) stops native updates and forgets the position
+[LOCATION] first live position from android { accuracyM: 8 }
+[INFO] location: first live position from android { accuracyM: 8 }
+
+stdout | tests/location.test.ts > Android native location (AissLocation) > ignores impossible coordinates (0,0) and out-of-order fixes
+[LOCATION] starting { request: true, platform: 'android', aissLocation: true }
+[INFO] location: starting { request: true, platform: 'android', aissLocation: true }
+
+stdout | tests/location.test.ts > Android native location (AissLocation) > ignores impossible coordinates (0,0) and out-of-order fixes
+[LOCATION] AissLocation started {
+  started: true,
+  reason: null,
+  enabled: true,
+  gps: true,
+  network: true,
+  providers: [ 'gps', 'network' ]
+}
+[INFO] location: AissLocation started {
+  started: true,
+  reason: null,
+  enabled: true,
+  gps: true,
+  network: true,
+  providers: [ 'gps', 'network' ]
+}
+
+stdout | tests/location.test.ts > Android native location (AissLocation) > ignores impossible coordinates (0,0) and out-of-order fixes
+[LOCATION] first live position from android { accuracyM: 8 }
+[INFO] location: first live position from android { accuracyM: 8 }
+
+stdout | tests/location.test.ts > fallbacks > old APK without AissLocation: Capacitor Geolocation, coarse grant accepted
+[LOCATION] starting { request: true, platform: 'android', aissLocation: false }
+[INFO] location: starting { request: true, platform: 'android', aissLocation: false }
+
+stdout | tests/location.test.ts > fallbacks > old APK without AissLocation: Capacitor Geolocation, coarse grant accepted
+[LOCATION] first live position from capacitor { accuracyM: 12 }
+[INFO] location: first live position from capacitor { accuracyM: 12 }
+
+stdout | tests/location.test.ts > fallbacks > old APK, Location switch off: checkPermissions rejects → "off", not "denied"
+[LOCATION] starting { request: true, platform: 'android', aissLocation: false }
+[INFO] location: starting { request: true, platform: 'android', aissLocation: false }
+
+stdout | tests/location.test.ts > fallbacks > web: never calls the unimplemented requestPermissions; browser denial → denied
+[LOCATION] starting { request: true, platform: 'web', aissLocation: false }
+[INFO] location: starting { request: true, platform: 'web', aissLocation: false }
+
+stdout | tests/location.test.ts > robustness: a phone that allows location but delivers nothing > boot and setup asking at the same time share ONE dialog and both see the grant
+[LOCATION] starting { request: true, platform: 'android', aissLocation: true }
+[INFO] location: starting { request: true, platform: 'android', aissLocation: true }
+
+stdout | tests/location.test.ts > robustness: a phone that allows location but delivers nothing > boot and setup asking at the same time share ONE dialog and both see the grant
+[LOCATION] asking for permission { upgrade: false }
+[INFO] location: asking for permission { upgrade: false }
+
+stdout | tests/location.test.ts > robustness: a phone that allows location but delivers nothing > boot and setup asking at the same time share ONE dialog and both see the grant
+[LOCATION] permission answer { state: 'granted', precise: true, coarse: true }
+[INFO] location: permission answer { state: 'granted', precise: true, coarse: true }
+
+stdout | tests/location.test.ts > robustness: a phone that allows location but delivers nothing > boot and setup asking at the same time share ONE dialog and both see the grant
+[LOCATION] AissLocation started {
+  started: true,
+  reason: null,
+  enabled: true,
+  gps: true,
+  network: true,
+  providers: [ 'gps', 'network' ]
+}
+[INFO] location: AissLocation started {
+  started: true,
+  reason: null,
+  enabled: true,
+  gps: true,
+  network: true,
+  providers: [ 'gps', 'network' ]
+}
+
+stdout | tests/location.test.ts > robustness: a phone that allows location but delivers nothing > a native start() that never answers falls back to @capacitor/geolocation
+[LOCATION] starting { request: true, platform: 'android', aissLocation: true }
+[INFO] location: starting { request: true, platform: 'android', aissLocation: true }
+
+stdout | tests/location.test.ts > robustness: a phone that allows location but delivers nothing > a native start() that never answers falls back to @capacitor/geolocation
+[LOCATION] AissLocation start failed { error: 'start timed out' }
+[INFO] location: AissLocation start failed { error: 'start timed out' }
+
+stdout | tests/location.test.ts > robustness: a phone that allows location but delivers nothing > a native start() that never answers falls back to @capacitor/geolocation
+[LOCATION] first live position from capacitor { accuracyM: 10 }
+[INFO] location: first live position from capacitor { accuracyM: 10 }
+
+stdout | tests/location.test.ts > robustness: a phone that allows location but delivers nothing > a lost permission answer never blocks later callers forever
+[LOCATION] starting { request: true, platform: 'android', aissLocation: true }
+[INFO] location: starting { request: true, platform: 'android', aissLocation: true }
+
+stdout | tests/location.test.ts > robustness: a phone that allows location but delivers nothing > a lost permission answer never blocks later callers forever
+[LOCATION] asking for permission { upgrade: false }
+[INFO] location: asking for permission { upgrade: false }
+
+stdout | tests/location.test.ts > robustness: a phone that allows location but delivers nothing > a lost permission answer never blocks later callers forever
+[LOCATION] starting { request: false, platform: 'android', aissLocation: true }
+[INFO] location: starting { request: false, platform: 'android', aissLocation: true }
+
+stdout | tests/location.test.ts > robustness: a phone that allows location but delivers nothing > a lost permission answer never blocks later callers forever
+[LOCATION] AissLocation started {
+  started: true,
+  reason: null,
+  enabled: true,
+  gps: true,
+  network: true,
+  providers: [ 'gps', 'network' ]
+}
+[INFO] location: AissLocation started {
+  started: true,
+  reason: null,
+  enabled: true,
+  gps: true,
+  network: true,
+  providers: [ 'gps', 'network' ]
+}
+
+stdout | tests/location.test.ts > robustness: a phone that allows location but delivers nothing > AissLocation silent for 10 s → Play Services + WebView fallbacks; whichever delivers is used
+[LOCATION] starting { request: true, platform: 'android', aissLocation: true }
+[INFO] location: starting { request: true, platform: 'android', aissLocation: true }
+
+stdout | tests/location.test.ts > robustness: a phone that allows location but delivers nothing > AissLocation silent for 10 s → Play Services + WebView fallbacks; whichever delivers is used
+[LOCATION] AissLocation started {
+  started: true,
+  reason: null,
+  enabled: true,
+  gps: true,
+  network: true,
+  providers: [ 'gps', 'network' ]
+}
+[INFO] location: AissLocation started {
+  started: true,
+  reason: null,
+  enabled: true,
+  gps: true,
+  network: true,
+  providers: [ 'gps', 'network' ]
+}
+
+stdout | tests/location.test.ts > robustness: a phone that allows location but delivers nothing > AissLocation silent for 10 s → Play Services + WebView fallbacks; whichever delivers is used
+[LOCATION] no live position from AissLocation after 10 s: starting fallbacks 
+[INFO] location: no live position from AissLocation after 10 s: starting fallbacks 
+
+stdout | tests/location.test.ts > robustness: a phone that allows location but delivers nothing > AissLocation silent for 10 s → Play Services + WebView fallbacks; whichever delivers is used
+[LOCATION] fallback @capacitor/geolocation started 
+[INFO] location: fallback @capacitor/geolocation started 
+
+stdout | tests/location.test.ts > robustness: a phone that allows location but delivers nothing > AissLocation silent for 10 s → Play Services + WebView fallbacks; whichever delivers is used
+[LOCATION] fallback WebView geolocation started 
+[INFO] location: fallback WebView geolocation started 
+
+stdout | tests/location.test.ts > robustness: a phone that allows location but delivers nothing > AissLocation silent for 10 s → Play Services + WebView fallbacks; whichever delivers is used
+[LOCATION] first live position from webview { accuracyM: 10 }
+[INFO] location: first live position from webview { accuracyM: 10 }
+
+stdout | tests/location.test.ts > robustness: a phone that allows location but delivers nothing > Approximate-only grant: fallbacks never open a permission dialog (no high accuracy, no WebView)
+[LOCATION] starting { request: true, platform: 'android', aissLocation: true }
+[INFO] location: starting { request: true, platform: 'android', aissLocation: true }
+
+stdout | tests/location.test.ts > robustness: a phone that allows location but delivers nothing > Approximate-only grant: fallbacks never open a permission dialog (no high accuracy, no WebView)
+[LOCATION] AissLocation started {
+  started: true,
+  reason: null,
+  enabled: true,
+  gps: true,
+  network: true,
+  providers: [ 'gps', 'network' ]
+}
+[INFO] location: AissLocation started {
+  started: true,
+  reason: null,
+  enabled: true,
+  gps: true,
+  network: true,
+  providers: [ 'gps', 'network' ]
+}
+
+stdout | tests/location.test.ts > robustness: a phone that allows location but delivers nothing > Approximate-only grant: fallbacks never open a permission dialog (no high accuracy, no WebView)
+[LOCATION] no live position from AissLocation after 10 s: starting fallbacks 
+[INFO] location: no live position from AissLocation after 10 s: starting fallbacks 
+
+stdout | tests/location.test.ts > robustness: a phone that allows location but delivers nothing > Approximate-only grant: fallbacks never open a permission dialog (no high accuracy, no WebView)
+[LOCATION] fallback @capacitor/geolocation started 
+[INFO] location: fallback @capacitor/geolocation started 
+
+stdout | tests/location.test.ts > robustness: a phone that allows location but delivers nothing > Approximate-only grant: fallbacks never open a permission dialog (no high accuracy, no WebView)
+[LOCATION] fallback WebView geolocation skipped (no precise permission; it would open a dialog) 
+[INFO] location: fallback WebView geolocation skipped (no precise permission; it would open a dialog) 
+
+stdout | tests/location.test.ts > robustness: a phone that allows location but delivers nothing > no fallback when native delivers in time
+[LOCATION] starting { request: true, platform: 'android', aissLocation: true }
+[INFO] location: starting { request: true, platform: 'android', aissLocation: true }
+
+stdout | tests/location.test.ts > robustness: a phone that allows location but delivers nothing > no fallback when native delivers in time
+[LOCATION] AissLocation started {
+  started: true,
+  reason: null,
+  enabled: true,
+  gps: true,
+  network: true,
+  providers: [ 'gps', 'network' ]
+}
+[INFO] location: AissLocation started {
+  started: true,
+  reason: null,
+  enabled: true,
+  gps: true,
+  network: true,
+  providers: [ 'gps', 'network' ]
+}
+
+stdout | tests/location.test.ts > robustness: a phone that allows location but delivers nothing > no fallback when native delivers in time
+[LOCATION] first live position from android { accuracyM: 8 }
+[INFO] location: first live position from android { accuracyM: 8 }
+
+stdout | tests/location.test.ts > robustness: a phone that allows location but delivers nothing > watchdog: permission granted elsewhere without a resume event is picked up
+[LOCATION] starting { request: true, platform: 'android', aissLocation: true }
+[INFO] location: starting { request: true, platform: 'android', aissLocation: true }
+
+stdout | tests/location.test.ts > robustness: a phone that allows location but delivers nothing > watchdog: permission granted elsewhere without a resume event is picked up
+[LOCATION] asking for permission { upgrade: false }
+[INFO] location: asking for permission { upgrade: false }
+
+stdout | tests/location.test.ts > robustness: a phone that allows location but delivers nothing > watchdog: permission granted elsewhere without a resume event is picked up
+[LOCATION] permission answer { state: 'prompt', precise: false, coarse: false }
+[INFO] location: permission answer { state: 'prompt', precise: false, coarse: false }
+
+stdout | tests/location.test.ts > robustness: a phone that allows location but delivers nothing > watchdog: permission granted elsewhere without a resume event is picked up
+[LOCATION] starting { request: false, platform: 'android', aissLocation: true }
+[INFO] location: starting { request: false, platform: 'android', aissLocation: true }
+
+stdout | tests/location.test.ts > robustness: a phone that allows location but delivers nothing > watchdog: permission granted elsewhere without a resume event is picked up
+[LOCATION] AissLocation started {
+  started: true,
+  reason: null,
+  enabled: true,
+  gps: true,
+  network: true,
+  providers: [ 'gps', 'network' ]
+}
+[INFO] location: AissLocation started {
+  started: true,
+  reason: null,
+  enabled: true,
+  gps: true,
+  network: true,
+  providers: [ 'gps', 'network' ]
+}
+
+stdout | tests/location.test.ts > robustness: a phone that allows location but delivers nothing > a fix stamped in the future (wrong GPS clock) does not block later fixes
+[LOCATION] first live position from capacitor { accuracyM: 5 }
+[INFO] location: first live position from capacitor { accuracyM: 5 }
+
+stdout | tests/location.test.ts > robustness: a phone that allows location but delivers nothing > a coarse fix from the other source does not replace a fresh precise one
+[LOCATION] first live position from android { accuracyM: 5 }
+[INFO] location: first live position from android { accuracyM: 5 }
+
+stdout | tests/location.test.ts > acquireFix (SOS text) > a recent fix is used at once
+[LOCATION] starting { request: true, platform: 'android', aissLocation: true }
+[INFO] location: starting { request: true, platform: 'android', aissLocation: true }
+
+stdout | tests/location.test.ts > acquireFix (SOS text) > a recent fix is used at once
+[LOCATION] AissLocation started {
+  started: true,
+  reason: null,
+  enabled: true,
+  gps: true,
+  network: true,
+  providers: [ 'gps', 'network' ]
+}
+[INFO] location: AissLocation started {
+  started: true,
+  reason: null,
+  enabled: true,
+  gps: true,
+  network: true,
+  providers: [ 'gps', 'network' ]
+}
+
+stdout | tests/location.test.ts > acquireFix (SOS text) > a recent fix is used at once
+[LOCATION] first live position from android { accuracyM: 8 }
+[INFO] location: first live position from android { accuracyM: 8 }
+
+stdout | tests/location.test.ts > acquireFix (SOS text) > no fix yet: asks the native one-shot for a fresh one
+[LOCATION] acquiring a fresh position { maxAgeMs: 120000, timeoutMs: 3000 }
+[INFO] location: acquiring a fresh position { maxAgeMs: 120000, timeoutMs: 3000 }
+[LOCATION] starting { request: false, platform: 'android', aissLocation: true }
+[INFO] location: starting { request: false, platform: 'android', aissLocation: true }
+
+stdout | tests/location.test.ts > acquireFix (SOS text) > no fix yet: asks the native one-shot for a fresh one
+[LOCATION] acquire result { fresh: true, hasAny: true, ageS: 0 }
+[INFO] location: acquire result { fresh: true, hasAny: true, ageS: 0 }
+[LOCATION] first live position from android { accuracyM: 40 }
+[INFO] location: first live position from android { accuracyM: 40 }
+
+stdout | tests/location.test.ts > acquireFix (SOS text) > no fix yet: asks the native one-shot for a fresh one
+[LOCATION] AissLocation started {
+  started: true,
+  reason: null,
+  enabled: true,
+  gps: true,
+  network: true,
+  providers: [ 'gps', 'network' ]
+}
+[INFO] location: AissLocation started {
+  started: true,
+  reason: null,
+  enabled: true,
+  gps: true,
+  network: true,
+  providers: [ 'gps', 'network' ]
+}
+
+stdout | tests/location.test.ts > acquireFix (SOS text) > Play Services answers when the native one-shot cannot
+[LOCATION] acquiring a fresh position { maxAgeMs: 120000, timeoutMs: 3000 }
+[INFO] location: acquiring a fresh position { maxAgeMs: 120000, timeoutMs: 3000 }
+[LOCATION] starting { request: false, platform: 'android', aissLocation: true }
+[INFO] location: starting { request: false, platform: 'android', aissLocation: true }
+
+stdout | tests/location.test.ts > acquireFix (SOS text) > Play Services answers when the native one-shot cannot
+[LOCATION] acquire result { fresh: true, hasAny: true, ageS: 0 }
+[INFO] location: acquire result { fresh: true, hasAny: true, ageS: 0 }
+[LOCATION] first live position from capacitor { accuracyM: 15 }
+[INFO] location: first live position from capacitor { accuracyM: 15 }
+
+stdout | tests/location.test.ts > acquireFix (SOS text) > Play Services answers when the native one-shot cannot
+[LOCATION] AissLocation started {
+  started: true,
+  reason: null,
+  enabled: true,
+  gps: true,
+  network: true,
+  providers: [ 'gps', 'network' ]
+}
+[INFO] location: AissLocation started {
+  started: true,
+  reason: null,
+  enabled: true,
+  gps: true,
+  network: true,
+  providers: [ 'gps', 'network' ]
+}
+
+stdout | tests/location.test.ts > acquireFix (SOS text) > nothing fresh in time: returns the old position marked not fresh
+[LOCATION] acquiring a fresh position { maxAgeMs: 120000, timeoutMs: 8000 }
+[INFO] location: acquiring a fresh position { maxAgeMs: 120000, timeoutMs: 8000 }
+[LOCATION] starting { request: false, platform: 'android', aissLocation: true }
+[INFO] location: starting { request: false, platform: 'android', aissLocation: true }
+
+stdout | tests/location.test.ts > acquireFix (SOS text) > nothing fresh in time: returns the old position marked not fresh
+[LOCATION] acquire: @capacitor/geolocation skipped (no permission; it would open a dialog) 
+[INFO] location: acquire: @capacitor/geolocation skipped (no permission; it would open a dialog) 
+
+stdout | tests/location.test.ts > acquireFix (SOS text) > nothing fresh in time: returns the old position marked not fresh
+[LOCATION] AissLocation started {
+  started: true,
+  reason: null,
+  enabled: true,
+  gps: true,
+  network: true,
+  providers: [ 'gps', 'network' ]
+}
+[INFO] location: AissLocation started {
+  started: true,
+  reason: null,
+  enabled: true,
+  gps: true,
+  network: true,
+  providers: [ 'gps', 'network' ]
+}
+
+stdout | tests/location.test.ts > acquireFix (SOS text) > nothing fresh in time: returns the old position marked not fresh
+[LOCATION] acquire result { fresh: false, hasAny: true, ageS: 1808 }
+[INFO] location: acquire result { fresh: false, hasAny: true, ageS: 1808 }
+
+stdout | tests/location.test.ts > acquireFix (SOS text) > never opens a permission dialog: no grant → @capacitor/geolocation is not asked
+[LOCATION] acquiring a fresh position { maxAgeMs: 120000, timeoutMs: 2000 }
+[INFO] location: acquiring a fresh position { maxAgeMs: 120000, timeoutMs: 2000 }
+[LOCATION] starting { request: false, platform: 'android', aissLocation: true }
+[INFO] location: starting { request: false, platform: 'android', aissLocation: true }
+
+stdout | tests/location.test.ts > acquireFix (SOS text) > never opens a permission dialog: no grant → @capacitor/geolocation is not asked
+[LOCATION] acquire: @capacitor/geolocation skipped (no permission; it would open a dialog) 
+[INFO] location: acquire: @capacitor/geolocation skipped (no permission; it would open a dialog) 
+
+stdout | tests/location.test.ts > acquireFix (SOS text) > never opens a permission dialog: no grant → @capacitor/geolocation is not asked
+[LOCATION] acquire result { fresh: false, hasAny: false, ageS: null }
+[INFO] location: acquire result { fresh: false, hasAny: false, ageS: null }
+
+stdout | tests/location.test.ts > acquireFix (SOS text) > Approximate-only grant: asks without high accuracy (high accuracy would open a dialog)
+[LOCATION] acquiring a fresh position { maxAgeMs: 120000, timeoutMs: 3000 }
+[INFO] location: acquiring a fresh position { maxAgeMs: 120000, timeoutMs: 3000 }
+[LOCATION] starting { request: false, platform: 'android', aissLocation: true }
+[INFO] location: starting { request: false, platform: 'android', aissLocation: true }
+
+stdout | tests/location.test.ts > acquireFix (SOS text) > Approximate-only grant: asks without high accuracy (high accuracy would open a dialog)
+[LOCATION] acquire result { fresh: true, hasAny: true, ageS: 0 }
+[INFO] location: acquire result { fresh: true, hasAny: true, ageS: 0 }
+[LOCATION] first live position from capacitor { accuracyM: 1800 }
+[INFO] location: first live position from capacitor { accuracyM: 1800 }
+
+stdout | tests/location.test.ts > acquireFix (SOS text) > Approximate-only grant: asks without high accuracy (high accuracy would open a dialog)
+[LOCATION] AissLocation started {
+  started: true,
+  reason: null,
+  enabled: true,
+  gps: true,
+  network: true,
+  providers: [ 'gps', 'network' ]
+}
+[INFO] location: AissLocation started {
+  started: true,
+  reason: null,
+  enabled: true,
+  gps: true,
+  network: true,
+  providers: [ 'gps', 'network' ]
+}
+
+stdout | tests/location.test.ts > acquireFix (SOS text) > no position at all → null
+[LOCATION] acquiring a fresh position { maxAgeMs: 120000, timeoutMs: 2000 }
+[INFO] location: acquiring a fresh position { maxAgeMs: 120000, timeoutMs: 2000 }
+[LOCATION] starting { request: false, platform: 'android', aissLocation: true }
+[INFO] location: starting { request: false, platform: 'android', aissLocation: true }
+
+stdout | tests/location.test.ts > acquireFix (SOS text) > no position at all → null
+[LOCATION] acquire: @capacitor/geolocation skipped (no permission; it would open a dialog) 
+[INFO] location: acquire: @capacitor/geolocation skipped (no permission; it would open a dialog) 
+
+stdout | tests/location.test.ts > acquireFix (SOS text) > no position at all → null
+[LOCATION] AissLocation started {
+  started: true,
+  reason: null,
+  enabled: true,
+  gps: true,
+  network: true,
+  providers: [ 'gps', 'network' ]
+}
+[INFO] location: AissLocation started {
+  started: true,
+  reason: null,
+  enabled: true,
+  gps: true,
+  network: true,
+  providers: [ 'gps', 'network' ]
+}
+
+stdout | tests/location.test.ts > acquireFix (SOS text) > no position at all → null
+[LOCATION] acquire result { fresh: false, hasAny: false, ageS: null }
+[INFO] location: acquire result { fresh: false, hasAny: false, ageS: null }
+
+ ✓ tests/location.test.ts (33 tests) 161ms
+stderr | tests/connectingTune.test.ts > connecting tune > renders a soft, click-free phrase of ~1.6 s
+[zustand persist middleware] Unable to update item 'aiss-session-real', the given storage is currently unavailable.
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > Wi-Fi lost mid-session → Reconnecting (with a reason) → re-bound → data flows again
+[SMARTSTICK] join ok (request)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > Wi-Fi lost mid-session → Reconnecting (with a reason) → re-bound → data flows again
+[SMARTSTICK] first telemetry packet #3 (637 B via native/bound)
+[SMARTSTICK] link connected
+[INFO] device: CONNECTED { deviceId: 'AISS-4F2A1B' }
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > Wi-Fi lost mid-session → Reconnecting (with a reason) → re-bound → data flows again
+[SMARTSTICK] link disconnected
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > stick reboots mid-session (AP down 2 s, seq and uptime restart) → recovers with fresh data
+[SMARTSTICK] setup: asking for Location / Nearby devices permission (helps Android find the stick)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > stick reboots mid-session (AP down 2 s, seq and uptime restart) → recovers with fresh data
+[SMARTSTICK] setup: permissions: location granted, nearby granted
+
+stderr | tests/connectingTune.test.ts > connecting tune > encodes a valid 16-bit mono WAV data URI
+[zustand persist middleware] Unable to update item 'aiss-session-real', the given storage is currently unavailable.
+
+stderr | tests/connectingTune.test.ts > connecting tune > loops a buffer on the shared Web Audio context and stops cleanly
+[zustand persist middleware] Unable to update item 'aiss-session-real', the given storage is currently unavailable.
+
+stderr | tests/connectingTune.test.ts > connecting tune > only one tune at a time: starting again stops the previous one
+[zustand persist middleware] Unable to update item 'aiss-session-real', the given storage is currently unavailable.
+
+stderr | tests/connectingTune.test.ts > connecting tune > falls back to an <audio> element when Web Audio stays locked
+[zustand persist middleware] Unable to update item 'aiss-session-real', the given storage is currently unavailable.
+
+stderr | tests/connectingTune.test.ts > connecting tune > uses the <audio> element when there is no Web Audio at all
+[zustand persist middleware] Unable to update item 'aiss-session-real', the given storage is currently unavailable.
+
+stderr | tests/connectingTune.test.ts > connecting tune > respects the sounds setting and the assistant volume
+[zustand persist middleware] Unable to update item 'aiss-session-real', the given storage is currently unavailable.
+
+stderr | tests/connectingTune.test.ts > connecting tune > respects the sounds setting and the assistant volume
+[zustand persist middleware] Unable to update item 'aiss-session-real', the given storage is currently unavailable.
+[zustand persist middleware] Unable to update item 'aiss-session-real', the given storage is currently unavailable.
+[zustand persist middleware] Unable to update item 'aiss-session-real', the given storage is currently unavailable.
+
+stderr | tests/connectingTune.test.ts > connecting tune > goes silent while the app is speaking, and comes back after
+[zustand persist middleware] Unable to update item 'aiss-session-real', the given storage is currently unavailable.
+
+stderr | tests/connectingTune.test.ts > connecting tune > never rings forever (hard cap)
+[zustand persist middleware] Unable to update item 'aiss-session-real', the given storage is currently unavailable.
+
+ ✓ tests/connectingTune.test.ts (9 tests) 99ms
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > stick reboots mid-session (AP down 2 s, seq and uptime restart) → recovers with fresh data
+[SMARTSTICK] setup: not on the stick's Wi-Fi yet (Setup request failed: connect timed out)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > stick reboots mid-session (AP down 2 s, seq and uptime restart) → recovers with fresh data
+[SMARTSTICK] setup: Wi-Fi on
+[SMARTSTICK] setup: asking Android to join SmartStick_AI (approve "Connect" if Android asks)
+
+ ✓ tests/liveStream.test.ts (21 tests) 85ms
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > stick reboots mid-session (AP down 2 s, seq and uptime restart) → recovers with fresh data
+[SMARTSTICK] setup: joined SmartStick_AI (request)
+
+stdout | tests/navigation.test.ts > destination without a live GPS fix (assistant / map search) > sets the destination, says so, and starts directions by itself from the first fix
+[LOCATION] starting { request: false, platform: 'web', aissLocation: false }
+[INFO] location: starting { request: false, platform: 'web', aissLocation: false }
+
+stdout | tests/assistantDestination.test.ts > the assistant can always set a destination > search without GPS still offers a place; yes → start_navigation waits for GPS (no "unavailable")
+[LOCATION] acquire result { fresh: false, hasAny: false, ageS: null }
+[INFO] location: acquire result { fresh: false, hasAny: false, ageS: null }
+
+stdout | tests/assistantDestination.test.ts > the assistant can always set a destination > search without GPS still offers a place; yes → start_navigation waits for GPS (no "unavailable")
+[INFO] voice navigation: destination set, waiting for GPS { placeId: 'pl_hosp' }
+[LOCATION] starting { request: false, platform: 'web', aissLocation: false }
+[INFO] location: starting { request: false, platform: 'web', aissLocation: false }
+
+stdout | tests/assistantDestination.test.ts > the assistant can always set a destination > with a live fix, set_destination starts walking directions at once
+[INFO] voice navigation started { placeId: 'pl_hosp' }
+
+stdout | tests/assistantDestination.test.ts > the assistant can always set a destination > a place id the model kept from earlier is looked up instead of refused
+[INFO] voice navigation: destination set, waiting for GPS { placeId: 'pl_old' }
+[LOCATION] starting { request: false, platform: 'web', aissLocation: false }
+[INFO] location: starting { request: false, platform: 'web', aissLocation: false }
+
+stdout | tests/assistantDestination.test.ts > the assistant can always set a destination > a second start for the same place does not start twice
+[LOCATION] acquiring a fresh position { maxAgeMs: 60000, timeoutMs: 3000 }
+[INFO] location: acquiring a fresh position { maxAgeMs: 60000, timeoutMs: 3000 }
+
+stdout | tests/assistantDestination.test.ts > the assistant can always set a destination > a second start for the same place does not start twice
+[LOCATION] starting { request: false, platform: 'web', aissLocation: false }
+[INFO] location: starting { request: false, platform: 'web', aissLocation: false }
+
+stdout | tests/navigation.test.ts > destination without a live GPS fix (assistant / map search) > Approximate-only grant: says Precise location is needed instead of "waiting for GPS"
+[LOCATION] starting { request: false, platform: 'web', aissLocation: false }
+[INFO] location: starting { request: false, platform: 'web', aissLocation: false }
+
+stdout | tests/navigation.test.ts > destination without a live GPS fix (assistant / map search) > a stale cached position is not used as the route start
+[LOCATION] starting { request: false, platform: 'web', aissLocation: false }
+[INFO] location: starting { request: false, platform: 'web', aissLocation: false }
+
+stdout | tests/navigation.test.ts > destination without a live GPS fix (assistant / map search) > End route while waiting cancels it: a later fix starts nothing
+[LOCATION] starting { request: false, platform: 'web', aissLocation: false }
+[INFO] location: starting { request: false, platform: 'web', aissLocation: false }
+
+ ✓ tests/navigation.test.ts (10 tests) 75ms
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > stick reboots mid-session (AP down 2 s, seq and uptime restart) → recovers with fresh data
+[SMARTSTICK] setup: stick AISS-4F2A1B, firmware 1.2.0, protocol v1, auth off
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > stick reboots mid-session (AP down 2 s, seq and uptime restart) → recovers with fresh data
+[SMARTSTICK] setup: first telemetry packet #1 received
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > stick reboots mid-session (AP down 2 s, seq and uptime restart) → recovers with fresh data
+[SMARTSTICK] setup: stick saved on this phone
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > stick reboots mid-session (AP down 2 s, seq and uptime restart) → recovers with fresh data
+[SMARTSTICK] link connecting: Joining SmartStick_AI…
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > stick reboots mid-session (AP down 2 s, seq and uptime restart) → recovers with fresh data
+[SMARTSTICK] join ok (bound)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > stick reboots mid-session (AP down 2 s, seq and uptime restart) → recovers with fresh data
+[SMARTSTICK] first telemetry packet #2 (636 B via native/bound)
+[SMARTSTICK] link connected
+[INFO] device: CONNECTED { deviceId: 'AISS-4F2A1B' }
+
+stderr | tests/liveSession.test.ts > Gemini Live session > gets a one-use token from Firebase and connects with the server-chosen model
+[WARN] could not send initial greeting {
+  error: TypeError: this.session.send is not a function
+      at LiveSession.start (/workspace/smartstick-refinement/src/core/ai/liveSession.ts:220:35)
+      at processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at openSession (/workspace/smartstick-refinement/tests/liveSession.test.ts:102:10)
+      at /workspace/smartstick-refinement/tests/liveSession.test.ts:128:5
+      at file:///workspace/smartstick-refinement/node_modules/vitest/dist/chunks/run.C5UmxDPh.js:2783:20
+}
+
+stdout | tests/liveSession.test.ts > Gemini Live session > gets a one-use token from Firebase and connects with the server-chosen model
+[INFO] live: session open { model: 'models/server-chosen-live', micRate: 48000 }
+
+stderr | tests/liveSession.test.ts > Gemini Live session > streams the microphone as 16 kHz PCM in the SDK realtime-input shape
+[WARN] could not send initial greeting {
+  error: TypeError: this.session.send is not a function
+      at LiveSession.start (/workspace/smartstick-refinement/src/core/ai/liveSession.ts:220:35)
+      at processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at openSession (/workspace/smartstick-refinement/tests/liveSession.test.ts:102:10)
+      at /workspace/smartstick-refinement/tests/liveSession.test.ts:139:5
+      at file:///workspace/smartstick-refinement/node_modules/vitest/dist/chunks/run.C5UmxDPh.js:2783:20
+}
+
+stdout | tests/liveSession.test.ts > Gemini Live session > streams the microphone as 16 kHz PCM in the SDK realtime-input shape
+[INFO] live: session open { model: 'models/live-test', micRate: 48000 }
+
+stderr | tests/liveSession.test.ts > Gemini Live session > routes model audio to the audio owner and stops it on interruption
+[WARN] could not send initial greeting {
+  error: TypeError: this.session.send is not a function
+      at LiveSession.start (/workspace/smartstick-refinement/src/core/ai/liveSession.ts:220:35)
+      at processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at openSession (/workspace/smartstick-refinement/tests/liveSession.test.ts:102:10)
+      at /workspace/smartstick-refinement/tests/liveSession.test.ts:149:17
+      at file:///workspace/smartstick-refinement/node_modules/vitest/dist/chunks/run.C5UmxDPh.js:2783:20
+}
+
+stdout | tests/liveSession.test.ts > Gemini Live session > routes model audio to the audio owner and stops it on interruption
+[INFO] live: session open { model: 'models/live-test', micRate: 48000 }
+
+stderr | tests/liveSession.test.ts > Gemini Live session > "Yes" starts navigation to exactly the offered place, once
+[WARN] could not send initial greeting {
+  error: TypeError: this.session.send is not a function
+      at LiveSession.start (/workspace/smartstick-refinement/src/core/ai/liveSession.ts:220:35)
+      at processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at openSession (/workspace/smartstick-refinement/tests/liveSession.test.ts:102:10)
+      at /workspace/smartstick-refinement/tests/liveSession.test.ts:162:17
+      at file:///workspace/smartstick-refinement/node_modules/vitest/dist/chunks/run.C5UmxDPh.js:2783:20
+}
+
+stdout | tests/liveSession.test.ts > Gemini Live session > "Yes" starts navigation to exactly the offered place, once
+[INFO] live: session open { model: 'models/live-test', micRate: 48000 }
+
+stdout | tests/liveSession.test.ts > Gemini Live session > "Yes" starts navigation to exactly the offered place, once
+[INFO] voice navigation started { placeId: 'pl_barber' }
+
+stdout | tests/liveSession.test.ts > Gemini Live session > "Yes" starts navigation to exactly the offered place, once
+[INFO] live: navigation confirmed by voice { placeId: 'pl_barber' }
+
+stderr | tests/liveSession.test.ts > Gemini Live session > "Okay, what about a hospital?" is a new request, not a yes
+[WARN] could not send initial greeting {
+  error: TypeError: this.session.send is not a function
+      at LiveSession.start (/workspace/smartstick-refinement/src/core/ai/liveSession.ts:220:35)
+      at openSession (/workspace/smartstick-refinement/tests/liveSession.test.ts:102:10)
+      at /workspace/smartstick-refinement/tests/liveSession.test.ts:181:17
+      at file:///workspace/smartstick-refinement/node_modules/vitest/dist/chunks/run.C5UmxDPh.js:2783:20
+}
+
+stdout | tests/liveSession.test.ts > Gemini Live session > "Okay, what about a hospital?" is a new request, not a yes
+[INFO] live: session open { model: 'models/live-test', micRate: 48000 }
+
+stderr | tests/liveSession.test.ts > Gemini Live session > "No" withdraws the offer; nothing starts
+[WARN] could not send initial greeting {
+  error: TypeError: this.session.send is not a function
+      at LiveSession.start (/workspace/smartstick-refinement/src/core/ai/liveSession.ts:220:35)
+      at openSession (/workspace/smartstick-refinement/tests/liveSession.test.ts:102:10)
+      at /workspace/smartstick-refinement/tests/liveSession.test.ts:191:17
+      at file:///workspace/smartstick-refinement/node_modules/vitest/dist/chunks/run.C5UmxDPh.js:2783:20
+}
+
+stdout | tests/liveSession.test.ts > Gemini Live session > "No" withdraws the offer; nothing starts
+[INFO] live: session open { model: 'models/live-test', micRate: 48000 }
+
+stderr | tests/liveSession.test.ts > Gemini Live session > confirm-gated tools wait for the user’s yes
+[WARN] could not send initial greeting {
+  error: TypeError: this.session.send is not a function
+      at LiveSession.start (/workspace/smartstick-refinement/src/core/ai/liveSession.ts:220:35)
+      at openSession (/workspace/smartstick-refinement/tests/liveSession.test.ts:102:10)
+      at /workspace/smartstick-refinement/tests/liveSession.test.ts:201:17
+      at file:///workspace/smartstick-refinement/node_modules/vitest/dist/chunks/run.C5UmxDPh.js:2783:20
+}
+
+stdout | tests/liveSession.test.ts > Gemini Live session > confirm-gated tools wait for the user’s yes
+[INFO] live: session open { model: 'models/live-test', micRate: 48000 }
+
+stderr | tests/liveSession.test.ts > Gemini Live session > plays the connecting tune while connecting, stops it when open, then the listening earcon
+[WARN] could not send initial greeting {
+  error: TypeError: this.session.send is not a function
+      at LiveSession.start (/workspace/smartstick-refinement/src/core/ai/liveSession.ts:220:35)
+      at openSession (/workspace/smartstick-refinement/tests/liveSession.test.ts:102:10)
+      at /workspace/smartstick-refinement/tests/liveSession.test.ts:218:5
+      at file:///workspace/smartstick-refinement/node_modules/vitest/dist/chunks/run.C5UmxDPh.js:2783:20
+}
+
+stdout | tests/liveSession.test.ts > Gemini Live session > plays the connecting tune while connecting, stops it when open, then the listening earcon
+[INFO] live: session open { model: 'models/live-test', micRate: 48000 }
+
+stderr | tests/liveSession.test.ts > Gemini Live session > stops the tune and speaks a clear reason when the token call fails
+[ERROR] live: start failed {
+  error: 'Unauthenticated',
+  code: 'functions/unauthenticated',
+  name: 'Error'
+}
+
+stderr | tests/liveSession.test.ts > Gemini Live session > stops the tune when the socket closes before opening
+[ERROR] live: start failed { error: 'model not found', code: '', name: 'Error' }
+
+stderr | tests/liveSession.test.ts > Gemini Live session > never hangs in "connecting": one overall timeout stops the tune and says so
+[ERROR] live: start failed {
+  error: 'The assistant took too long to connect.',
+  code: '',
+  name: 'Error'
+}
+
+stdout | tests/liveSession.test.ts > Gemini Live session > SOS while connecting abandons the connection and silences the tune
+[INFO] live: SOS started while connecting; connection abandoned 
+
+stderr | tests/liveSession.test.ts > Gemini Live session > SOS does not cut an open conversation
+[WARN] could not send initial greeting {
+  error: TypeError: this.session.send is not a function
+      at LiveSession.start (/workspace/smartstick-refinement/src/core/ai/liveSession.ts:220:35)
+      at openSession (/workspace/smartstick-refinement/tests/liveSession.test.ts:102:10)
+      at /workspace/smartstick-refinement/tests/liveSession.test.ts:306:5
+      at file:///workspace/smartstick-refinement/node_modules/vitest/dist/chunks/run.C5UmxDPh.js:2783:20
+}
+
+stdout | tests/liveSession.test.ts > Gemini Live session > SOS does not cut an open conversation
+[INFO] live: session open { model: 'models/live-test', micRate: 48000 }
+
+stderr | tests/liveSession.test.ts > Gemini Live session > a mic permission refusal stops everything and explains it
+[WARN] could not send initial greeting {
+  error: TypeError: this.session.send is not a function
+      at LiveSession.start (/workspace/smartstick-refinement/src/core/ai/liveSession.ts:220:35)
+      at /workspace/smartstick-refinement/tests/liveSession.test.ts:318:12
+      at file:///workspace/smartstick-refinement/node_modules/vitest/dist/chunks/run.C5UmxDPh.js:2783:20
+}
+
+stderr | tests/liveSession.test.ts > Gemini Live session > a mic permission refusal stops everything and explains it
+[ERROR] live: start failed { error: 'Permission denied', code: '', name: 'NotAllowedError' }
+
+stderr | tests/liveSession.test.ts > Gemini Live session > every start/stop cycle leaves no tune behind
+[WARN] could not send initial greeting {
+  error: TypeError: this.session.send is not a function
+      at LiveSession.start (/workspace/smartstick-refinement/src/core/ai/liveSession.ts:220:35)
+      at openSession (/workspace/smartstick-refinement/tests/liveSession.test.ts:102:10)
+      at /workspace/smartstick-refinement/tests/liveSession.test.ts:326:7
+      at file:///workspace/smartstick-refinement/node_modules/vitest/dist/chunks/run.C5UmxDPh.js:2783:20
+}
+
+stdout | tests/liveSession.test.ts > Gemini Live session > every start/stop cycle leaves no tune behind
+[INFO] live: session open { model: 'models/live-test', micRate: 48000 }
+
+stderr | tests/liveSession.test.ts > Gemini Live session > every start/stop cycle leaves no tune behind
+[WARN] could not send initial greeting {
+  error: TypeError: this.session.send is not a function
+      at LiveSession.start (/workspace/smartstick-refinement/src/core/ai/liveSession.ts:220:35)
+      at openSession (/workspace/smartstick-refinement/tests/liveSession.test.ts:102:10)
+      at /workspace/smartstick-refinement/tests/liveSession.test.ts:326:7
+      at file:///workspace/smartstick-refinement/node_modules/vitest/dist/chunks/run.C5UmxDPh.js:2783:20
+}
+
+stdout | tests/liveSession.test.ts > Gemini Live session > every start/stop cycle leaves no tune behind
+[INFO] live: session open { model: 'models/live-test', micRate: 48000 }
+
+stderr | tests/liveSession.test.ts > Gemini Live session > every start/stop cycle leaves no tune behind
+[WARN] could not send initial greeting {
+  error: TypeError: this.session.send is not a function
+      at LiveSession.start (/workspace/smartstick-refinement/src/core/ai/liveSession.ts:220:35)
+      at openSession (/workspace/smartstick-refinement/tests/liveSession.test.ts:102:10)
+      at /workspace/smartstick-refinement/tests/liveSession.test.ts:326:7
+      at file:///workspace/smartstick-refinement/node_modules/vitest/dist/chunks/run.C5UmxDPh.js:2783:20
+}
+
+stdout | tests/liveSession.test.ts > Gemini Live session > every start/stop cycle leaves no tune behind
+[INFO] live: session open { model: 'models/live-test', micRate: 48000 }
+
+stderr | tests/liveSession.test.ts > Gemini Live session > every start/stop cycle leaves no tune behind
+[ERROR] live: start failed { error: 'boom', code: '', name: 'Error' }
+
+ ✓ tests/liveSession.test.ts (18 tests) 58ms
+stderr | tests/destinationFallback.test.ts > hedged: server first, in-app Google joins after 3.5 s, first success wins > in-app fails first → keeps waiting for the slow server, which wins (no OSM)
+[WARN] maps: in-app places failed {
+  code: '',
+  message: 'PERMISSION_DENIED: Places API (New) has not been used in project 599970506387 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/places.googleapis.com/overview?project=599970506387 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry.'
+}
+
+stderr | tests/destinationFallback.test.ts > hedged: server first, in-app Google joins after 3.5 s, first success wins > a server failure starts the in-app search at once (no 3.5 s wait)
+[WARN] maps: server autocomplete failed { code: 'unauthenticated', message: 'unauthenticated' }
+
+stderr | tests/destinationFallback.test.ts > OpenStreetMap only when both Google paths fail > the user's field report: server times out (20 s), Places API (New) off → OSM suggestions, honest causes
+[WARN] maps: in-app places failed {
+  code: '',
+  message: 'PERMISSION_DENIED: Places API (New) has not been used in project 599970506387 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/places.googleapis.com/overview?project=599970506387 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry.'
+}
+
+stderr | tests/destinationFallback.test.ts > OpenStreetMap only when both Google paths fail > the user's field report: server times out (20 s), Places API (New) off → OSM suggestions, honest causes
+[WARN] maps: server autocomplete failed {
+  code: 'deadline-exceeded',
+  message: 'The server did not answer in 20 s (slow first start, App Check, or functions not deployed).'
+}
+
+stderr | tests/destinationFallback.test.ts > OpenStreetMap only when both Google paths fail > the user's field report: server times out (20 s), Places API (New) off → OSM suggestions, honest causes
+[WARN] maps: Google search failed, using OpenStreetMap {
+  causes: [
+    'Server search: The server did not answer in 20 s (slow first start, App Check, or functions not deployed).',
+    "In-app search: Google Maps in the app refused the search (Places API (New) is not enabled in project 599970506387). Fix: Google Cloud → APIs & Services → enable Places API (New), and allow it in the browser key's API restrictions (see docs/GOOGLE_CLOUD_SETUP.md, 2 Enable APIs / 3 Browser key)."
+  ]
+}
+
+stderr | tests/destinationFallback.test.ts > OpenStreetMap only when both Google paths fail > everything down → one error with each cause, Google message shortened, the exact fix
+[WARN] maps: in-app places failed {
+  code: '',
+  message: 'PERMISSION_DENIED: Places API (New) has not been used in project 599970506387 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/places.googleapis.com/overview?project=599970506387 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry.'
+}
+
+stderr | tests/destinationFallback.test.ts > OpenStreetMap only when both Google paths fail > everything down → one error with each cause, Google message shortened, the exact fix
+[WARN] maps: server autocomplete failed {
+  code: 'deadline-exceeded',
+  message: 'The server did not answer in 20 s (slow first start, App Check, or functions not deployed).'
+}
+
+stderr | tests/destinationFallback.test.ts > OpenStreetMap only when both Google paths fail > after that, the server and the refused in-app API are skipped: straight to OSM
+[WARN] maps: in-app places failed {
+  code: '',
+  message: 'PERMISSION_DENIED: Places API (New) has not been used in project 599970506387 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/places.googleapis.com/overview?project=599970506387 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry.'
+}
+
+stderr | tests/destinationFallback.test.ts > OpenStreetMap only when both Google paths fail > after that, the server and the refused in-app API are skipped: straight to OSM
+[WARN] maps: server autocomplete failed {
+  code: 'deadline-exceeded',
+  message: 'The server did not answer in 20 s (slow first start, App Check, or functions not deployed).'
+}
+
+stderr | tests/destinationFallback.test.ts > OpenStreetMap only when both Google paths fail > after that, the server and the refused in-app API are skipped: straight to OSM
+[WARN] maps: Google search failed, using OpenStreetMap {
+  causes: [
+    'Server search: The server did not answer in 20 s (slow first start, App Check, or functions not deployed).',
+    "In-app search: Google Maps in the app refused the search (Places API (New) is not enabled in project 599970506387). Fix: Google Cloud → APIs & Services → enable Places API (New), and allow it in the browser key's API restrictions (see docs/GOOGLE_CLOUD_SETUP.md, 2 Enable APIs / 3 Browser key)."
+  ]
+}
+
+stderr | tests/destinationFallback.test.ts > OpenStreetMap only when both Google paths fail > after that, the server and the refused in-app API are skipped: straight to OSM
+[WARN] maps: Google search failed, using OpenStreetMap {
+  causes: [
+    'Server search: The server did not answer in 20 s (slow first start, App Check, or functions not deployed).',
+    "In-app search: Google Maps in the app refused the search (Places API (New) is not enabled in project 599970506387). Fix: Google Cloud → APIs & Services → enable Places API (New), and allow it in the browser key's API restrictions (see docs/GOOGLE_CLOUD_SETUP.md, 2 Enable APIs / 3 Browser key)."
+  ]
+}
+
+stderr | tests/destinationFallback.test.ts > OpenStreetMap only when both Google paths fail > a repeated server timeout doubles the pause (30 s, then 60 s)
+[WARN] maps: in-app places failed { code: '', message: 'boom' }
+
+stderr | tests/destinationFallback.test.ts > OpenStreetMap only when both Google paths fail > a repeated server timeout doubles the pause (30 s, then 60 s)
+[WARN] maps: server autocomplete failed {
+  code: 'deadline-exceeded',
+  message: 'The server did not answer in 20 s (slow first start, App Check, or functions not deployed).'
+}
+
+stderr | tests/destinationFallback.test.ts > OpenStreetMap only when both Google paths fail > a repeated server timeout doubles the pause (30 s, then 60 s)
+[WARN] maps: Google search failed, using OpenStreetMap {
+  causes: [
+    'Server search: The server did not answer in 20 s (slow first start, App Check, or functions not deployed).',
+    "In-app search: Google Maps in the app refused the search (boom). Fix: Google Cloud → APIs & Services → enable Places API (New), and allow it in the browser key's API restrictions (see docs/GOOGLE_CLOUD_SETUP.md, 2 Enable APIs / 3 Browser key)."
+  ]
+}
+
+stderr | tests/destinationFallback.test.ts > OpenStreetMap only when both Google paths fail > a repeated server timeout doubles the pause (30 s, then 60 s)
+[WARN] maps: in-app places failed { code: '', message: 'boom' }
+
+stderr | tests/destinationFallback.test.ts > OpenStreetMap only when both Google paths fail > a repeated server timeout doubles the pause (30 s, then 60 s)
+[WARN] maps: server autocomplete failed {
+  code: 'deadline-exceeded',
+  message: 'The server did not answer in 20 s (slow first start, App Check, or functions not deployed).'
+}
+
+stderr | tests/destinationFallback.test.ts > OpenStreetMap only when both Google paths fail > a repeated server timeout doubles the pause (30 s, then 60 s)
+[WARN] maps: Google search failed, using OpenStreetMap {
+  causes: [
+    'Server search: The server did not answer in 20 s (slow first start, App Check, or functions not deployed).',
+    "In-app search: Google Maps in the app refused the search (boom). Fix: Google Cloud → APIs & Services → enable Places API (New), and allow it in the browser key's API restrictions (see docs/GOOGLE_CLOUD_SETUP.md, 2 Enable APIs / 3 Browser key)."
+  ]
+}
+
+stderr | tests/destinationFallback.test.ts > OpenStreetMap only when both Google paths fail > a repeated server timeout doubles the pause (30 s, then 60 s)
+[WARN] maps: in-app places failed { code: '', message: 'boom' }
+
+stderr | tests/destinationFallback.test.ts > OpenStreetMap only when both Google paths fail > a repeated server timeout doubles the pause (30 s, then 60 s)
+[WARN] maps: Google search failed, using OpenStreetMap {
+  causes: [
+    'Server search: The server did not answer in 20 s (slow first start, App Check, or functions not deployed).',
+    "In-app search: Google Maps in the app refused the search (boom). Fix: Google Cloud → APIs & Services → enable Places API (New), and allow it in the browser key's API restrictions (see docs/GOOGLE_CLOUD_SETUP.md, 2 Enable APIs / 3 Browser key)."
+  ]
+}
+
+stderr | tests/destinationFallback.test.ts > OpenStreetMap only when both Google paths fail > two letters: Google failed and OSM needs three → the error says so
+[WARN] maps: server autocomplete failed { code: 'unauthenticated', message: 'unauthenticated' }
+
+stderr | tests/destinationFallback.test.ts > OpenStreetMap only when both Google paths fail > two letters: Google failed and OSM needs three → the error says so
+[WARN] maps: in-app places failed { code: '', message: 'boom' }
+
+stderr | tests/destinationFallback.test.ts > OpenStreetMap only when both Google paths fail > findPlaces: server → in-app → OSM (category tags, nearest first)
+[WARN] maps: server search failed { code: 'failed-precondition', message: 'failed-precondition' }
+
+stderr | tests/destinationFallback.test.ts > OpenStreetMap only when both Google paths fail > findPlaces: server → in-app → OSM (category tags, nearest first)
+[WARN] maps: in-app places failed {
+  code: '',
+  message: 'PERMISSION_DENIED: Places API (New) has not been used in project 599970506387 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/places.googleapis.com/overview?project=599970506387 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry.'
+}
+
+stderr | tests/destinationFallback.test.ts > OpenStreetMap only when both Google paths fail > findPlaces: server → in-app → OSM (category tags, nearest first)
+[WARN] maps: Google search failed, using OpenStreetMap {
+  causes: [
+    'Server search: Server refused the request (App Check or Maps key). See docs/GOOGLE_CLOUD_SETUP.md.',
+    "In-app search: Google Maps in the app refused the search (Places API (New) is not enabled in project 599970506387). Fix: Google Cloud → APIs & Services → enable Places API (New), and allow it in the browser key's API restrictions (see docs/GOOGLE_CLOUD_SETUP.md, 2 Enable APIs / 3 Browser key)."
+  ]
+}
+
+stderr | tests/destinationFallback.test.ts > OpenStreetMap only when both Google paths fail > "take me home" without the server uses the saved point, never OSM
+[WARN] maps: server search failed { code: 'unauthenticated', message: 'unauthenticated' }
+
+stderr | tests/destinationFallback.test.ts > OSM place ids never reach Google > picking an OSM suggestion comes from the cache
+[WARN] maps: server autocomplete failed { code: 'unauthenticated', message: 'unauthenticated' }
+
+stderr | tests/destinationFallback.test.ts > OSM place ids never reach Google > picking an OSM suggestion comes from the cache
+[WARN] maps: in-app places failed {
+  code: '',
+  message: 'PERMISSION_DENIED: Places API (New) has not been used in project 599970506387 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/places.googleapis.com/overview?project=599970506387 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry.'
+}
+
+stderr | tests/destinationFallback.test.ts > OSM place ids never reach Google > picking an OSM suggestion comes from the cache
+[WARN] maps: Google search failed, using OpenStreetMap {
+  causes: [
+    'Server search: Server refused the request (sign-in or App Check). See docs/GOOGLE_CLOUD_SETUP.md, "6 App Check".',
+    "In-app search: Google Maps in the app refused the search (Places API (New) is not enabled in project 599970506387). Fix: Google Cloud → APIs & Services → enable Places API (New), and allow it in the browser key's API restrictions (see docs/GOOGLE_CLOUD_SETUP.md, 2 Enable APIs / 3 Browser key)."
+  ]
+}
+
+stderr | tests/destinationFallback.test.ts > OSM place ids never reach Google > the assistant's placeById('osm:…'): cache, or a clear error — no Google call
+[WARN] maps: server autocomplete failed { code: 'unauthenticated', message: 'unauthenticated' }
+
+stderr | tests/destinationFallback.test.ts > OSM place ids never reach Google > the assistant's placeById('osm:…'): cache, or a clear error — no Google call
+[WARN] maps: in-app places failed {
+  code: '',
+  message: 'PERMISSION_DENIED: Places API (New) has not been used in project 599970506387 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/places.googleapis.com/overview?project=599970506387 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry.'
+}
+
+stderr | tests/destinationFallback.test.ts > OSM place ids never reach Google > the assistant's placeById('osm:…'): cache, or a clear error — no Google call
+[WARN] maps: Google search failed, using OpenStreetMap {
+  causes: [
+    'Server search: Server refused the request (sign-in or App Check). See docs/GOOGLE_CLOUD_SETUP.md, "6 App Check".',
+    "In-app search: Google Maps in the app refused the search (Places API (New) is not enabled in project 599970506387). Fix: Google Cloud → APIs & Services → enable Places API (New), and allow it in the browser key's API restrictions (see docs/GOOGLE_CLOUD_SETUP.md, 2 Enable APIs / 3 Browser key)."
+  ]
+}
+
+stderr | tests/destinationFallback.test.ts > OSM place ids never reach Google > an OSM place is routed by lat/lng on every path
+[WARN] maps: server route failed { code: 'unauthenticated', message: 'unauthenticated' }
+
+stderr | tests/destinationFallback.test.ts > OSM place ids never reach Google > an OSM place is routed by lat/lng on every path
+[WARN] maps: in-app directions failed {
+  code: 'REQUEST_DENIED',
+  message: "DIRECTIONS_ROUTE: REQUEST_DENIED: You're calling a legacy API, which is not enabled for your project. To get newer features and more functionality, switch to the Places API (New) or Routes API. Learn more: https://developers.google.com/maps/legacy#LegacyApiNotActivatedMapError"
+}
+
+stderr | tests/destinationFallback.test.ts > OSM place ids never reach Google > an OSM place is routed by lat/lng on every path
+[WARN] maps: Google routes failed, using OpenStreetMap {
+  causes: [
+    'Server route: Server refused the request (sign-in or App Check). See docs/GOOGLE_CLOUD_SETUP.md, "6 App Check".',
+    'In-app route: In-app walking directions are not available for this Google project (the old Directions API cannot be turned on).'
+  ]
+}
+
+stderr | tests/destinationFallback.test.ts > walking routes: legacy Directions refused → OSM; a real no-route stays no-route > REQUEST_DENIED (legacy API not enabled) → OSRM route with readable steps; Directions then skipped
+[WARN] maps: server route failed { code: 'unauthenticated', message: 'unauthenticated' }
+
+stderr | tests/destinationFallback.test.ts > walking routes: legacy Directions refused → OSM; a real no-route stays no-route > REQUEST_DENIED (legacy API not enabled) → OSRM route with readable steps; Directions then skipped
+[WARN] maps: in-app directions failed {
+  code: 'REQUEST_DENIED',
+  message: "DIRECTIONS_ROUTE: REQUEST_DENIED: You're calling a legacy API, which is not enabled for your project. To get newer features and more functionality, switch to the Places API (New) or Routes API. Learn more: https://developers.google.com/maps/legacy#LegacyApiNotActivatedMapError"
+}
+
+stderr | tests/destinationFallback.test.ts > walking routes: legacy Directions refused → OSM; a real no-route stays no-route > REQUEST_DENIED (legacy API not enabled) → OSRM route with readable steps; Directions then skipped
+[WARN] maps: Google routes failed, using OpenStreetMap {
+  causes: [
+    'Server route: Server refused the request (sign-in or App Check). See docs/GOOGLE_CLOUD_SETUP.md, "6 App Check".',
+    'In-app route: In-app walking directions are not available for this Google project (the old Directions API cannot be turned on).'
+  ]
+}
+
+stderr | tests/destinationFallback.test.ts > walking routes: legacy Directions refused → OSM; a real no-route stays no-route > REQUEST_DENIED (legacy API not enabled) → OSRM route with readable steps; Directions then skipped
+[WARN] maps: Google routes failed, using OpenStreetMap {
+  causes: [
+    'Server route: Server refused the request (sign-in or App Check). See docs/GOOGLE_CLOUD_SETUP.md, "6 App Check".',
+    'In-app route: In-app walking directions are not available for this Google project (the old Directions API cannot be turned on).'
+  ]
+}
+
+stderr | tests/destinationFallback.test.ts > walking routes: legacy Directions refused → OSM; a real no-route stays no-route > "LegacyApiNotActivatedMapError" → OSM
+[WARN] maps: server route failed { code: 'permission-denied', message: 'permission-denied' }
+
+stderr | tests/destinationFallback.test.ts > walking routes: legacy Directions refused → OSM; a real no-route stays no-route > "LegacyApiNotActivatedMapError" → OSM
+[WARN] maps: in-app directions failed { code: '', message: 'LegacyApiNotActivatedMapError' }
+
+stderr | tests/destinationFallback.test.ts > walking routes: legacy Directions refused → OSM; a real no-route stays no-route > "LegacyApiNotActivatedMapError" → OSM
+[WARN] maps: Google routes failed, using OpenStreetMap {
+  causes: [
+    'Server route: Server refused the request (App Check or Maps key). See docs/GOOGLE_CLOUD_SETUP.md.',
+    'In-app route: In-app walking directions are not available for this Google project (the old Directions API cannot be turned on).'
+  ]
+}
+
+stderr | tests/destinationFallback.test.ts > walking routes: legacy Directions refused → OSM; a real no-route stays no-route > "ApiNotActivatedMapError" → OSM
+[WARN] maps: server route failed { code: 'permission-denied', message: 'permission-denied' }
+
+stderr | tests/destinationFallback.test.ts > walking routes: legacy Directions refused → OSM; a real no-route stays no-route > "ApiNotActivatedMapError" → OSM
+[WARN] maps: in-app directions failed { code: '', message: 'ApiNotActivatedMapError' }
+
+stderr | tests/destinationFallback.test.ts > walking routes: legacy Directions refused → OSM; a real no-route stays no-route > "ApiNotActivatedMapError" → OSM
+[WARN] maps: Google routes failed, using OpenStreetMap {
+  causes: [
+    'Server route: Server refused the request (App Check or Maps key). See docs/GOOGLE_CLOUD_SETUP.md.',
+    'In-app route: In-app walking directions are not available for this Google project (the old Directions API cannot be turned on).'
+  ]
+}
+
+stderr | tests/destinationFallback.test.ts > walking routes: legacy Directions refused → OSM; a real no-route stays no-route > "This API project is not authorized to use this API." → OSM
+[WARN] maps: server route failed { code: 'permission-denied', message: 'permission-denied' }
+
+stderr | tests/destinationFallback.test.ts > walking routes: legacy Directions refused → OSM; a real no-route stays no-route > "This API project is not authorized to use this API." → OSM
+[WARN] maps: in-app directions failed {
+  code: '',
+  message: 'This API project is not authorized to use this API.'
+}
+
+stderr | tests/destinationFallback.test.ts > walking routes: legacy Directions refused → OSM; a real no-route stays no-route > "This API project is not authorized to use this API." → OSM
+[WARN] maps: Google routes failed, using OpenStreetMap {
+  causes: [
+    'Server route: Server refused the request (App Check or Maps key). See docs/GOOGLE_CLOUD_SETUP.md.',
+    'In-app route: In-app walking directions are not available for this Google project (the old Directions API cannot be turned on).'
+  ]
+}
+
+stderr | tests/destinationFallback.test.ts > walking routes: legacy Directions refused → OSM; a real no-route stays no-route > Google ZERO_RESULTS is a real "no route": OSM is not asked
+[WARN] maps: server route failed { code: 'unauthenticated', message: 'unauthenticated' }
+
+stderr | tests/destinationFallback.test.ts > walking routes: legacy Directions refused → OSM; a real no-route stays no-route > OSM says NoRoute → no-route
+[WARN] maps: server route failed { code: 'unauthenticated', message: 'unauthenticated' }
+
+stderr | tests/destinationFallback.test.ts > walking routes: legacy Directions refused → OSM; a real no-route stays no-route > OSM says NoRoute → no-route
+[WARN] maps: in-app directions failed {
+  code: 'REQUEST_DENIED',
+  message: "DIRECTIONS_ROUTE: REQUEST_DENIED: You're calling a legacy API, which is not enabled for your project. To get newer features and more functionality, switch to the Places API (New) or Routes API. Learn more: https://developers.google.com/maps/legacy#LegacyApiNotActivatedMapError"
+}
+
+stderr | tests/destinationFallback.test.ts > walking routes: legacy Directions refused → OSM; a real no-route stays no-route > all three fail → causes, with the legacy Directions explained
+[WARN] maps: server route failed { code: 'unauthenticated', message: 'unauthenticated' }
+
+stderr | tests/destinationFallback.test.ts > walking routes: legacy Directions refused → OSM; a real no-route stays no-route > all three fail → causes, with the legacy Directions explained
+[WARN] maps: in-app directions failed {
+  code: 'REQUEST_DENIED',
+  message: "DIRECTIONS_ROUTE: REQUEST_DENIED: You're calling a legacy API, which is not enabled for your project. To get newer features and more functionality, switch to the Places API (New) or Routes API. Learn more: https://developers.google.com/maps/legacy#LegacyApiNotActivatedMapError"
+}
+
+stderr | tests/destinationFallback.test.ts > walking routes: legacy Directions refused → OSM; a real no-route stays no-route > the navigator follows an OSM route and knows to show the OSM attribution
+[WARN] maps: server route failed { code: 'unauthenticated', message: 'unauthenticated' }
+
+stderr | tests/destinationFallback.test.ts > walking routes: legacy Directions refused → OSM; a real no-route stays no-route > the navigator follows an OSM route and knows to show the OSM attribution
+[WARN] maps: in-app directions failed {
+  code: 'REQUEST_DENIED',
+  message: "DIRECTIONS_ROUTE: REQUEST_DENIED: You're calling a legacy API, which is not enabled for your project. To get newer features and more functionality, switch to the Places API (New) or Routes API. Learn more: https://developers.google.com/maps/legacy#LegacyApiNotActivatedMapError"
+}
+
+stderr | tests/destinationFallback.test.ts > walking routes: legacy Directions refused → OSM; a real no-route stays no-route > the navigator follows an OSM route and knows to show the OSM attribution
+[WARN] maps: Google routes failed, using OpenStreetMap {
+  causes: [
+    'Server route: Server refused the request (sign-in or App Check). See docs/GOOGLE_CLOUD_SETUP.md, "6 App Check".',
+    'In-app route: In-app walking directions are not available for this Google project (the old Directions API cannot be turned on).'
+  ]
+}
+
+ ✓ tests/destinationFallback.test.ts (25 tests) 43ms
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > joins the stick Wi-Fi, retries /device while the AP settles, reads telemetry, saves a key-less record
+[SMARTSTICK] setup: asking for Location / Nearby devices permission (helps Android find the stick)
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > joins the stick Wi-Fi, retries /device while the AP settles, reads telemetry, saves a key-less record
+[SMARTSTICK] setup: permissions: location granted, nearby granted
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > joins the stick Wi-Fi, retries /device while the AP settles, reads telemetry, saves a key-less record
+[SMARTSTICK] setup: not on the stick's Wi-Fi yet (Setup request failed: connect timed out)
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > joins the stick Wi-Fi, retries /device while the AP settles, reads telemetry, saves a key-less record
+[SMARTSTICK] setup: Wi-Fi on
+[SMARTSTICK] setup: asking Android to join SmartStick_AI (approve "Connect" if Android asks)
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > joins the stick Wi-Fi, retries /device while the AP settles, reads telemetry, saves a key-less record
+[SMARTSTICK] setup: joined SmartStick_AI (request)
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > joins the stick Wi-Fi, retries /device while the AP settles, reads telemetry, saves a key-less record
+[SMARTSTICK] setup: stick not answering yet (try 1/8): Setup request failed: ECONNREFUSED
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > joins the stick Wi-Fi, retries /device while the AP settles, reads telemetry, saves a key-less record
+[SMARTSTICK] setup: stick not answering yet (try 2/8): Setup request failed: ECONNREFUSED
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > joins the stick Wi-Fi, retries /device while the AP settles, reads telemetry, saves a key-less record
+[SMARTSTICK] setup: stick not answering yet (try 3/8): Setup request failed: ECONNREFUSED
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > joins the stick Wi-Fi, retries /device while the AP settles, reads telemetry, saves a key-less record
+[SMARTSTICK] setup: stick AISS-ABC123, firmware 1.2.0, protocol v1, auth off
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > joins the stick Wi-Fi, retries /device while the AP settles, reads telemetry, saves a key-less record
+[SMARTSTICK] setup: first telemetry packet #7 received
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > joins the stick Wi-Fi, retries /device while the AP settles, reads telemetry, saves a key-less record
+[SMARTSTICK] setup: stick saved on this phone
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > uses the Wi-Fi the user joined by hand: no system sheet at all
+[SMARTSTICK] setup: asking for Location / Nearby devices permission (helps Android find the stick)
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > uses the Wi-Fi the user joined by hand: no system sheet at all
+[SMARTSTICK] setup: permissions: location granted, nearby granted
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > uses the Wi-Fi the user joined by hand: no system sheet at all
+[SMARTSTICK] setup: the phone is already on SmartStick_AI: no Wi-Fi dialog needed
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > uses the Wi-Fi the user joined by hand: no system sheet at all
+[SMARTSTICK] setup: stick AISS-ABC123, firmware 1.2.0, protocol v1, auth off
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > uses the Wi-Fi the user joined by hand: no system sheet at all
+[SMARTSTICK] setup: first telemetry packet #7 received
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > uses the Wi-Fi the user joined by hand: no system sheet at all
+[SMARTSTICK] setup: stick saved on this phone
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > old secure firmware (1.1, telemetry 401) → clear "flash firmware 1.2" message, nothing saved
+[SMARTSTICK] setup: asking for Location / Nearby devices permission (helps Android find the stick)
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > old secure firmware (1.1, telemetry 401) → clear "flash firmware 1.2" message, nothing saved
+[SMARTSTICK] setup: permissions: location granted, nearby granted
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > old secure firmware (1.1, telemetry 401) → clear "flash firmware 1.2" message, nothing saved
+[SMARTSTICK] setup: not on the stick's Wi-Fi yet (Setup request failed: connect timed out)
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > old secure firmware (1.1, telemetry 401) → clear "flash firmware 1.2" message, nothing saved
+[SMARTSTICK] setup: Wi-Fi on
+[SMARTSTICK] setup: asking Android to join SmartStick_AI (approve "Connect" if Android asks)
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > old secure firmware (1.1, telemetry 401) → clear "flash firmware 1.2" message, nothing saved
+[SMARTSTICK] setup: joined SmartStick_AI (request)
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > old secure firmware (1.1, telemetry 401) → clear "flash firmware 1.2" message, nothing saved
+[SMARTSTICK] setup: stick AISS-ABC123, firmware 1.1.0-ecu, protocol v1, auth unknown (old firmware?)
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > old secure firmware (1.1, telemetry 401) → clear "flash firmware 1.2" message, nothing saved
+[SMARTSTICK] setup: error (old_firmware): This stick still runs the old secure firmware. Flash firmware 1.2.0 on the stick (Arduino IDE, firmware/ai_smart_stick_v1), switch it on again, then tap Try again.
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > firmware built with REQUIRE_AUTH 1 (auth: true) → same firmware message
+[SMARTSTICK] setup: asking for Location / Nearby devices permission (helps Android find the stick)
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > firmware built with REQUIRE_AUTH 1 (auth: true) → same firmware message
+[SMARTSTICK] setup: permissions: location granted, nearby granted
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > firmware built with REQUIRE_AUTH 1 (auth: true) → same firmware message
+[SMARTSTICK] setup: not on the stick's Wi-Fi yet (Setup request failed: connect timed out)
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > firmware built with REQUIRE_AUTH 1 (auth: true) → same firmware message
+[SMARTSTICK] setup: Wi-Fi on
+[SMARTSTICK] setup: asking Android to join SmartStick_AI (approve "Connect" if Android asks)
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > firmware built with REQUIRE_AUTH 1 (auth: true) → same firmware message
+[SMARTSTICK] setup: joined SmartStick_AI (request)
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > firmware built with REQUIRE_AUTH 1 (auth: true) → same firmware message
+[SMARTSTICK] setup: stick AISS-ABC123, firmware 1.2.0, protocol v1, auth ON
+[SMARTSTICK] setup: error (old_firmware): This stick still runs the old secure firmware. Flash firmware 1.2.0 on the stick (Arduino IDE, firmware/ai_smart_stick_v1), switch it on again, then tap Try again.
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > stick switched off → "was not found" (scan only used as a hint)
+[SMARTSTICK] setup: asking for Location / Nearby devices permission (helps Android find the stick)
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > stick switched off → "was not found" (scan only used as a hint)
+[SMARTSTICK] setup: permissions: location granted, nearby granted
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > stick switched off → "was not found" (scan only used as a hint)
+[SMARTSTICK] setup: not on the stick's Wi-Fi yet (Setup request failed: connect timed out)
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > stick switched off → "was not found" (scan only used as a hint)
+[SMARTSTICK] setup: Wi-Fi on
+[SMARTSTICK] setup: asking Android to join SmartStick_AI (approve "Connect" if Android asks)
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > stick switched off → "was not found" (scan only used as a hint)
+[SMARTSTICK] setup: Android did not join SmartStick_AI (UNAVAILABLE)
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > stick switched off → "was not found" (scan only used as a hint)
+[SMARTSTICK] setup: scan: SmartStick_AI is not visible
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > stick switched off → "was not found" (scan only used as a hint)
+[SMARTSTICK] setup: error (not_found): SmartStick_AI was not found. Switch the stick on, wait 10 seconds, keep it next to the phone, then tap Try again.
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > stick visible but the system sheet was declined → tells the user to choose it and tap Connect
+[SMARTSTICK] setup: asking for Location / Nearby devices permission (helps Android find the stick)
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > stick visible but the system sheet was declined → tells the user to choose it and tap Connect
+[SMARTSTICK] setup: permissions: location granted, nearby granted
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > stick visible but the system sheet was declined → tells the user to choose it and tap Connect
+[SMARTSTICK] setup: not on the stick's Wi-Fi yet (Setup request failed: connect timed out)
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > stick visible but the system sheet was declined → tells the user to choose it and tap Connect
+[SMARTSTICK] setup: Wi-Fi on
+[SMARTSTICK] setup: asking Android to join SmartStick_AI (approve "Connect" if Android asks)
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > stick visible but the system sheet was declined → tells the user to choose it and tap Connect
+[SMARTSTICK] setup: Android did not join SmartStick_AI (UNAVAILABLE)
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > stick visible but the system sheet was declined → tells the user to choose it and tap Connect
+[SMARTSTICK] setup: scan: SmartStick_AI is visible (-42 dBm)
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > stick visible but the system sheet was declined → tells the user to choose it and tap Connect
+[SMARTSTICK] setup: error (not_found): The phone can see SmartStick_AI but did not join it. Tap Try again and choose SmartStick_AI → Connect in the Android box.
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > Wi-Fi off → plain message
+[SMARTSTICK] setup: asking for Location / Nearby devices permission (helps Android find the stick)
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > Wi-Fi off → plain message
+[SMARTSTICK] setup: permissions: location granted, nearby granted
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > Wi-Fi off → plain message
+[SMARTSTICK] setup: not on the stick's Wi-Fi yet (Setup request failed: connect timed out)
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > Wi-Fi off → plain message
+[SMARTSTICK] setup: Wi-Fi OFF
+[SMARTSTICK] setup: error (wifi_off): Wi-Fi is off. Turn on Wi-Fi, then tap Try again.
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > joined but /device never answers → no_answer after the retries
+[SMARTSTICK] setup: asking for Location / Nearby devices permission (helps Android find the stick)
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > joined but /device never answers → no_answer after the retries
+[SMARTSTICK] setup: permissions: location granted, nearby granted
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > joined but /device never answers → no_answer after the retries
+[SMARTSTICK] setup: not on the stick's Wi-Fi yet (Setup request failed: connect timed out)
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > joined but /device never answers → no_answer after the retries
+[SMARTSTICK] setup: Wi-Fi on
+[SMARTSTICK] setup: asking Android to join SmartStick_AI (approve "Connect" if Android asks)
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > joined but /device never answers → no_answer after the retries
+[SMARTSTICK] setup: joined SmartStick_AI (request)
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > joined but /device never answers → no_answer after the retries
+[SMARTSTICK] setup: stick not answering yet (try 1/8): Setup request failed: ECONNREFUSED
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > joined but /device never answers → no_answer after the retries
+[SMARTSTICK] setup: stick not answering yet (try 2/8): Setup request failed: ECONNREFUSED
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > joined but /device never answers → no_answer after the retries
+[SMARTSTICK] setup: stick not answering yet (try 3/8): Setup request failed: ECONNREFUSED
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > joined but /device never answers → no_answer after the retries
+[SMARTSTICK] setup: stick not answering yet (try 4/8): Setup request failed: ECONNREFUSED
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > joined but /device never answers → no_answer after the retries
+[SMARTSTICK] setup: stick not answering yet (try 5/8): Setup request failed: ECONNREFUSED
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > joined but /device never answers → no_answer after the retries
+[SMARTSTICK] setup: stick not answering yet (try 6/8): Setup request failed: ECONNREFUSED
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > joined but /device never answers → no_answer after the retries
+[SMARTSTICK] setup: stick not answering yet (try 7/8): Setup request failed: ECONNREFUSED
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > joined but /device never answers → no_answer after the retries
+[SMARTSTICK] setup: stick not answering yet (try 8/8): Setup request failed: ECONNREFUSED
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > joined but /device never answers → no_answer after the retries
+[SMARTSTICK] setup: error (no_answer): The phone joined SmartStick_AI but the stick did not answer. Switch the stick off and on, wait 10 seconds, then tap Try again.
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > completes and starts the link while the phone is offline (cloud write never settles)
+[SMARTSTICK] setup: asking for Location / Nearby devices permission (helps Android find the stick)
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > completes and starts the link while the phone is offline (cloud write never settles)
+[SMARTSTICK] setup: permissions: location granted, nearby granted
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > completes and starts the link while the phone is offline (cloud write never settles)
+[SMARTSTICK] setup: not on the stick's Wi-Fi yet (Setup request failed: connect timed out)
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > completes and starts the link while the phone is offline (cloud write never settles)
+[SMARTSTICK] setup: Wi-Fi on
+[SMARTSTICK] setup: asking Android to join SmartStick_AI (approve "Connect" if Android asks)
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > completes and starts the link while the phone is offline (cloud write never settles)
+[SMARTSTICK] setup: joined SmartStick_AI (request)
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > completes and starts the link while the phone is offline (cloud write never settles)
+[SMARTSTICK] setup: stick AISS-ABC123, firmware 1.2.0, protocol v1, auth off
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > completes and starts the link while the phone is offline (cloud write never settles)
+[SMARTSTICK] setup: first telemetry packet #7 received
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > completes and starts the link while the phone is offline (cloud write never settles)
+[SMARTSTICK] setup: stick saved on this phone
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > a failure after the record is saved keeps the setup and the stick network
+[SMARTSTICK] setup: asking for Location / Nearby devices permission (helps Android find the stick)
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > a failure after the record is saved keeps the setup and the stick network
+[SMARTSTICK] setup: permissions: location granted, nearby granted
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > a failure after the record is saved keeps the setup and the stick network
+[SMARTSTICK] setup: not on the stick's Wi-Fi yet (Setup request failed: connect timed out)
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > a failure after the record is saved keeps the setup and the stick network
+[SMARTSTICK] setup: Wi-Fi on
+[SMARTSTICK] setup: asking Android to join SmartStick_AI (approve "Connect" if Android asks)
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > a failure after the record is saved keeps the setup and the stick network
+[SMARTSTICK] setup: joined SmartStick_AI (request)
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > a failure after the record is saved keeps the setup and the stick network
+[SMARTSTICK] setup: stick AISS-ABC123, firmware 1.2.0, protocol v1, auth off
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > a failure after the record is saved keeps the setup and the stick network
+[SMARTSTICK] setup: first telemetry packet #7 received
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > a failure after the record is saved keeps the setup and the stick network
+[SMARTSTICK] setup: stick saved on this phone
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > a failure after the record is saved keeps the setup and the stick network
+[SMARTSTICK] setup: live link: boom
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > "Try again" (searchForStick) starts a fresh run with a clean log
+[SMARTSTICK] setup: asking for Location / Nearby devices permission (helps Android find the stick)
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > "Try again" (searchForStick) starts a fresh run with a clean log
+[SMARTSTICK] setup: permissions: location granted, nearby granted
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > "Try again" (searchForStick) starts a fresh run with a clean log
+[SMARTSTICK] setup: not on the stick's Wi-Fi yet (Setup request failed: connect timed out)
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > "Try again" (searchForStick) starts a fresh run with a clean log
+[SMARTSTICK] setup: Wi-Fi on
+[SMARTSTICK] setup: asking Android to join SmartStick_AI (approve "Connect" if Android asks)
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > "Try again" (searchForStick) starts a fresh run with a clean log
+[SMARTSTICK] setup: Android did not join SmartStick_AI (UNAVAILABLE)
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > "Try again" (searchForStick) starts a fresh run with a clean log
+[SMARTSTICK] setup: scan: SmartStick_AI is not visible
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > "Try again" (searchForStick) starts a fresh run with a clean log
+[SMARTSTICK] setup: error (not_found): SmartStick_AI was not found. Switch the stick on, wait 10 seconds, keep it next to the phone, then tap Try again.
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > "Try again" (searchForStick) starts a fresh run with a clean log
+[SMARTSTICK] setup: asking for Location / Nearby devices permission (helps Android find the stick)
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > "Try again" (searchForStick) starts a fresh run with a clean log
+[SMARTSTICK] setup: permissions: location granted, nearby granted
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > "Try again" (searchForStick) starts a fresh run with a clean log
+[SMARTSTICK] setup: not on the stick's Wi-Fi yet (Setup request failed: connect timed out)
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > "Try again" (searchForStick) starts a fresh run with a clean log
+[SMARTSTICK] setup: Wi-Fi on
+[SMARTSTICK] setup: asking Android to join SmartStick_AI (approve "Connect" if Android asks)
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > "Try again" (searchForStick) starts a fresh run with a clean log
+[SMARTSTICK] setup: joined SmartStick_AI (request)
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > "Try again" (searchForStick) starts a fresh run with a clean log
+[SMARTSTICK] setup: stick AISS-ABC123, firmware 1.2.0, protocol v1, auth off
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > "Try again" (searchForStick) starts a fresh run with a clean log
+[SMARTSTICK] setup: first telemetry packet #7 received
+
+stdout | tests/provisioning.test.ts > Stick setup (v1 simple link) > "Try again" (searchForStick) starts a fresh run with a clean log
+[SMARTSTICK] setup: stick saved on this phone
+
+ ✓ tests/provisioning.test.ts (13 tests) 33ms
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > stick reboots mid-session (AP down 2 s, seq and uptime restart) → recovers with fresh data
+[SMARTSTICK] link error: Reconnecting to the stick’s Wi-Fi
+[SMARTSTICK] link reconnecting: Reconnecting to the stick’s Wi-Fi · retrying in 1 s
+
+ ✓ tests/audio.test.ts (6 tests) 40ms
+ ✓ tests/navigationScenarios.test.ts (23 tests) 28ms
+ ✓ tests/walkingVisionScheduling.test.ts (27 tests) 26ms
+ ✓ tests/audioValidity.test.ts (14 tests) 16ms
+ ✓ tests/guidanceRuntime.test.ts (22 tests) 30ms
+ ✓ tests/osmFallback.test.ts (34 tests) 23ms
+stdout | tests/telemetryFreshness.test.ts > conservative telemetry freshness and clock corrections > rejects invalid request timing before refreshing sensor state: { requestStartedAt: 10001, …(1) }
+[INFO] device: PACKET_REJECTED { error: 'malformed packet: invalid telemetry request timing' }
+
+stdout | tests/telemetryFreshness.test.ts > conservative telemetry freshness and clock corrections > rejects invalid request timing before refreshing sensor state: { requestStartedAt: NaN, …(1) }
+[INFO] device: PACKET_REJECTED { error: 'malformed packet: invalid telemetry request timing' }
+
+stdout | tests/telemetryFreshness.test.ts > conservative telemetry freshness and clock corrections > rejects invalid request timing before refreshing sensor state: { requestStartedAt: 9999, …(1) }
+[INFO] device: PACKET_REJECTED { error: 'malformed packet: invalid telemetry request timing' }
+
+stdout | tests/telemetryFreshness.test.ts > conservative telemetry freshness and clock corrections > rejects invalid request timing before refreshing sensor state: { requestStartedAt: 9999, …(1) }
+[INFO] device: PACKET_REJECTED { error: 'malformed packet: invalid telemetry request timing' }
+
+stdout | tests/telemetryFreshness.test.ts > conservative telemetry freshness and clock corrections > rejects invalid request timing before refreshing sensor state: { requestStartedAt: -1, roundTripMs: 1 }
+[INFO] device: PACKET_REJECTED { error: 'malformed packet: invalid telemetry request timing' }
+
+stdout | tests/telemetryFreshness.test.ts > conservative telemetry freshness and clock corrections > rejects invalid request timing before refreshing sensor state: { requestStartedAt: 9999, …(1) }
+[INFO] device: PACKET_REJECTED { error: 'malformed packet: invalid telemetry request timing' }
+
+stdout | tests/telemetryFreshness.test.ts > conservative telemetry freshness and clock corrections > rejects malformed firmware sample age NaN
+[INFO] device: PACKET_REJECTED { error: 'malformed packet: ultrasonic.sampleAgeMs = null' }
+
+stdout | tests/telemetryFreshness.test.ts > conservative telemetry freshness and clock corrections > rejects malformed firmware sample age Infinity
+[INFO] device: PACKET_REJECTED { error: 'malformed packet: ultrasonic.sampleAgeMs = null' }
+
+stdout | tests/telemetryFreshness.test.ts > conservative telemetry freshness and clock corrections > rejects malformed firmware sample age -1
+[INFO] device: PACKET_REJECTED { error: 'malformed packet: ultrasonic.sampleAgeMs = -1' }
+
+stdout | tests/telemetryFreshness.test.ts > conservative telemetry freshness and clock corrections > rejects future receipt times and retains compatibility with untimed legacy/mock callers
+[INFO] device: PACKET_REJECTED { error: 'malformed packet: invalid telemetry receipt time' }
+[INFO] device: PACKET_REJECTED { error: 'malformed packet: invalid telemetry receipt time' }
+
+ ✓ tests/telemetryFreshness.test.ts (17 tests) 20ms
+ ✓ tests/walkingGuidance.test.ts (25 tests) 17ms
+ ✓ tests/visionLifecycle.test.ts (7 tests) 18ms
+stderr | tests/profileSync.test.ts > settings sync both ways > a local change applies instantly, uploads once (debounced) and survives a late stale echo
+[zustand persist middleware] Unable to update item 'aiss-session-real', the given storage is currently unavailable.
+[zustand persist middleware] Unable to update item 'aiss-session-real', the given storage is currently unavailable.
+
+stderr | tests/profileSync.test.ts > settings sync both ways > theme changes stay on this phone
+[zustand persist middleware] Unable to update item 'aiss-session-real', the given storage is currently unavailable.
+
+stderr | tests/profileSync.test.ts > settings sync both ways > a change made while offline is not lost when sync stops (flushed into the write queue)
+[zustand persist middleware] Unable to update item 'aiss-session-real', the given storage is currently unavailable.
+
+stderr | tests/profileSync.test.ts > profile sync > sign-out clears the account from the phone without uploading the clearing
+[zustand persist middleware] Unable to update item 'aiss-session-real', the given storage is currently unavailable.
+
+ ✓ tests/profileSync.test.ts (20 tests) 23ms
+ ✓ tests/photoCache.test.ts (9 tests) 15ms
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > stick reboots mid-session (AP down 2 s, seq and uptime restart) → recovers with fresh data
+[SMARTSTICK] join failed (UNAVAILABLE)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > stick reboots mid-session (AP down 2 s, seq and uptime restart) → recovers with fresh data
+[SMARTSTICK] link error: Looking for the stick’s Wi-Fi (SmartStick_AI). Switch the stick on and keep it close.
+
+stderr | tests/destinationSearch.test.ts > destination search works without GPS and without the Cloud Function > Cloud Function refused (App Check) → in-app Google Places; server skipped for a while
+[WARN] maps: server autocomplete failed { code: 'unauthenticated', message: 'unauthenticated' }
+
+stderr | tests/destinationSearch.test.ts > destination search works without GPS and without the Cloud Function > a transient server error is retried next time (no backoff)
+[WARN] maps: server autocomplete failed { code: 'unavailable', message: 'unavailable' }
+
+stderr | tests/destinationSearch.test.ts > destination search works without GPS and without the Cloud Function > all fail (server, in-app, OpenStreetMap) → one error naming every cause (never a silent empty list)
+[WARN] maps: server autocomplete failed { code: 'not-found', message: 'NOT FOUND' }
+
+stderr | tests/destinationSearch.test.ts > destination search works without GPS and without the Cloud Function > all fail (server, in-app, OpenStreetMap) → one error naming every cause (never a silent empty list)
+[WARN] maps: in-app places failed { code: '', message: 'PlacesApiNotEnabled' }
+
+stderr | tests/destinationSearch.test.ts > destination search works without GPS and without the Cloud Function > a browser suggestion resolves through the same autocomplete session (toPlace)
+[WARN] maps: server autocomplete failed { code: 'unauthenticated', message: 'unauthenticated' }
+
+stderr | tests/destinationSearch.test.ts > destination search works without GPS and without the Cloud Function > server place lookup failing falls back to Place.fetchFields
+[WARN] maps: server place failed { code: 'internal', message: 'internal' }
+
+stderr | tests/destinationSearch.test.ts > destination search works without GPS and without the Cloud Function > assistant search: server down → Place.searchByText, nearest first with a bias
+[WARN] maps: server search failed { code: 'failed-precondition', message: 'failed-precondition' }
+
+stderr | tests/destinationSearch.test.ts > walking route fallback > server down → Maps JS DirectionsService (WALKING), instructions without HTML
+[WARN] maps: server route failed { code: 'unauthenticated', message: 'unauthenticated' }
+
+stderr | tests/destinationSearch.test.ts > walking route fallback > a real "no walking route" answer is not retried elsewhere
+[WARN] maps: server route failed { code: 'not-found', message: 'No walking route found.' }
+
+ ✓ tests/destinationSearch.test.ts (14 tests) 17ms
+stdout | tests/assistantDestination.test.ts > the assistant can always set a destination > a second start for the same place does not start twice
+[LOCATION] acquire result { fresh: false, hasAny: false, ageS: null }
+[INFO] location: acquire result { fresh: false, hasAny: false, ageS: null }
+
+stdout | tests/assistantDestination.test.ts > the assistant can always set a destination > a second start for the same place does not start twice
+[INFO] voice navigation: destination set, waiting for GPS { placeId: 'pl_hosp' }
+[LOCATION] starting { request: false, platform: 'web', aissLocation: false }
+[INFO] location: starting { request: false, platform: 'web', aissLocation: false }
+
+stdout | tests/assistantDestination.test.ts > the assistant can always set a destination > nothing found: an honest failure that asks again
+[LOCATION] acquiring a fresh position { maxAgeMs: 60000, timeoutMs: 3000 }
+[INFO] location: acquiring a fresh position { maxAgeMs: 60000, timeoutMs: 3000 }
+
+stdout | tests/assistantDestination.test.ts > the assistant can always set a destination > nothing found: an honest failure that asks again
+[LOCATION] starting { request: false, platform: 'web', aissLocation: false }
+[INFO] location: starting { request: false, platform: 'web', aissLocation: false }
+
+stderr | tests/sosSms.test.ts > SOS SMS carries the location in the text itself > live fix → Google Maps link with accuracy and age, sent directly
+[zustand persist middleware] Unable to update item 'aiss-session-real', the given storage is currently unavailable.
+
+stdout | tests/sosSms.test.ts > SOS SMS carries the location in the text itself > live fix → Google Maps link with accuracy and age, sent directly
+[SAFETY] SOS SMS text ready { withLocation: true, fresh: true }
+
+stderr | tests/sosSms.test.ts > SOS SMS carries the location in the text itself > only an old position → says live location is unavailable and gives the last known one with its age
+[zustand persist middleware] Unable to update item 'aiss-session-real', the given storage is currently unavailable.
+
+stdout | tests/sosSms.test.ts > SOS SMS carries the location in the text itself > only an old position → says live location is unavailable and gives the last known one with its age
+[LOCATION] acquiring a fresh position { maxAgeMs: 120000, timeoutMs: 8000 }
+[INFO] location: acquiring a fresh position { maxAgeMs: 120000, timeoutMs: 8000 }
+[LOCATION] starting { request: false, platform: 'web', aissLocation: false }
+[INFO] location: starting { request: false, platform: 'web', aissLocation: false }
+
+stdout | tests/sosSms.test.ts > SOS SMS carries the location in the text itself > only an old position → says live location is unavailable and gives the last known one with its age
+[LOCATION] acquire result { fresh: false, hasAny: true, ageS: 2413 }
+[INFO] location: acquire result { fresh: false, hasAny: true, ageS: 2413 }
+
+stdout | tests/sosSms.test.ts > SOS SMS carries the location in the text itself > only an old position → says live location is unavailable and gives the last known one with its age
+[SAFETY] SOS SMS text ready { withLocation: true, fresh: false }
+
+stderr | tests/sosSms.test.ts > SOS SMS carries the location in the text itself > the text is GSM-7 and fits ONE SMS (a "±" would force UCS-2 and split the link across parts)
+[zustand persist middleware] Unable to update item 'aiss-session-real', the given storage is currently unavailable.
+
+stdout | tests/sosSms.test.ts > SOS SMS carries the location in the text itself > the text is GSM-7 and fits ONE SMS (a "±" would force UCS-2 and split the link across parts)
+[LOCATION] acquiring a fresh position { maxAgeMs: 120000, timeoutMs: 8000 }
+[INFO] location: acquiring a fresh position { maxAgeMs: 120000, timeoutMs: 8000 }
+
+stdout | tests/sosSms.test.ts > SOS SMS carries the location in the text itself > the text is GSM-7 and fits ONE SMS (a "±" would force UCS-2 and split the link across parts)
+[LOCATION] starting { request: false, platform: 'web', aissLocation: false }
+[INFO] location: starting { request: false, platform: 'web', aissLocation: false }
+
+stdout | tests/sosSms.test.ts > SOS SMS carries the location in the text itself > the text is GSM-7 and fits ONE SMS (a "±" would force UCS-2 and split the link across parts)
+[LOCATION] acquire result { fresh: false, hasAny: true, ageS: 2413 }
+[INFO] location: acquire result { fresh: false, hasAny: true, ageS: 2413 }
+
+stdout | tests/sosSms.test.ts > SOS SMS carries the location in the text itself > the text is GSM-7 and fits ONE SMS (a "±" would force UCS-2 and split the link across parts)
+[SAFETY] SOS SMS text ready { withLocation: true, fresh: false }
+
+stderr | tests/sosSms.test.ts > SOS SMS carries the location in the text itself > no position at all → "Location unavailable", the SMS still goes
+[zustand persist middleware] Unable to update item 'aiss-session-real', the given storage is currently unavailable.
+
+stdout | tests/sosSms.test.ts > SOS SMS carries the location in the text itself > no position at all → "Location unavailable", the SMS still goes
+[LOCATION] acquiring a fresh position { maxAgeMs: 120000, timeoutMs: 8000 }
+[INFO] location: acquiring a fresh position { maxAgeMs: 120000, timeoutMs: 8000 }
+
+stdout | tests/sosSms.test.ts > SOS SMS carries the location in the text itself > no position at all → "Location unavailable", the SMS still goes
+[LOCATION] starting { request: false, platform: 'web', aissLocation: false }
+[INFO] location: starting { request: false, platform: 'web', aissLocation: false }
+
+stdout | tests/sosSms.test.ts > SOS SMS carries the location in the text itself > no position at all → "Location unavailable", the SMS still goes
+[LOCATION] acquire result { fresh: false, hasAny: false, ageS: null }
+[INFO] location: acquire result { fresh: false, hasAny: false, ageS: null }
+
+stdout | tests/sosSms.test.ts > SOS SMS carries the location in the text itself > no position at all → "Location unavailable", the SMS still goes
+[SAFETY] SOS SMS text ready { withLocation: false, fresh: false }
+
+ ✓ tests/sosSms.test.ts (4 tests) 17ms
+ ✓ tests/ultrasonicApproach.test.ts (20 tests) 15ms
+ ✓ tests/relay.test.ts (9 tests) 17ms
+ ✓ tests/serverTest.test.ts (8 tests) 9ms
+ ✓ tests/appCheck.test.ts (6 tests) 15ms
+ ✓ tests/announcementValidity.test.ts (12 tests) 14ms
+ ✓ tests/liveStreamConsumers.test.ts (5 tests) 13ms
+ ✓ tests/visionWorkerCleanup.test.ts (3 tests) 14ms
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > stick reboots mid-session (AP down 2 s, seq and uptime restart) → recovers with fresh data
+[SMARTSTICK] join ok (request)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > stick reboots mid-session (AP down 2 s, seq and uptime restart) → recovers with fresh data
+[SMARTSTICK] first telemetry packet #1 (637 B via native/bound)
+[SMARTSTICK] link connected
+[INFO] device: CONNECTED { deviceId: 'AISS-4F2A1B' }
+
+ ✓ tests/sceneEvidenceFreshness.test.ts (11 tests) 13ms
+ ✓ tests/visionDetectorLifecycle.test.ts (5 tests) 13ms
+stdout | tests/transportFreshness.test.ts > actual HTTP transport telemetry timing propagation > charges the 1600 ms delayed response to sensor age without changing wire timestamps
+[INFO] device: CONNECTED { deviceId: 'AISS-TIME' }
+
+stdout | tests/transportFreshness.test.ts > actual HTTP transport telemetry timing propagation > charges the 250 ms delayed response to sensor age without changing wire timestamps
+[INFO] device: CONNECTED { deviceId: 'AISS-TIME' }
+
+ ✓ tests/transportFreshness.test.ts (2 tests) 11ms
+stderr | tests/audioPcm.test.ts > Live PCM output in the unified audio owner > preserves signed little-endian samples, sample rate, volume, and contiguous scheduling
+[zustand persist middleware] Unable to update item 'aiss-session-real', the given storage is currently unavailable.
+
+stderr | tests/audioPcm.test.ts > Live PCM output in the unified audio owner > disconnects a completed source and clears its completion callback
+[zustand persist middleware] Unable to update item 'aiss-session-real', the given storage is currently unavailable.
+
+stderr | tests/audioPcm.test.ts > Live PCM output in the unified audio owner > releases every interrupted source and restarts scheduling without obsolete audio
+[zustand persist middleware] Unable to update item 'aiss-session-real', the given storage is currently unavailable.
+
+stderr | tests/audioPcm.test.ts > Live PCM output in the unified audio owner > still disconnects sources when the browser reports them already stopped
+[zustand persist middleware] Unable to update item 'aiss-session-real', the given storage is currently unavailable.
+
+stderr | tests/audioPcm.test.ts > Live PCM output in the unified audio owner > releases pending PCM when the existing Live session closes
+[zustand persist middleware] Unable to update item 'aiss-session-real', the given storage is currently unavailable.
+
+stderr | tests/audioPcm.test.ts > Live PCM output in the unified audio owner > keeps critical speech ahead of Live output and respects the existing mute setting
+[zustand persist middleware] Unable to update item 'aiss-session-real', the given storage is currently unavailable.
+
+stderr | tests/audioPcm.test.ts > Live PCM output in the unified audio owner > keeps critical speech ahead of Live output and respects the existing mute setting
+[zustand persist middleware] Unable to update item 'aiss-session-real', the given storage is currently unavailable.
+
+ ✓ tests/audioPcm.test.ts (6 tests) 9ms
+ ✓ tests/sensorConditioning.test.ts (10 tests) 10ms
+ ✓ tests/navIntent.test.ts (22 tests) 7ms
+stdout | tests/pipeline.test.ts > telemetry pipeline > a rejection is reported with its reason and cleared once data is accepted again
+[INFO] device: PACKET_REJECTED { error: 'malformed packet: v = 3 (expected 1)' }
+
+stdout | tests/pipeline.test.ts > telemetry pipeline > rejects packets from another device and malformed packets
+[INFO] device: PACKET_REJECTED { error: 'unexpected device' }
+[INFO] device: PACKET_REJECTED { error: 'malformed packet: deviceId = undefined' }
+
+stdout | tests/pipeline.test.ts > telemetry pipeline > button gestures from the stick reach the handler
+[INFO] device: BUTTON_EVENT { gesture: 'single' }
+
+ ✓ tests/pipeline.test.ts (7 tests) 9ms
+ ✓ tests/walkingVisionEvidence.test.ts (26 tests) 10ms
+ ✓ tests/legacyTransportFreshness.test.ts (2 tests) 9ms
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > stick reboots mid-session (AP down 2 s, seq and uptime restart) → recovers with fresh data
+[SMARTSTICK] link disconnected
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > slow stick (1.5 s per answer) → still Connected (maybe "weak") with data
+[SMARTSTICK] setup: asking for Location / Nearby devices permission (helps Android find the stick)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > slow stick (1.5 s per answer) → still Connected (maybe "weak") with data
+[SMARTSTICK] setup: permissions: location granted, nearby granted
+
+ ✓ tests/backendApi.test.ts (4 tests) 11ms
+stdout | tests/assistantDestination.test.ts > the assistant can always set a destination > nothing found: an honest failure that asks again
+[LOCATION] acquire result { fresh: false, hasAny: false, ageS: null }
+[INFO] location: acquire result { fresh: false, hasAny: false, ageS: null }
+
+ ✓ tests/assistantDestination.test.ts (11 tests) 12029ms
+   ✓ the assistant can always set a destination (7)
+     ✓ "Set destination to City Hospital" with no GPS: destination set, directions wait for GPS 3009ms
+     ✓ search without GPS still offers a place; yes → start_navigation waits for GPS (no "unavailable") 3003ms
+     ✓ a second start for the same place does not start twice 3004ms
+     ✓ nothing found: an honest failure that asks again 3003ms
+ ✓ tests/captureSingleFlight.test.ts (4 tests) 7ms
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > slow stick (1.5 s per answer) → still Connected (maybe "weak") with data
+[SMARTSTICK] setup: not on the stick's Wi-Fi yet (Setup request failed: connect timed out)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > slow stick (1.5 s per answer) → still Connected (maybe "weak") with data
+[SMARTSTICK] setup: Wi-Fi on
+[SMARTSTICK] setup: asking Android to join SmartStick_AI (approve "Connect" if Android asks)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > slow stick (1.5 s per answer) → still Connected (maybe "weak") with data
+[SMARTSTICK] setup: joined SmartStick_AI (request)
+
+ ✓ tests/stickHaptics.test.ts (6 tests) 8ms
+stdout | tests/handsfree.test.ts > Hands-Free Navigation Flow > Voice search and confirmation starts navigation in background
+[INFO] voice navigation started { placeId: '123' }
+
+ ✓ tests/handsfree.test.ts (1 test) 7ms
+ ✓ tests/crypto.test.ts (3 tests) 13ms
+ ✓ tests/executorVision.test.ts (7 tests) 8ms
+ ✓ tests/visionEngine.test.ts (10 tests) 9ms
+ ✓ tests/contracts.test.ts (9 tests) 8ms
+ ✓ tests/pairedDevice.test.ts (6 tests) 8ms
+ ✓ tests/liveCameraText.test.ts (7 tests) 5ms
+ ✓ tests/battery.test.ts (8 tests) 8ms
+stderr | tests/executor.test.ts > AI tool executor (validation & truthfulness) > never changes SOS/privacy settings by voice; valid settings apply
+[zustand persist middleware] Unable to update item 'aiss-session-real', the given storage is currently unavailable.
+
+ ✓ tests/executor.test.ts (6 tests) 7ms
+ ✓ tests/guardianVisionCleanup.test.ts (5 tests) 6ms
+ ✓ tests/phoneSms.test.ts (2 tests) 6ms
+ ✓ tests/maps.test.ts (4 tests) 5ms
+ ✓ tests/sensors.test.ts (5 tests) 4ms
+ ✓ tests/platform.test.ts (4 tests) 3ms
+ ✓ tests/walk.test.ts (4 tests) 4ms
+ ✓ tests/button.test.ts (5 tests) 4ms
+ ✓ tests/pairing.test.ts (3 tests) 3ms
+ ✓ tests/cloudVisionEvidence.test.ts (7 tests) 4ms
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > slow stick (1.5 s per answer) → still Connected (maybe "weak") with data
+[SMARTSTICK] setup: stick AISS-4F2A1B, firmware 1.2.0, protocol v1, auth off
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > slow stick (1.5 s per answer) → still Connected (maybe "weak") with data
+[SMARTSTICK] setup: first telemetry packet #1 received
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > slow stick (1.5 s per answer) → still Connected (maybe "weak") with data
+[SMARTSTICK] setup: stick saved on this phone
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > slow stick (1.5 s per answer) → still Connected (maybe "weak") with data
+[SMARTSTICK] link connecting: Joining SmartStick_AI…
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > slow stick (1.5 s per answer) → still Connected (maybe "weak") with data
+[SMARTSTICK] join ok (bound)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > slow stick (1.5 s per answer) → still Connected (maybe "weak") with data
+[SMARTSTICK] first telemetry packet #2 (637 B via native/bound)
+[SMARTSTICK] link connected
+[INFO] device: CONNECTED { deviceId: 'AISS-4F2A1B' }
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > slow stick (1.5 s per answer) → still Connected (maybe "weak") with data
+[SMARTSTICK] link disconnected
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > FALLBACK: binding lost but the stick is the default route → data keeps flowing over it
+[SMARTSTICK] setup: asking for Location / Nearby devices permission (helps Android find the stick)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > FALLBACK: binding lost but the stick is the default route → data keeps flowing over it
+[SMARTSTICK] setup: permissions: location granted, nearby granted
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > FALLBACK: binding lost but the stick is the default route → data keeps flowing over it
+[SMARTSTICK] setup: not on the stick's Wi-Fi yet (Setup request failed: connect timed out)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > FALLBACK: binding lost but the stick is the default route → data keeps flowing over it
+[SMARTSTICK] setup: Wi-Fi on
+[SMARTSTICK] setup: asking Android to join SmartStick_AI (approve "Connect" if Android asks)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > FALLBACK: binding lost but the stick is the default route → data keeps flowing over it
+[SMARTSTICK] setup: joined SmartStick_AI (request)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > FALLBACK: binding lost but the stick is the default route → data keeps flowing over it
+[SMARTSTICK] setup: stick AISS-4F2A1B, firmware 1.2.0, protocol v1, auth off
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > FALLBACK: binding lost but the stick is the default route → data keeps flowing over it
+[SMARTSTICK] setup: first telemetry packet #1 received
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > FALLBACK: binding lost but the stick is the default route → data keeps flowing over it
+[SMARTSTICK] setup: stick saved on this phone
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > FALLBACK: binding lost but the stick is the default route → data keeps flowing over it
+[SMARTSTICK] link connecting: Joining SmartStick_AI…
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > FALLBACK: binding lost but the stick is the default route → data keeps flowing over it
+[SMARTSTICK] join ok (bound)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > FALLBACK: binding lost but the stick is the default route → data keeps flowing over it
+[SMARTSTICK] first telemetry packet #2 (636 B via native/bound)
+[SMARTSTICK] link connected
+[INFO] device: CONNECTED { deviceId: 'AISS-4F2A1B' }
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > FALLBACK: binding lost but the stick is the default route → data keeps flowing over it
+[SMARTSTICK] link disconnected
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > FALLBACK: the native HTTP call is broken → the WebView fetch path carries the link
+[SMARTSTICK] setup: asking for Location / Nearby devices permission (helps Android find the stick)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > FALLBACK: the native HTTP call is broken → the WebView fetch path carries the link
+[SMARTSTICK] setup: permissions: location granted, nearby granted
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > FALLBACK: the native HTTP call is broken → the WebView fetch path carries the link
+[SMARTSTICK] setup: the phone is already on SmartStick_AI: no Wi-Fi dialog needed
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > FALLBACK: the native HTTP call is broken → the WebView fetch path carries the link
+[SMARTSTICK] setup: stick AISS-4F2A1B, firmware 1.2.0, protocol v1, auth off
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > FALLBACK: the native HTTP call is broken → the WebView fetch path carries the link
+[SMARTSTICK] setup: first telemetry packet #1 received
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > FALLBACK: the native HTTP call is broken → the WebView fetch path carries the link
+[SMARTSTICK] setup: stick saved on this phone
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > FALLBACK: the native HTTP call is broken → the WebView fetch path carries the link
+[SMARTSTICK] link connecting: Joining SmartStick_AI…
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > FALLBACK: the native HTTP call is broken → the WebView fetch path carries the link
+[SMARTSTICK] join ok (bound)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > FALLBACK: the native HTTP call is broken → the WebView fetch path carries the link
+[SMARTSTICK] first telemetry packet #2 (636 B via native/wifi)
+[SMARTSTICK] link connected
+[INFO] device: CONNECTED { deviceId: 'AISS-4F2A1B' }
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > FALLBACK: the native HTTP call is broken → the WebView fetch path carries the link
+[SMARTSTICK] link disconnected
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > "Use stick Wi-Fi for the whole app" binds the process to the stick network and releases it
+[SMARTSTICK] setup: asking for Location / Nearby devices permission (helps Android find the stick)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > "Use stick Wi-Fi for the whole app" binds the process to the stick network and releases it
+[SMARTSTICK] setup: permissions: location granted, nearby granted
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > "Use stick Wi-Fi for the whole app" binds the process to the stick network and releases it
+[SMARTSTICK] setup: not on the stick's Wi-Fi yet (Setup request failed: connect timed out)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > "Use stick Wi-Fi for the whole app" binds the process to the stick network and releases it
+[SMARTSTICK] setup: Wi-Fi on
+[SMARTSTICK] setup: asking Android to join SmartStick_AI (approve "Connect" if Android asks)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > "Use stick Wi-Fi for the whole app" binds the process to the stick network and releases it
+[SMARTSTICK] setup: joined SmartStick_AI (request)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > "Use stick Wi-Fi for the whole app" binds the process to the stick network and releases it
+[SMARTSTICK] setup: stick AISS-4F2A1B, firmware 1.2.0, protocol v1, auth off
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > "Use stick Wi-Fi for the whole app" binds the process to the stick network and releases it
+[SMARTSTICK] setup: first telemetry packet #1 received
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > "Use stick Wi-Fi for the whole app" binds the process to the stick network and releases it
+[SMARTSTICK] setup: stick saved on this phone
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > "Use stick Wi-Fi for the whole app" binds the process to the stick network and releases it
+[SMARTSTICK] link connecting: Joining SmartStick_AI…
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > "Use stick Wi-Fi for the whole app" binds the process to the stick network and releases it
+[SMARTSTICK] join ok (bound)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > "Use stick Wi-Fi for the whole app" binds the process to the stick network and releases it
+[SMARTSTICK] first telemetry packet #2 (636 B via native/bound)
+[SMARTSTICK] link connected
+[INFO] device: CONNECTED { deviceId: 'AISS-4F2A1B' }
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > "Use stick Wi-Fi for the whole app" binds the process to the stick network and releases it
+[SMARTSTICK] link disconnected
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > never stuck on "Connecting": a stick that stops answering shows a state change and a reason
+[SMARTSTICK] setup: asking for Location / Nearby devices permission (helps Android find the stick)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > never stuck on "Connecting": a stick that stops answering shows a state change and a reason
+[SMARTSTICK] setup: permissions: location granted, nearby granted
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > never stuck on "Connecting": a stick that stops answering shows a state change and a reason
+[SMARTSTICK] setup: not on the stick's Wi-Fi yet (Setup request failed: connect timed out)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > never stuck on "Connecting": a stick that stops answering shows a state change and a reason
+[SMARTSTICK] setup: Wi-Fi on
+[SMARTSTICK] setup: asking Android to join SmartStick_AI (approve "Connect" if Android asks)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > never stuck on "Connecting": a stick that stops answering shows a state change and a reason
+[SMARTSTICK] setup: joined SmartStick_AI (request)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > never stuck on "Connecting": a stick that stops answering shows a state change and a reason
+[SMARTSTICK] setup: stick AISS-4F2A1B, firmware 1.2.0, protocol v1, auth off
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > never stuck on "Connecting": a stick that stops answering shows a state change and a reason
+[SMARTSTICK] setup: first telemetry packet #1 received
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > never stuck on "Connecting": a stick that stops answering shows a state change and a reason
+[SMARTSTICK] setup: stick saved on this phone
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > never stuck on "Connecting": a stick that stops answering shows a state change and a reason
+[SMARTSTICK] link connecting: Joining SmartStick_AI…
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > never stuck on "Connecting": a stick that stops answering shows a state change and a reason
+[SMARTSTICK] join ok (bound)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > never stuck on "Connecting": a stick that stops answering shows a state change and a reason
+[SMARTSTICK] first telemetry packet #2 (636 B via native/bound)
+[SMARTSTICK] link connected
+[INFO] device: CONNECTED { deviceId: 'AISS-4F2A1B' }
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > never stuck on "Connecting": a stick that stops answering shows a state change and a reason
+[SMARTSTICK] link error: telemetry: Native request failed: Setup request failed: failed to connect to /192.168.4.1 (port 80)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > never stuck on "Connecting": a stick that stops answering shows a state change and a reason
+[SMARTSTICK] link error: telemetry: Native request failed: Setup request failed: failed to connect to /192.168.4.1 (port 80)
+[SMARTSTICK] link degraded: Missed telemetry
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > never stuck on "Connecting": a stick that stops answering shows a state change and a reason
+[SMARTSTICK] link error: telemetry: Native request failed: Setup request failed: failed to connect to /192.168.4.1 (port 80)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > never stuck on "Connecting": a stick that stops answering shows a state change and a reason
+[SMARTSTICK] link error: telemetry: Native request failed: Setup request failed: failed to connect to /192.168.4.1 (port 80)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > never stuck on "Connecting": a stick that stops answering shows a state change and a reason
+[SMARTSTICK] link error: telemetry: Native request failed: Setup request failed: failed to connect to /192.168.4.1 (port 80)
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > never stuck on "Connecting": a stick that stops answering shows a state change and a reason
+[SMARTSTICK] link error: telemetry: Native request failed: Setup request failed: failed to connect to /192.168.4.1 (port 80)
+[SMARTSTICK] link error: The stick stopped answering
+[SMARTSTICK] link reconnecting: The stick stopped answering · retrying in 1 s
+
+stdout | tests/stick-e2e.test.ts > Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) > never stuck on "Connecting": a stick that stops answering shows a state change and a reason
+[SMARTSTICK] link disconnected
+
+ ✓ tests/stick-e2e.test.ts (14 tests) 28262ms
+   ✓ Stick ⇄ app data link (real Capacitor proxy, fake Android, fake firmware 1.2) (14)
+     ✓ USER SYMPTOM: setup completes, then Home goes Connected with real battery / distance / tilt 712ms
+     ✓ cold app start with a saved stick record (no binding yet) → Connected with data 766ms
+     ✓ cold start while Android’s scan is stale (NOT_IN_RANGE) still asks Android once and connects 765ms
+     ✓ phone joined SmartStick_AI by hand (no binding request at all) → Connected 328ms
+     ✓ mobile data off, the stick is the default route and Android lists no 192.168.4.x network → Connected 933ms
+     ✓ Wi-Fi lost mid-session → Reconnecting (with a reason) → re-bound → data flows again 2423ms
+     ✓ stick reboots mid-session (AP down 2 s, seq and uptime restart) → recovers with fresh data 6346ms
+     ✓ slow stick (1.5 s per answer) → still Connected (maybe "weak") with data 6666ms
+     ✓ FALLBACK: binding lost but the stick is the default route → data keeps flowing over it 1159ms
+     ✓ FALLBACK: the native HTTP call is broken → the WebView fetch path carries the link 835ms
+     ✓ "Use stick Wi-Fi for the whole app" binds the process to the stick network and releases it 656ms
+     ✓ never stuck on "Connecting": a stick that stops answering shows a state change and a reason 6655ms
+
+ Test Files  62 passed (62)
+      Tests  673 passed (673)
+   Start at  10:19:17
+   Duration  28.77s (tests 88%, import 8%, transform 3%)
+
+    Isolate  62 workers spawned · ~85ms startup each (spawn + environment, per file)
+             at least ~1.66s faster with isolate: false — reuses workers across files instead of one per file
+
+JSON report written to /tmp/aiss-final-vitest-results.json

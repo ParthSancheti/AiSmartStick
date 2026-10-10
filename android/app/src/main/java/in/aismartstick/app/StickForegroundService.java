@@ -24,7 +24,10 @@ import androidx.core.content.ContextCompat;
  *  - GPS location keeps updating (type "location", only when location permission is granted),
  *  - Firestore sync, SOS and guardian messages keep flowing.
  * Android shows a persistent notification while it runs; the user can stop it in Settings.
- * Service types: connectedDevice (stick over Wi-Fi) + location (when permitted). Android 14+ rules apply.
+ * Service types: connectedDevice (stick over Wi-Fi) + location + microphone (each only when its
+ * permission is granted). Android 11+ lets a foreground service use the mic/location while the
+ * screen is locked only if it was started with those types while the app was visible, so the types
+ * are acquired once from the foreground and the notification text is updated in place afterwards.
  */
 public class StickForegroundService extends Service {
     public static final String CHANNEL_ID = "background";
@@ -32,6 +35,8 @@ public class StickForegroundService extends Service {
     public static final String EXTRA_TITLE = "title";
     public static final String EXTRA_BODY = "body";
     static volatile boolean running = false;
+    /** Foreground service types actually granted at the last startForeground (0 before Android 10). */
+    static volatile int activeTypes = 0;
     private PowerManager.WakeLock wakeLock;
 
     @Override
@@ -46,17 +51,7 @@ public class StickForegroundService extends Service {
     }
 
     private Notification build(String title, String body) {
-        Intent open = new Intent(this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
-        PendingIntent pi = PendingIntent.getActivity(this, 0, open, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-        return new NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle(title)
-            .setContentText(body)
-            .setSmallIcon(R.mipmap.ic_launcher)
-            .setOngoing(true)
-            .setOnlyAlertOnce(true)
-            .setCategory(NotificationCompat.CATEGORY_SERVICE)
-            .setContentIntent(pi)
-            .build();
+        return buildFor(this, title, body);
     }
 
     @Override
@@ -76,7 +71,17 @@ public class StickForegroundService extends Service {
             boolean loc = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
                 || ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED;
             if (loc) types |= ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION;
-            startForeground(NOTIFICATION_ID, n, types);
+            boolean mic = Build.VERSION.SDK_INT >= 30 && ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED;
+            if (mic) types |= ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE;
+            try {
+                startForeground(NOTIFICATION_ID, n, types);
+                activeTypes = types;
+            } catch (RuntimeException e) {
+                // Android 14+: while-in-use types (location/microphone) cannot be acquired from the
+                // background. Keep the stick link alive; the types are re-acquired on the next resume.
+                startForeground(NOTIFICATION_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE);
+                activeTypes = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE;
+            }
         } else {
             startForeground(NOTIFICATION_ID, n);
         }
@@ -89,6 +94,26 @@ public class StickForegroundService extends Service {
         running = true;
         // NOT_STICKY: never let Android revive a notification that claims protection without the app.
         return START_NOT_STICKY;
+    }
+
+    /** Updates the ongoing notification text without restarting the service (safe from the background). */
+    static void updateNotification(Context ctx, String title, String body) {
+        Notification n = buildFor(ctx, title, body);
+        ((NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE)).notify(NOTIFICATION_ID, n);
+    }
+
+    private static Notification buildFor(Context ctx, String title, String body) {
+        Intent open = new Intent(ctx, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        PendingIntent pi = PendingIntent.getActivity(ctx, 0, open, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        return new NotificationCompat.Builder(ctx, CHANNEL_ID)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .setContentIntent(pi)
+            .build();
     }
 
     private void showPausedNotice() {
@@ -115,6 +140,7 @@ public class StickForegroundService extends Service {
     @Override
     public void onDestroy() {
         running = false;
+        activeTypes = 0;
         if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
         wakeLock = null;
         super.onDestroy();

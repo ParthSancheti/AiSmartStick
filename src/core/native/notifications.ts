@@ -27,6 +27,8 @@ export async function registerPush(uid: string, role: 'user' | 'guardian'): Prom
       await FirebaseMessaging.createChannel({ id: 'status', name: 'Stick status', description: 'Disconnects, low battery, stale location', importance: Importance.High }).catch(() => undefined);
       const { token } = await FirebaseMessaging.getToken();
       await save(uid, token, 'android', role);
+      // Sign-in can happen more than once per process: never stack listeners.
+      await FirebaseMessaging.removeAllListeners().catch(() => undefined);
       void FirebaseMessaging.addListener('notificationActionPerformed', (e) => {
         const kind = (e.notification?.data as Record<string, string> | undefined)?.kind;
         // Tapping any alert opens the app; SOS/geofence/stale open Home (the SOS takeover shows itself from the feed).
@@ -34,7 +36,7 @@ export async function registerPush(uid: string, role: 'user' | 'guardian'): Prom
       });
       void FirebaseMessaging.addListener('notificationReceived', (e) => {
         const n = e.notification;
-        if (n?.title) toastGuardian(n.title);
+        if (n?.title && role === 'guardian') toastGuardian(n.title);
       });
       return 'registered';
     }

@@ -4,11 +4,15 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#EAF1EF" />
+    <meta name="color-scheme" content="light dark" />
+    <!-- Paint the app background before the CSS bundle loads: no white flash on a dark phone. -->
+    <style>html{background:#f0f4f8}@media (prefers-color-scheme:dark){html{background:#050508}}</style>
     <title>AI SmartStick</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@300..800&family=Noto+Sans+Devanagari:wght@400..700&display=swap" rel="stylesheet" />
-    
+    <!-- Non-blocking: on the stick's Wi-Fi or a slow network the app must not wait for Google Fonts
+         (system fonts until it arrives). -->
+    <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@300..800&family=Noto+Sans+Devanagari:wght@400..700&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
   </head>
   <body>
     <div id="root"></div>

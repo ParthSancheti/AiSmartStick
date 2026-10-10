@@ -3,17 +3,29 @@
   "appName": "AI SmartStick",
   "webDir": "dist",
   "android": {
-    "allowMixedContent": false,
+    "allowMixedContent": true,
     "captureInput": true
   },
   "plugins": {
-    "CapacitorHttp": { "enabled": true },
+    "CapacitorHttp": {
+      "enabled": false
+    },
     "FirebaseAuthentication": {
-      "skipNativeAuth": true,
-      "providers": ["google.com"]
+      "skipNativeAuth": false,
+      "providers": [
+        "google.com"
+      ]
     },
     "FirebaseMessaging": {
-      "presentationOptions": ["badge", "sound", "alert"]
+      "presentationOptions": [
+        "badge",
+        "sound",
+        "alert"
+      ]
+    },
+    "StatusBar": {
+      "overlaysWebView": true,
+      "style": "DEFAULT"
     }
   }
 }

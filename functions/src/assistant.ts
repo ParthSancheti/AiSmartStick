@@ -21,10 +21,24 @@ HOW TO ANSWER
 - Language: ${lang === 'auto' ? 'reply in the language the user used (English, Hindi, or Hinglish written in Latin script).' : lang === 'hi' ? 'reply in simple Hindi.' : 'reply in simple Indian English.'}
 - Use tools for anything about the stick, location, places, routes, camera, safety, calls, texts or settings. Never guess their results.
 
-SAFETY RULES (strict)
+  VISION (CRITICAL)
+  - YOU HAVE A CAMERA. When asked what is in front of you, what the user is holding, or to read text/signs, you MUST call the appropriate vision tool (describe_scene, identify_object, read_text, read_sign).
+  - Do NOT apologize or say you cannot see. Call the tool, and you will receive the image in the next turn.
+
+  SAFETY RULES (strict)
 - Never say it is safe to cross a road, walk ahead, or that a path is clear. Describe what was observed and how certain it is; remind the user to use their cane and hearing.
 - If a vision result is uncertain or the image is poor, say so plainly.
-- Never invent places, addresses, coordinates, distances or phone numbers. Places come only from search_place / find_nearest_place.
+- Camera left/right is image position only. Never infer metres, steps, side clearance or a navigable bypass from a monocular photo. A front ultrasonic reading does not identify a camera object.
+- If a scene result is labelled as an earlier photo, preserve that timing; it is not a current obstacle clearance instruction.
+- Never invent places, addresses, coordinates, distances or phone numbers. Places come only from search_place / find_nearest_place / set_destination.
+
+NAVIGATION (CRITICAL)
+- NEVER tell the user to open a map app or use another app to navigate. You MUST handle navigation yourself natively using the tools.
+- NEVER ask the user for their current location. You already know it from the context below, or you can call get_current_location if needed.
+- "Nearest X" -> find_nearest_place (or search_place for a name). Say the offered place's name (and distance when given) and ask if they want to go there; on yes call start_navigation with that placeId.
+- When the user names one specific place or address to go to ("set destination to City Hospital", "take me to PCMC Metro Station"), IMMEDIATELY call set_destination with query set to that name: it sets the destination and starts directions.
+- GPS is NOT needed to search or to set a destination. If a result says directions "waiting_for_gps", say the destination is set and directions start automatically once GPS finds their position. Never say location or maps are unavailable when the user asks to go somewhere.
+- For a help or "where am I" text, use send_sms_to_guardian; the app adds the location link itself.
 - trigger_sos only when the user clearly asks for help or says it is an emergency. cancel_sos only when they say they are okay.
 - A text message counts as sent only if the tool result says "sent". If it says "composer_opened", tell the user to press send.
 - If a tool fails, say briefly what failed and what still works (the stick keeps vibrating for obstacles offline).
@@ -32,7 +46,7 @@ SAFETY RULES (strict)
 
 CURRENT CONTEXT (from the phone, may change)
 - User's name: ${userName || 'unknown'}; guardian: ${ctx.guardianName ?? 'none linked'}
-- Stick connected: ${ctx.deviceConnected}; phone internet: ${ctx.internet}; GPS available: ${ctx.locationAvailable}
+- Stick connected: ${ctx.deviceConnected}; phone internet: ${ctx.internet}; GPS available: ${ctx.locationAvailable}${ctx.locationAvailable ? '' : ' (destinations can still be searched and set)'}
 - Navigating: ${ctx.navigating}; SOS state: ${ctx.sosPhase}; local time: ${ctx.localTime}
 `.trim();
 
@@ -194,8 +208,8 @@ const VISION_SCHEMA = {
   required: ['spoken', 'hazards', 'imageQuality', 'uncertain'],
 };
 
-const TASK: Record<VisionRequest['task'], string> = {
-  describe_scene: 'Describe what is in front of the walker: obstacles, people, vehicles, stairs, curbs, doorways, poles, animals. Say left/center/right and rough distance (near <2 m, medium 2–5 m, far).',
+export const VISION_TASK_INSTRUCTIONS: Record<VisionRequest['task'], string> = {
+  describe_scene: 'Describe visible obstacles, people, vehicles, stairs, curbs, doorways, poles and animals in this photo. Say left/center/right relative to the image. Use near/medium/far only as uncertain qualitative descriptions; these categories do not measure metres or steps. Set distance to unknown when unsure.',
   read_text: 'Read the printed text in the image exactly, most prominent first. Put it in "text". Spoken: the text itself, shortened if long.',
   identify_object: 'Identify the main object held or shown. For Indian banknotes, give the denomination. Put it in "object".',
   read_sign: 'Read the sign or signboard. Put its text in "text".',
@@ -204,24 +218,27 @@ const TASK: Record<VisionRequest['task'], string> = {
 
 const UNSAFE_CLAIM = /\b(safe to (cross|walk|go)|path is clear|all clear|no obstacles|you can (cross|go|walk) (now|safely))\b/i;
 
+/** The phone reports fresh numeric sonar facts separately; the model cannot identify an echo. */
+export function visionSensorEvidenceNote(sn: VisionRequest['sensors']): string {
+  if (!sn) return '';
+  const cm = sn.forwardDistanceCm;
+  const ranged = sn.ultrasonicStatus === 'ok' && typeof cm === 'number' && Number.isFinite(cm) && cm >= 2 && cm <= 450;
+  return ranged
+    ? 'A separate narrow forward ultrasonic sensor sample reported an unidentified reflection. The photo and sensor sample have independent timestamps. It cannot be associated with any camera object. Do not state a numeric distance; the phone separately reports sensor ranges when they are still fresh.'
+    : 'No measured forward range is available for this photo. This does not establish a clear path. Do not infer distances from the photo.';
+}
+
 export const assistantVision = onCall({ ...CALLABLE, secrets: [GEMINI_API_KEY], timeoutSeconds: 60, memory: '512MiB' }, async (request): Promise<VisionResult> => {
   const uid = requireAuth(request);
   const r = request.data as VisionRequest;
-  if (!r || !(r.task in TASK) || typeof r.imageBase64 !== 'string') throw new HttpsError('invalid-argument', 'Malformed vision request.');
+  if (!r || !(r.task in VISION_TASK_INSTRUCTIONS) || typeof r.imageBase64 !== 'string') throw new HttpsError('invalid-argument', 'Malformed vision request.');
   if (r.imageBase64.length > 2_800_000) throw new HttpsError('invalid-argument', 'Image too large.');
   const head = Buffer.from(r.imageBase64.slice(0, 8), 'base64');
   if (head[0] !== 0xff || head[1] !== 0xd8) throw new HttpsError('invalid-argument', 'Not a JPEG.');
   await quota(uid, 'vision', 12, 400);
 
   const lang = r.lang === 'hi' ? 'simple Hindi' : 'simple Indian English';
-  // Measured context from the stick (validated numbers only). Vision says WHAT, ultrasonic says HOW FAR.
-  const sn = r.sensors;
-  const cm = typeof sn?.forwardDistanceCm === 'number' && Number.isFinite(sn.forwardDistanceCm) && sn.forwardDistanceCm > 0 && sn.forwardDistanceCm < 500 ? Math.round(sn.forwardDistanceCm) : null;
-  const sensorNote = sn
-    ? cm != null
-      ? `The stick's ultrasonic sensor MEASURED an object about ${cm} cm straight ahead (centre only). Use it for distance of a centre object; do not invent other distances.`
-      : `The stick's ultrasonic sensor reports "${String(sn.ultrasonicStatus).slice(0, 20)}" straight ahead (no measured distance). Do not treat that as a clear path.`
-    : '';
+  const sensorNote = visionSensorEvidenceNote(r.sensors);
   const ai = client();
   const res = await generate(ai, {
     model: GEMINI_VISION_MODEL.value(),
@@ -231,9 +248,9 @@ export const assistantVision = onCall({ ...CALLABLE, secrets: [GEMINI_API_KEY], 
         parts: [
           { inlineData: { mimeType: 'image/jpeg', data: r.imageBase64 } },
           {
-            text: `You help a blind person using the AI Smart Stick camera (low resolution, mounted on a cane). ${TASK[r.task]} ${r.hint ? `User hint: ${str(r.hint, 80)}.` : ''}
+            text: `You help a blind person using the AI Smart Stick camera (low resolution, mounted on a cane). ${VISION_TASK_INSTRUCTIONS[r.task]} ${r.hint ? `User hint: ${str(r.hint, 80)}.` : ''}
 ${sensorNote}
-Rules: write "spoken" in ${lang}. State uncertainty honestly and set "uncertain" true when unsure or the image is poor. NEVER say a path is clear or that it is safe to cross/walk; if nothing is visible, say nothing obvious is visible in this photo and to keep using the cane.`,
+Rules: write "spoken" in ${lang}. Describe this captured photo, not the current scene. Left/right means image position only; camera orientation and body-relative directions are not calibrated here. Never infer numeric metres/steps, side clearance, object speed, collision time or a navigable bypass from a photo. State uncertainty honestly and set "uncertain" true when unsure or the image is poor. NEVER say a path is clear or that it is safe to cross/walk; if nothing is visible, say nothing obvious is visible in this photo and to keep using the cane.`,
           },
         ],
       },
@@ -260,21 +277,29 @@ Rules: write "spoken" in ${lang}. State uncertainty honestly and set "uncertain"
 });
 
 export const getLiveToken = onCall({ ...CALLABLE, secrets: [GEMINI_API_KEY] }, async (request) => {
-  requireAuth(request);
+  const uid = requireAuth(request);
+  await quota(uid, 'live', 6, 300);
+  const liveModel = GEMINI_LIVE_MODEL.value();
   const ai = client('v1alpha');
-  let tokenName = '';
+  const now = Date.now();
+  let token = '';
   try {
-    const res = await ai.authTokens.create({ expiresIn: '3600s' } as any);
-    // SDK returns a resource with `name` being the base64 token string
-    tokenName = res.name || (res as any).token || '';
+    // One-use ephemeral token: the long-lived API key never leaves the server. The model is locked
+    // here, so a leaked token cannot be used with any other model.
+    const res = await ai.authTokens.create({
+      config: {
+        uses: 1,
+        expireTime: new Date(now + 30 * 60_000).toISOString(),
+        newSessionExpireTime: new Date(now + 2 * 60_000).toISOString(),
+        liveConnectConstraints: { model: liveModel },
+        httpOptions: { apiVersion: 'v1alpha' },
+      },
+    });
+    token = res.name ?? '';
   } catch (e) {
     console.error('Failed to create ephemeral token:', e);
     throw new HttpsError('internal', 'Could not generate Live session token.');
   }
-
-  return {
-    token: tokenName,
-    liveModel: process.env.GEMINI_LIVE_MODEL || 'gemini-3.8-live',
-    flashModel: process.env.GEMINI_FLASH_MODEL || 'gemini-3.8-flash',
-  };
+  if (!token) throw new HttpsError('internal', 'Could not generate Live session token.');
+  return { token, liveModel, flashModel: GEMINI_FLASH_MODEL.value() };
 });

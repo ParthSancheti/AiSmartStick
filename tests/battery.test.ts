@@ -20,6 +20,10 @@ describe('BatteryEstimator', () => {
     expect(e.update({ busV: 0, currentMa: 0, charging: null, ok: true, at: 0 }).status).toBe('sensor_error');
     expect(e.update({ busV: 5.1, currentMa: 0, charging: null, ok: true, at: 1 }).status).toBe('sensor_error');
     expect(e.update({ busV: null, currentMa: null, charging: null, ok: false, at: 2 }).status).toBe('sensor_error');
+    // The reason is reported and no percentage is invented.
+    const rail = e.update({ busV: 5.02, currentMa: 0, charging: null, ok: true, at: 3 });
+    expect(rail.percent).toBeNull();
+    expect(rail.issue).toMatch(/5 V supply/);
   });
 
   it('does not show a 3% → 84% jump from one noisy sample', () => {
