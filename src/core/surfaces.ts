@@ -1,5 +1,6 @@
 import { useSession } from './store/session';
 import { useUI } from './store/ui';
+import { appRole } from './runtime/appRole';
 
 /**
  * In the live demo both phones run in one page. These tell side effects which
@@ -11,7 +12,7 @@ import { useUI } from './store/ui';
  * (dev/demo builds) silences the user's voice prompts; an unset role must never mute the user.
  */
 export const userSurfaceActive = () =>
-  useUI.getState().layout === 'stage' || useSession.getState().entryRole !== 'guardian';
+  useUI.getState().layout === 'stage' || appRole(useSession.getState().entryRole) === 'user';
 
 export const guardianSurfaceActive = () =>
-  useUI.getState().layout === 'stage' || useSession.getState().entryRole === 'guardian';
+  useUI.getState().layout === 'stage' || appRole(useSession.getState().entryRole) === 'guardian';

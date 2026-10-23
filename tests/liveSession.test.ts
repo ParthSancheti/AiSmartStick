@@ -9,13 +9,16 @@ import * as api from '../src/core/backend/api';
 import * as audioManager from '../src/core/audio/audioManager';
 import { executeAction } from '../src/core/ai/executor';
 import { offerDestination, clearOffer, startNavigationTo, navigatingTo } from '../src/core/ai/navIntent';
-import { startRealNavigation } from '../src/core/navigation/realNavigator';
+import { navigateTo, startRealNavigation } from '../src/core/navigation/realNavigator';
 import { useNavView, emptyNav } from '../src/core/navigation/navView';
+import { useUI } from '../src/core/store/ui';
 
 vi.mock('../src/core/backend/api', () => ({ call: vi.fn() }));
 
 vi.mock('../src/core/audio/audioManager', () => ({
   playPcmChunk: vi.fn(),
+  finishPcmTurn: vi.fn(),
+  localSpeechActive: vi.fn(() => false),
   interruptPcm: vi.fn(),
   resetPcmStream: vi.fn(),
   onPcmInterrupted: vi.fn(() => () => {}),
@@ -113,6 +116,7 @@ describe('Gemini Live session', () => {
     useNavView.setState(emptyNav());
     clearOffer();
     vi.clearAllMocks();
+    vi.mocked(audioManager.localSpeechActive).mockReturnValue(false);
     installAudio();
     events.length = 0;
     tuneStops.length = 0;
@@ -152,6 +156,28 @@ describe('Gemini Live session', () => {
     expect(useAssistant.getState().phase).toBe('speaking');
     msg({ serverContent: { interrupted: true } });
     expect(audioManager.interruptPcm).toHaveBeenCalled();
+    expect(audioManager.finishPcmTurn).toHaveBeenCalled();
+  });
+
+  it('releases PCM ownership at turn completion, not merely generation completion', async () => {
+    const msg = await openSession();
+    msg({ serverContent: { generationComplete: true } });
+    expect(audioManager.finishPcmTurn).not.toHaveBeenCalled();
+    msg({ serverContent: { turnComplete: true } });
+    expect(audioManager.finishPcmTurn).toHaveBeenCalledTimes(1);
+  });
+
+  it('pauses mic upload during local navigation speech and resumes without closing Live', async () => {
+    await openSession();
+    const chunk = () => lastProcessor!.onaudioprocess!({ inputBuffer: { getChannelData: () => new Float32Array(4800).fill(0.25) } });
+    vi.mocked(audioManager.localSpeechActive).mockReturnValue(true);
+    chunk();
+    chunk();
+    expect(mockSend).toHaveBeenCalledExactlyOnceWith({ audioStreamEnd: true });
+    vi.mocked(audioManager.localSpeechActive).mockReturnValue(false);
+    chunk();
+    expect(mockSend).toHaveBeenLastCalledWith({ audio: { data: expect.any(String), mimeType: 'audio/pcm;rate=16000' } });
+    expect(liveSession.isActive).toBe(true);
   });
 
   it('"Yes" starts navigation to exactly the offered place, once', async () => {
@@ -169,6 +195,9 @@ describe('Gemini Live session', () => {
     await flush();
     expect(startRealNavigation).toHaveBeenCalledTimes(1);
     expect(vi.mocked(startRealNavigation).mock.calls[0][0].placeId).toBe('pl_barber');
+    expect(navigateTo).toHaveBeenCalledWith(place, { announce: false });
+    expect(useUI.getState().mapOpen).toBe(true);
+    expect(liveSession.isActive).toBe(true);
 
     // The model also calls start_navigation: it must not start a second route.
     expect(navigatingTo('pl_barber')).toBe(true);
@@ -210,6 +239,106 @@ describe('Gemini Live session', () => {
     msg(call);
     await flush();
     expect(executeAction).toHaveBeenCalledTimes(1);
+  });
+
+  it('requires a new confirmation if the model changes the message after approval', async () => {
+    const msg = await openSession();
+    msg({ toolCall: { functionCalls: [{ id: 'sms-original', name: 'send_sms_to_guardian', args: { text: 'Running late' } }] } });
+    await flush();
+    msg({ serverContent: { turnComplete: true } });
+    msg({ serverContent: { inputTranscription: { text: 'yes' } } });
+    msg({ toolCall: { functionCalls: [{ id: 'sms-changed', name: 'send_sms_to_guardian', args: { text: 'A different message' } }] } });
+    await flush();
+    expect(executeAction).not.toHaveBeenCalled();
+    expect(mockToolResponse).toHaveBeenLastCalledWith({ functionResponses: [expect.objectContaining({ id: 'sms-changed', response: expect.objectContaining({ needsConfirmation: true }) })] });
+  });
+
+  it('does not reuse an earlier yes for a later confirmation request', async () => {
+    vi.mocked(executeAction).mockResolvedValue({ id: 'first', name: 'send_sms_to_guardian', ok: true, data: { result: 'sent' } } as never);
+    const msg = await openSession();
+    const first = { toolCall: { functionCalls: [{ id: 'first', name: 'send_sms_to_guardian', args: { text: 'First message' } }] } };
+    msg(first);
+    await flush();
+    msg({ serverContent: { turnComplete: true } });
+    msg({ serverContent: { inputTranscription: { text: 'yes' } } });
+    msg(first);
+    await flush();
+    expect(executeAction).toHaveBeenCalledTimes(1);
+    msg({ serverContent: { turnComplete: true } });
+    const second = { toolCall: { functionCalls: [{ id: 'second', name: 'send_sms_to_guardian', args: { text: 'Second message' } }] } };
+    msg(second);
+    await flush();
+    msg(second);
+    await flush();
+    expect(executeAction).toHaveBeenCalledTimes(1);
+    expect(mockToolResponse).toHaveBeenLastCalledWith({ functionResponses: [expect.objectContaining({ response: expect.objectContaining({ needsConfirmation: true }) })] });
+  });
+
+  it('does not accept a yes fragment after it becomes a negative utterance', async () => {
+    const msg = await openSession();
+    const request = { toolCall: { functionCalls: [{ id: 'changed-mind', name: 'send_sms_to_guardian', args: { text: 'Message' } }] } };
+    msg(request);
+    await flush();
+    msg({ serverContent: { turnComplete: true } });
+    msg({ serverContent: { inputTranscription: { text: 'yes' } } });
+    await new Promise(resolve => setTimeout(resolve, 950));
+    msg({ serverContent: { inputTranscription: { text: ', no, wait' } } });
+    msg(request);
+    await flush();
+    expect(executeAction).not.toHaveBeenCalled();
+  });
+
+  it('executes a duplicated in-flight tool once and reuses its completed response', async () => {
+    const msg = await openSession();
+    let finish!: (value: unknown) => void;
+    vi.mocked(executeAction).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }) as never);
+    const request = { toolCall: { functionCalls: [{ id: 'same-photo', name: 'describe_scene', args: {} }] } };
+    msg(request);
+    msg(request);
+    await flush();
+    expect(executeAction).toHaveBeenCalledTimes(1);
+    finish({ id: 'same-photo', name: 'describe_scene', ok: true, data: { spoken: 'Photo result' } });
+    await flush();
+    msg(request);
+    await flush();
+    expect(executeAction).toHaveBeenCalledTimes(1);
+    expect(mockToolResponse).toHaveBeenCalledTimes(2);
+    expect(mockToolResponse.mock.calls[0][0]).toEqual(mockToolResponse.mock.calls[1][0]);
+  });
+
+  it('does not execute a changed payload reusing an already completed tool ID', async () => {
+    vi.mocked(executeAction).mockResolvedValue({ id: 'photo', name: 'describe_scene', ok: true, data: {} } as never);
+    const msg = await openSession();
+    msg({ toolCall: { functionCalls: [{ id: 'photo', name: 'describe_scene', args: {} }] } });
+    await flush();
+    msg({ toolCall: { functionCalls: [{ id: 'photo', name: 'describe_scene', args: { changed: true } }] } });
+    await flush();
+    expect(executeAction).toHaveBeenCalledTimes(1);
+    expect(mockToolResponse).toHaveBeenLastCalledWith({ functionResponses: [expect.objectContaining({ response: { error: 'Tool call ID was reused with different arguments.' } })] });
+  });
+
+  it('preserves cancellation when a duplicate arrives while the original tool is pending', async () => {
+    const msg = await openSession();
+    let finish!: (value: unknown) => void;
+    vi.mocked(executeAction).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }) as never);
+    const request = { toolCall: { functionCalls: [{ id: 'cancel-duplicate', name: 'describe_scene', args: {} }] } };
+    msg(request);
+    await flush();
+    msg({ toolCallCancellation: { ids: ['cancel-duplicate'] } });
+    msg(request);
+    await flush();
+    finish({ id: 'cancel-duplicate', name: 'describe_scene', ok: true, data: {} });
+    await flush();
+    expect(mockToolResponse).not.toHaveBeenCalled();
+  });
+
+  it('closes the microphone cleanly when a socket send fails', async () => {
+    await openSession();
+    mockSend.mockImplementationOnce(() => { throw new Error('socket closed'); });
+    expect(() => lastProcessor!.onaudioprocess!({ inputBuffer: { getChannelData: () => new Float32Array(4800) } })).not.toThrow();
+    expect(liveSession.isActive).toBe(false);
+    expect(useAssistant.getState().unavailable).toBe('Connection lost');
+    expect(mockClose).toHaveBeenCalledTimes(1);
   });
 
   // ── Connecting tune + start reliability ──────────────────────────────────────────
@@ -330,6 +459,47 @@ describe('Gemini Live session', () => {
     await liveSession.start();
     expect(tuneStops).toHaveLength(4);
     expect(tunePlaying()).toBe(false);
+  });
+
+  it('does not send a previous session tool result into a restarted conversation', async () => {
+    const msg = await openSession();
+    let finish!: (v: any) => void;
+    vi.mocked(executeAction).mockImplementationOnce(() => new Promise(r => { finish = r; }));
+    msg({ toolCall: { functionCalls: [{ id: 'old', name: 'describe_scene', args: {} }] } });
+    await flush();
+    liveSession.stop('user');
+    await openSession();
+    finish({ id: 'old', name: 'describe_scene', ok: true, data: { spoken: 'Old photo' } });
+    await flush();
+    expect(mockToolResponse).not.toHaveBeenCalled();
+  });
+
+  it('suppresses a cancelled camera tool response', async () => {
+    const msg = await openSession();
+    let finish!: (v: any) => void;
+    vi.mocked(executeAction).mockImplementationOnce(() => new Promise(r => { finish = r; }));
+    msg({ toolCall: { functionCalls: [{ id: 'cancel-photo', name: 'describe_scene', args: {} }] } });
+    await flush();
+    msg({ toolCallCancellation: { ids: ['cancel-photo'] } });
+    finish({ id: 'cancel-photo', name: 'describe_scene', ok: true, data: { spoken: 'Photo' } });
+    await flush();
+    expect(mockToolResponse).not.toHaveBeenCalled();
+  });
+
+  it('keeps the session alive while camera interpretation is pending', async () => {
+    const msg = await openSession();
+    vi.useFakeTimers();
+    try {
+      let finish!: (v: any) => void;
+      vi.mocked(executeAction).mockImplementationOnce(() => new Promise(r => { finish = r; }));
+      msg({ toolCall: { functionCalls: [{ id: 'slow', name: 'describe_scene', args: {} }] } });
+      await vi.advanceTimersByTimeAsync(46000);
+      expect(liveSession.isActive).toBe(true);
+      finish({ id: 'slow', name: 'describe_scene', ok: true, data: { spoken: 'Earlier photo' } });
+      await vi.advanceTimersByTimeAsync(1);
+      expect(mockToolResponse).toHaveBeenCalled();
+      liveSession.stop('user');
+    } finally { vi.useRealTimers(); }
   });
 
   it('failure messages name the cause', () => {

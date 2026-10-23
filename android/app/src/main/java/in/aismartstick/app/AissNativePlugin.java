@@ -1529,12 +1529,17 @@ public class AissNativePlugin extends Plugin {
      */
     @PluginMethod
     public void startBackgroundService(PluginCall call) {
+        if (!BuildConfig.AISS_USER_APP) {
+            call.reject("Stick background services are available only in the user app");
+            return;
+        }
         String title = call.getString("title", "AI Smart Stick");
         String body = call.getString("body", "Running");
         boolean promote = Boolean.TRUE.equals(call.getBoolean("promote", false));
+        boolean keepAwake = Boolean.TRUE.equals(call.getBoolean("keepAwake", true));
         if (StickForegroundService.running && !promote) {
             try {
-                StickForegroundService.updateNotification(getContext(), title, body);
+                StickForegroundService.updateNotification(getContext(), title, body, keepAwake);
             } catch (Exception ignored) {
             }
             JSObject r = new JSObject();
@@ -1545,7 +1550,8 @@ public class AissNativePlugin extends Plugin {
         }
         Intent i = new Intent(getContext(), StickForegroundService.class)
             .putExtra(StickForegroundService.EXTRA_TITLE, title)
-            .putExtra(StickForegroundService.EXTRA_BODY, body);
+            .putExtra(StickForegroundService.EXTRA_BODY, body)
+            .putExtra(StickForegroundService.EXTRA_KEEP_AWAKE, keepAwake);
         try {
             androidx.core.content.ContextCompat.startForegroundService(getContext(), i);
             JSObject r = new JSObject();
@@ -1560,6 +1566,7 @@ public class AissNativePlugin extends Plugin {
 
     @PluginMethod
     public void stopBackgroundService(PluginCall call) {
+        log("background service stop requested by JavaScript");
         getContext().stopService(new Intent(getContext(), StickForegroundService.class));
         JSObject r = new JSObject();
         r.put("running", false);
@@ -1665,12 +1672,15 @@ public class AissNativePlugin extends Plugin {
         applyProcessBinding();
         main.removeCallbacksAndMessages(null);
         io.shutdownNow();
-        // User closed the app (swiped away / back out): don't leave an orphaned foreground service.
+        // The native odometer outlives this WebView. Back/finish may not invoke the
+        // service's onTaskRemoved callback, so both paths perform the same downgrade.
         try {
             if (getActivity() != null && getActivity().isFinishing()) {
-                getContext().stopService(new Intent(getContext(), StickForegroundService.class));
+                log("activity finishing: handing background service to native walking tracker");
+                StickForegroundService.onUiClosed(getContext());
             }
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            Log.w(TAG, "Could not hand activity closure to native walking service", e);
         }
     }
 }

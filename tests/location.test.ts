@@ -576,6 +576,107 @@ describe("robustness: a phone that allows location but delivers nothing", () => 
   });
 });
 
+describe("location cancellation across account changes", () => {
+  test("sign-out during a permission dialog cannot start GPS when the answer arrives", async () => {
+    vi.useFakeTimers();
+    let answer!: (permission: Perm) => void;
+    plugin.requestPermission.mockImplementationOnce(() => new Promise(resolve => { answer = resolve; }));
+    const pending = startLocation();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(plugin.requestPermission).toHaveBeenCalledTimes(1);
+    await stopLocation();
+    answer({ state: "granted", precise: true, coarse: true });
+    await pending;
+    await vi.advanceTimersByTimeAsync(WATCHDOG_MS + FALLBACK_AFTER_MS + 1);
+    vi.useRealTimers();
+    expect(plugin.start).not.toHaveBeenCalled();
+    expect(geo.watchPosition).not.toHaveBeenCalled();
+    expect(useLocation.getState()).toMatchObject({ status: "idle", fix: null });
+  });
+
+  test("a late native start is stopped and cannot revive foreground location state", async () => {
+    vi.useFakeTimers();
+    native.perm = { state: "granted", precise: true, coarse: true };
+    let finish!: (value: ReturnType<typeof status> & { started: boolean }) => void;
+    plugin.start.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    const pending = startLocation();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(plugin.start).toHaveBeenCalledTimes(1);
+    await stopLocation();
+    expect(plugin.stop).toHaveBeenCalledTimes(1);
+    native.emit("location", nfix());
+    finish({ ...status(), started: true });
+    await pending;
+    vi.useRealTimers();
+    expect(plugin.stop).toHaveBeenCalledTimes(2);
+    expect(useLocation.getState()).toMatchObject({ status: "idle", fix: null });
+    expect(geo.watchPosition).not.toHaveBeenCalled();
+  });
+
+  test("a late Capacitor watch ID is cleared after sign-out and its callback is ignored", async () => {
+    vi.useFakeTimers();
+    platform.hasPlugin = false;
+    geo.checkPermissions.mockResolvedValue({ location: "granted", coarseLocation: "granted" });
+    let finish!: (id: string) => void;
+    let callback!: (position: any) => void;
+    geo.watchPosition.mockImplementationOnce((_options, receive) => {
+      callback = receive;
+      return new Promise(resolve => { finish = resolve; });
+    });
+    const pending = startLocation();
+    await vi.advanceTimersByTimeAsync(0);
+    await stopLocation();
+    finish("old-watch");
+    await pending;
+    callback({ coords: { latitude: 21, longitude: 73, accuracy: 5 }, timestamp: Date.now() });
+    vi.useRealTimers();
+    expect(geo.clearWatch).toHaveBeenCalledWith({ id: "old-watch" });
+    expect(useLocation.getState()).toMatchObject({ status: "idle", fix: null });
+  });
+
+  test("a late fallback permission check cannot install secondary watches after stop", async () => {
+    vi.useFakeTimers();
+    native.perm = { state: "granted", precise: true, coarse: true };
+    let finish!: (permission: { location: string; coarseLocation: string }) => void;
+    geo.checkPermissions.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    await startLocation();
+    await vi.advanceTimersByTimeAsync(FALLBACK_AFTER_MS + 1);
+    expect(geo.checkPermissions).toHaveBeenCalledTimes(1);
+    await stopLocation();
+    finish({ location: "granted", coarseLocation: "granted" });
+    await vi.advanceTimersByTimeAsync(0);
+    vi.useRealTimers();
+    expect(geo.watchPosition).not.toHaveBeenCalled();
+    expect(useLocation.getState()).toMatchObject({ status: "idle", fix: null });
+  });
+
+  test("a late old watch cannot overwrite or clear the next account's active watch", async () => {
+    vi.useFakeTimers();
+    platform.hasPlugin = false;
+    geo.checkPermissions.mockResolvedValue({ location: "granted", coarseLocation: "granted" });
+    let finishOld!: (id: string) => void;
+    let oldCallback!: (position: any) => void;
+    let newCallback!: (position: any) => void;
+    geo.watchPosition.mockImplementationOnce((_options, receive) => {
+      oldCallback = receive;
+      return new Promise(resolve => { finishOld = resolve; });
+    }).mockImplementationOnce(async (_options, receive) => { newCallback = receive; return "new-watch"; });
+    const previous = startLocation();
+    await vi.advanceTimersByTimeAsync(0);
+    await stopLocation();
+    await startLocation();
+    finishOld("old-watch");
+    await previous;
+    oldCallback({ coords: { latitude: 21, longitude: 73, accuracy: 5 }, timestamp: Date.now() });
+    expect(useLocation.getState().fix).toBeNull();
+    newCallback({ coords: { latitude: 22, longitude: 73, accuracy: 5 }, timestamp: Date.now() });
+    expect(useLocation.getState().fix?.lat).toBe(22);
+    expect(geo.clearWatch).toHaveBeenCalledWith({ id: "old-watch" });
+    expect(geo.clearWatch).not.toHaveBeenCalledWith({ id: "new-watch" });
+    vi.useRealTimers();
+  });
+});
+
 describe("acquireFix (SOS text)", () => {
   test("a recent fix is used at once", async () => {
     native.perm = { state: "granted", precise: true, coarse: true };

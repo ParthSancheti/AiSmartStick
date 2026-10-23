@@ -33,8 +33,8 @@ export function GuardianHome() {
 
   return (
     <AppScreen>
-      <TopNav />
-      <SafeAreaContent className="px-5 pb-[120px] pt-4" style={{ zIndex: 10 }}>
+      <TopNav topInset />
+      <SafeAreaContent topInset={false} className="relative z-10 px-5 pt-4" style={{ paddingBottom: 'calc(var(--sab) + 120px)' }}>
         <div className="h-16 shrink-0" />
         
         {/* 1. PRIMARY SAFETY CARD */}

@@ -19,6 +19,7 @@ import { defaultSettings, useSession } from '../src/core/store/session';
 import { emptyNav, useNavView } from '../src/core/navigation/navView';
 import { resetWalkTracker, useWalking } from '../src/core/walking/walkTracker';
 import { getCurrentSensorContext } from '../src/core/vision/sensorConditioning';
+import * as sensorApi from '../src/core/vision/sensorConditioning';
 import { ingestPacket, resetPipeline } from '../src/core/telemetry/pipeline';
 
 let seq = 0;
@@ -79,6 +80,23 @@ afterEach(() => {
 });
 
 describe('walking guidance runtime and existing telemetry integration', () => {
+  it('keeps the route hold but stops repeating a stationary room obstacle with a route active', () => {
+    setupWalk(75);
+    for (let i = 0; i < 180; i++) { vi.advanceTimersByTime(500); send(i % 2 ? 74 : 76); }
+    expect(h.announce).toHaveBeenCalledTimes(1);
+    expect(useWalkingGuidance.getState().routeHold).toBe(true);
+    send(75, { gx: 100 });
+    expect(h.announce).toHaveBeenCalledTimes(2);
+  });
+
+  it('warns about a measured approach even without an active walking session', () => {
+    useDevice.setState({ link: 'connected', source: 'http' });
+    send(400); engine().start();
+    vi.advanceTimersByTime(500); send(300);
+    vi.advanceTimersByTime(500); send(200);
+    expect(h.announce.mock.calls.at(-1)?.[0].en).toMatch(/range is decreasing/);
+  });
+
   it('warns immediately on raw sudden obstacle despite median-filtered UI data and unavailable inference', () => {
     setupWalk();
     expect(h.announce).not.toHaveBeenCalled();
@@ -124,6 +142,8 @@ describe('walking guidance runtime and existing telemetry integration', () => {
     vi.advanceTimersByTime(100); send(20);
     expect(h.announce).toHaveBeenCalledTimes(1);
     vi.advanceTimersByTime(100); send(250); publish(scene());
+    expect(useWalkingGuidance.getState().routeHold).toBe(true);
+    for (let i = 0; i < 2; i++) { vi.advanceTimersByTime(400); send(250); publish(scene()); }
     expect(useWalkingGuidance.getState().routeHold).toBe(false);
     vi.advanceTimersByTime(100); send(20);
     // The intervening unresolved range/scene may also prompt a sensing announcement.
@@ -171,7 +191,7 @@ describe('walking guidance runtime and existing telemetry integration', () => {
     expect(h.cancelInvalid).toHaveBeenCalled();
   });
 
-  it('uses a generic latched warning when newer far range no longer supports very-close speech', () => {
+  it('invalidates a very-close claim without repeating a stationary latched warning', () => {
     setupWalk();
     vi.advanceTimersByTime(100); send(20, {}, 'danger');
     const close = lastOptions();
@@ -179,13 +199,12 @@ describe('walking guidance runtime and existing telemetry integration', () => {
     vi.advanceTimersByTime(100); send(250, {}, 'danger');
     expect(useWalkingGuidance.getState()).toMatchObject({ severity: 'danger', frontDistanceCm: 250, routeHold: true });
     expect(close.isCurrent()).toBe(false);
-    // Keep the board's de-escalation warning fresh through the existing repeat cooldown.
+    // Fresh telemetry alone must not restart repetitive speech while stationary.
     for (let n = 0; n < 5; n++) { vi.advanceTimersByTime(500); send(250, {}, 'danger'); }
-    expect(h.announce).toHaveBeenCalledTimes(2);
+    expect(h.announce).toHaveBeenCalledTimes(1);
     expect(lastOptions().critical).toBe(true);
-    expect(lastOptions().isCurrent()).toBe(true);
-    expect(h.announce.mock.calls.at(-1)![0].en).toMatch(/warning is active/);
-    expect(h.announce.mock.calls.at(-1)![0].en).not.toMatch(/very close/);
+    expect(lastOptions().isCurrent()).toBe(false);
+    expect(useWalkingGuidance.getState().routeHold).toBe(true);
   });
 
   it('invalidates a queued camera-warning claim when forward measured evidence takes precedence', () => {
@@ -242,6 +261,37 @@ describe('walking guidance runtime and existing telemetry integration', () => {
     expect(visual.isCurrent()).toBe(false);
   });
 
+  it.each([
+    { name: 'tilted camera', pitch: 40, angularRate: 0 },
+    { name: 'capture-to-current pose change', pitch: 20, angularRate: 0 },
+    { name: 'nonfinite orientation', pitch: NaN, angularRate: 0 },
+    { name: 'nonfinite angular rate', pitch: 0, angularRate: Infinity },
+  ])('invalidates queued camera direction before the next reducer tick: $name', ({ pitch, angularRate }) => {
+    setupWalk();
+    publish(scene(['LEFT']));
+    const queued = lastOptions();
+    expect(h.announce.mock.calls.at(-1)![0].en).toMatch(/left of the camera view/);
+    expect(queued.isCurrent()).toBe(true);
+    const changed = structuredClone(getCurrentSensorContext());
+    changed.orientation.value!.pitch = pitch;
+    changed.gyro.value!.mag = angularRate;
+    vi.spyOn(sensorApi, 'getCurrentSensorContext').mockReturnValue(changed);
+    // Deliberately do not send a store event or advance the 400-ms freshness timer.
+    expect(useWalkingGuidance.getState().directionsReliable).toBe(true);
+    expect(queued.isCurrent()).toBe(false);
+  });
+
+  it('invalidates queued camera object placement when a newer scene changes before its callback', () => {
+    setupWalk();
+    publish(scene(['LEFT']));
+    const queued = lastOptions();
+    expect(queued.isCurrent()).toBe(true);
+    vi.setSystemTime(10100);
+    h.vision.latestSnapshot = scene(['RIGHT']);
+    expect(useWalkingGuidance.getState().observedObjects[0].side).toBe('LEFT');
+    expect(queued.isCurrent()).toBe(false);
+  });
+
   it('preserves a fresh independent MCU warning without any camera evidence', () => {
     setupWalk();
     vi.advanceTimersByTime(100); send(null, {}, 'danger');
@@ -253,7 +303,7 @@ describe('walking guidance runtime and existing telemetry integration', () => {
     expect(h.announce.mock.calls.at(-1)![0].en).toMatch(/warning is active/);
   });
 
-  it('expires a side hint when its pre-request pose becomes stale before the frame itself', () => {
+  it('expires camera-image placement when its capture pose becomes stale before the frame itself', () => {
     setupWalk();
     const captured = scene(['LEFT']);
     captured.frameSensorContext = {
@@ -262,21 +312,20 @@ describe('walking guidance runtime and existing telemetry integration', () => {
       gyro: { ...captured.sensorContext.gyro, ageMs: 1000 },
     };
     publish(captured);
-    vi.advanceTimersByTime(100); send(70);
-    const sideHint = lastOptions();
-    expect(h.announce.mock.calls.at(-1)![0].en).toMatch(/right side/);
-    expect(sideHint.isCurrent()).toBe(true);
+    const queued = lastOptions();
+    expect(h.announce.mock.calls.at(-1)![0].en).toMatch(/left of the camera view/);
+    expect(queued.isCurrent()).toBe(true);
     vi.setSystemTime(10501);
     expect(useWalkingGuidance.getState().validUntil).toBeGreaterThan(Date.now());
     expect(Date.now() - captured.frameTimestamp!).toBeLessThan(1500);
-    expect(sideHint.isCurrent()).toBe(false);
+    expect(queued.isCurrent()).toBe(false);
   });
 
-  it('preserves a fresh camera-only warning and stopped inspection hint during a sonar fault', () => {
+  it('preserves a fresh camera-only warning and generic cane check during a sonar fault', () => {
     setupWalk();
     publish(scene(['LEFT', 'CENTER']));
     const visual = lastOptions();
-    expect(h.announce.mock.calls.at(-1)![0].en).toMatch(/camera shows.*right side/);
+    expect(h.announce.mock.calls.at(-1)![0].en).toMatch(/camera shows.*surroundings with your cane/);
     vi.advanceTimersByTime(100); send(null, {}, 'normal', 'error');
     expect(useWalkingGuidance.getState()).toMatchObject({
       severity: 'warning', frontDistanceCm: null, routeHold: true,
@@ -288,6 +337,19 @@ describe('walking guidance runtime and existing telemetry integration', () => {
     expect(routeManeuverAllowed()).toBe(false);
   });
 
+  it.each([
+    { occupied: ['LEFT', 'CENTER'] as SpatialSide[], candidate: 'RIGHT' },
+    { occupied: ['CENTER', 'RIGHT'] as SpatialSide[], candidate: 'LEFT' },
+  ])('does not turn camera image asymmetry into a physical $candidate cane instruction', ({ occupied, candidate }) => {
+    setupWalk();
+    publish(scene(occupied));
+    expect(useWalkingGuidance.getState().inspectionCandidates).toEqual([candidate]);
+    const spoken = h.announce.mock.calls.at(-1)![0];
+    expect(spoken.en).toMatch(/surroundings with your cane/);
+    expect(spoken.en).not.toMatch(/left side|right side|way around/);
+    expect(spoken.hi).not.toMatch(/बाईं|दाईं/);
+  });
+
   it('keeps map hold across no echo and camera loss and releases only after fresh resolved evidence', () => {
     setupWalk();
     vi.advanceTimersByTime(100); send(20);
@@ -296,6 +358,8 @@ describe('walking guidance runtime and existing telemetry integration', () => {
     vi.advanceTimersByTime(100); send(250);
     expect(routeManeuverAllowed()).toBe(false); // Range alone does not resolve a visual/sensor hold.
     publish(scene());
+    expect(routeManeuverAllowed()).toBe(false); // One apparently empty frame is not confirmation.
+    for (let i = 0; i < 2; i++) { vi.advanceTimersByTime(400); send(250); publish(scene()); }
     expect(routeManeuverAllowed()).toBe(true);
   });
 
@@ -309,24 +373,26 @@ describe('walking guidance runtime and existing telemetry integration', () => {
     expect(useWalkingGuidance.getState()).toMatchObject({ routeHold: true, sensorRequired: true, severity: 'unavailable' });
   });
 
-  it('invalidates queued directional speech when its inspection candidate becomes obstructed', () => {
+  it('keeps an independent forward warning generic when camera occupancy changes', () => {
     setupWalk();
     publish(scene(['LEFT']));
     vi.advanceTimersByTime(100); send(70);
     const warning = lastOptions();
-    expect(h.announce.mock.calls.at(-1)![0].en).toMatch(/right side/);
+    expect(h.announce.mock.calls.at(-1)![0].en).toMatch(/surroundings with your cane/);
+    expect(h.announce.mock.calls.at(-1)![0].en).not.toMatch(/left side|right side|way around/);
     expect(warning.isCurrent()).toBe(true);
     publish(scene(['LEFT', 'CENTER', 'RIGHT']));
     expect(useWalkingGuidance.getState().inspectionCandidates).toEqual([]);
-    expect(warning.isCurrent()).toBe(false);
+    expect(warning.isCurrent()).toBe(true);
   });
 
-  it('invalidates a queued side hint during a fast stick sweep without weakening the obstacle warning', () => {
+  it('preserves the generic obstacle warning during a fast stick sweep', () => {
     setupWalk();
     publish(scene(['LEFT']));
     vi.advanceTimersByTime(100); send(70);
     const warning = lastOptions();
-    expect(h.announce.mock.calls.at(-1)![0].en).toMatch(/right side/);
+    expect(h.announce.mock.calls.at(-1)![0].en).toMatch(/surroundings with your cane/);
+    expect(h.announce.mock.calls.at(-1)![0].en).not.toMatch(/left side|right side|way around/);
     expect(warning.isCurrent()).toBe(true);
     vi.advanceTimersByTime(100); send(70, { gx: 100 });
     expect(getCurrentSensorContext().motion).toBe('SWINGING');
@@ -334,7 +400,7 @@ describe('walking guidance runtime and existing telemetry integration', () => {
       severity: 'warning', frontDistanceCm: 70, routeHold: true,
       directionsReliable: false, inspectionCandidates: [],
     });
-    expect(warning.isCurrent()).toBe(false);
+    expect(warning.isCurrent()).toBe(true);
   });
 
   it('clears conditioning state on pipeline reset rather than reusing an earlier device sample', () => {

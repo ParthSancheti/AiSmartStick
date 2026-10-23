@@ -3,14 +3,18 @@ import { executeAction } from '../src/core/ai/executor';
 import { useNavView } from '../src/core/navigation/navView';
 import { useLocation } from '../src/core/location/locationService';
 import { useDevice } from '../src/core/store/device';
+import type { RouteResult } from '../src/core/maps/mapsService';
 
 vi.mock('../src/core/maps/mapsService', () => ({
   walkingRoute: vi.fn().mockResolvedValue({
     distanceM: 500,
     durationS: 300,
     path: [[0, 0], [0.001, 0]],
-    steps: [{ instruction: 'Head North', distanceM: 500, maneuver: 'straight' }]
-  }),
+    steps: [{
+      instruction: 'Head North', distanceM: 500, durationS: 300, maneuver: 'straight',
+      start: { lat: 0, lng: 0 }, end: { lat: 0.001, lng: 0 },
+    }]
+  } satisfies RouteResult),
   searchPlaces: vi.fn().mockResolvedValue({
     places: [{ placeId: '123', name: 'Barber Shop', lat: 0.005, lng: 0.005, openNow: true, primaryType: 'store' }]
   }),

@@ -7,7 +7,7 @@ import { fb } from '../firebase/app';
  * One console line per call: "[SERVER] <name> ok|<code> <ms>ms" (never the payload).
  */
 export class BackendError extends Error {
-  constructor(public code: string, message: string) {
+  constructor(public code: string, message: string, public details?: unknown) {
     super(message);
   }
 }
@@ -34,8 +34,8 @@ export async function call<Req, Res>(name: string, data: Req, timeoutMs = 30000)
     console.info(`[SERVER] ${name} ok ${Date.now() - t0}ms`);
     return r.data;
   } catch (e) {
-    const err = e as { code?: string; message?: string };
-    const be = e instanceof BackendError ? e : new BackendError(err?.code ?? 'unknown', err?.message ?? 'Backend call failed');
+    const err = e as { code?: string; message?: string; details?: unknown };
+    const be = e instanceof BackendError ? e : new BackendError(err?.code ?? 'unknown', err?.message ?? 'Backend call failed', err?.details);
     console.warn(`[SERVER] ${name} ${be.code} ${Date.now() - t0}ms`);
     throw be;
   } finally {

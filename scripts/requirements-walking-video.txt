@@ -1,0 +1,6 @@
+# Offline evaluation tooling only; not app or portable algorithm dependencies.
+mediapipe==1.1.1
+opencv-python-headless==5.0.0.93
+Pillow==13.0.0
+numpy==2.5.4
+# Install ffmpeg separately, or pass --ffmpeg /absolute/path/to/ffmpeg.

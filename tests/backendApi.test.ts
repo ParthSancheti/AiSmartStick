@@ -51,6 +51,13 @@ describe('call(): one log line per call, codes passed through, never hangs', () 
     await expect(call('x', {})).rejects.toMatchObject({ code: 'unknown', message: 'boom' });
   });
 
+  it('preserves safe callable error details so model failures are distinct from connectivity failures', async () => {
+    const details = { service: 'vision-model', reason: 'timeout' };
+    callable.fn.mockRejectedValue(Object.assign(new Error('Photo analysis timed out.'), { code: 'functions/deadline-exceeded', details }));
+    await expect(call('assistantVision', {})).rejects.toMatchObject({ code: 'functions/deadline-exceeded', details });
+    expect(String(warn.mock.calls[0][0])).not.toContain('vision-model');
+  });
+
   it('a call stuck before the SDK timeout starts (App Check, sign-in token) fails after timeout + 10 s', async () => {
     vi.useFakeTimers();
     callable.fn.mockImplementation(() => new Promise(() => {}));

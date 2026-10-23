@@ -15,6 +15,7 @@ import { paths } from '../../../shared/firestoreSchema';
 import { wait } from '../util';
 import { explainPacket } from '../telemetry/pipeline';
 import { looksLikeStick } from '../transport/stickHttp';
+import { localNetworkBlockMessage } from '../transport/connectionError';
 
 /**
  * Stick setup, v1 SIMPLE LINK (firmware 1.2+): no keys, no provisioning.
@@ -281,6 +282,8 @@ async function readDevice(check: () => void): Promise<DeviceInfoPacket> {
       return parseDevice(r.status, r.body);
     } catch (e) {
       if (e instanceof SetupError && (e.kind === 'old_firmware' || e.kind === 'not_a_stick')) throw e;
+      const blocked = localNetworkBlockMessage(e);
+      if (blocked) throw new SetupError('no_answer', blocked);
       last = (e as Error).message;
       diag(`stick not answering yet (try ${i}/8): ${last.slice(0, 100)}`);
     }

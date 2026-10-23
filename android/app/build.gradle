@@ -1,21 +1,28 @@
 apply plugin: 'com.android.application'
 
+def aissRole = providers.gradleProperty('aissRole').getOrElse('user')
+if (!(aissRole in ['user', 'guardian'])) throw new GradleException('aissRole must be user or guardian')
+def userApp = aissRole == 'user'
+
 android {
     namespace = "in.aismartstick.app"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "in.aismartstick.app"
+        applicationId userApp ? "in.aismartstick.app" : "in.aismartstick.guardian"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField 'boolean', 'AISS_USER_APP', userApp.toString()
+        manifestPlaceholders = [aissLabel: userApp ? 'AI SmartStick' : 'SmartStick Guardian', aissUserService: userApp.toString()]
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
              // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    buildFeatures { buildConfig true }
     buildTypes {
         release {
             minifyEnabled false
@@ -23,6 +30,19 @@ android {
         }
     }
 }
+
+// A mismatched WebView bundle could otherwise put the user's controls in the Guardian package.
+tasks.register('verifyAppRole') {
+    doLast {
+        def marker = file('src/main/assets/public/build-role.json')
+        if (!marker.exists()) throw new GradleException('Build the web bundle and run cap sync first (npm run apk:user / apk:guardian).')
+        def bundle = new groovy.json.JsonSlurper().parse(marker)
+        def role = bundle.role
+        if (role != aissRole) throw new GradleException("Web bundle role ${role} does not match Android role ${aissRole}. Use npm run apk:${aissRole}.")
+        if (bundle.mode != 'real') throw new GradleException('A production package requires real data mode. Use npm run apk:user / apk:guardian.')
+    }
+}
+tasks.named('preBuild').configure { dependsOn 'verifyAppRole' }
 
 repositories {
     flatDir{
@@ -47,9 +67,17 @@ dependencies {
 apply from: 'capacitor.build.gradle'
 
 try {
-    def servicesJSON = file('google-services.json')
+    def roleConfig = file("src/${aissRole}/google-services.json")
+    def servicesJSON = roleConfig.exists() ? roleConfig : file('google-services.json')
     if (servicesJSON.text) {
         apply plugin: 'com.google.gms.google-services'
+        // Google Services supplies its defaults when AGP creates variant tasks. Apply the
+        // role-specific file after variant registration so those defaults cannot replace it.
+        afterEvaluate {
+            tasks.matching { it.name.startsWith('process') && it.name.endsWith('GoogleServices') }.configureEach {
+                googleServicesJsonFiles.set([servicesJSON])
+            }
+        }
     }
 } catch(Exception e) {
     logger.warn("google-services.json not found, google-services plugin not applied. Push Notifications won't work")

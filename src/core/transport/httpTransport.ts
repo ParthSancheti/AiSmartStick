@@ -4,6 +4,7 @@ import { AissNative } from '../native/aissNative';
 import type { PairedDevice } from '../device/pairedDevice';
 import { trace } from '../device/deviceTrace';
 import { log } from '../log';
+import { localNetworkBlockMessage } from './connectionError';
 import { Emitter, MAX_TELEMETRY_BYTES, newCommandId, toEnvelopeParts, validateJpeg, type CapturedFrame, type StickEvents, type StickTransport } from './types';
 import { isNativeApp, stickBinary, stickLog, stickRequest, useStickRoute, withTimeout, type StickPath } from './stickHttp';
 
@@ -212,7 +213,7 @@ export class HttpTransport implements StickTransport {
         this.setState('protocol_mismatch', e.message);
         return;
       }
-      this.scheduleRetry(signal, e instanceof LinkError ? e.message : `The stick is not answering (${(e as Error).message.slice(0, 90)})`);
+      this.scheduleRetry(signal, localNetworkBlockMessage(e) ?? (e instanceof LinkError ? e.message : `The stick is not answering (${(e as Error).message.slice(0, 90)})`));
       return;
     }
     if (signal.aborted) return;

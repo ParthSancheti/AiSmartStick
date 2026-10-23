@@ -65,6 +65,7 @@ public class AissLocationPlugin extends Plugin {
     private static final long PERMISSION_DIALOG_MAX_MS = 90_000;
 
     private final Handler main = new Handler(Looper.getMainLooper());
+    private final NativeWalkingTracker.Observer walkingObserver = state -> main.post(() -> notifyListeners("walking", state));
     private LocationManager lm;
     private final List<String> activeProviders = new ArrayList<>();
     private final LocationListener listener = new LocationListener() {
@@ -249,6 +250,8 @@ public class AissLocationPlugin extends Plugin {
     private void deliver(Location l) {
         if (l == null) return;
         if (!isBetter(l, best)) return;
+        NativeWalkingTracker walking = NativeWalkingTracker.get(getContext());
+        walking.accept(l);
         best = l;
         deliveredCount++;
         lastDeliveredAt = System.currentTimeMillis();
@@ -700,8 +703,38 @@ public class AissLocationPlugin extends Plugin {
         });
     }
 
+    @PluginMethod
+    public void configureWalking(PluginCall call) {
+        if (!BuildConfig.AISS_USER_APP) { call.reject("Walking tracking is available only in the user app."); return; }
+        String owner = call.getString("owner", "");
+        if (owner.isEmpty()) { call.reject("Walking tracking needs an account."); return; }
+        NativeWalkingTracker tracker = NativeWalkingTracker.get(getContext());
+        tracker.addObserver(walkingObserver);
+        tracker.configure(owner, call.getObject("seed"));
+        if (StickForegroundService.running && backgroundAllowed()) tracker.start();
+        call.resolve(tracker.snapshot());
+    }
+
+    @PluginMethod
+    public void getWalkingState(PluginCall call) {
+        call.resolve(NativeWalkingTracker.get(getContext()).snapshot());
+    }
+
+    @PluginMethod
+    public void controlWalking(PluginCall call) {
+        String command = call.getString("command", "");
+        if (!java.util.Arrays.asList("start", "pause", "resume", "end", "clear", "stop").contains(command)) {
+            call.reject("Unknown walking command."); return;
+        }
+        NativeWalkingTracker tracker = NativeWalkingTracker.get(getContext());
+        tracker.control(command, call.getString("owner"));
+        if (("start".equals(command) || "resume".equals(command)) && StickForegroundService.running && backgroundAllowed()) tracker.start();
+        call.resolve(tracker.snapshot());
+    }
+
     @Override
     protected void handleOnDestroy() {
+        NativeWalkingTracker.get(getContext()).removeObserver(walkingObserver);
         wanted = false;
         unregister();
         main.removeCallbacksAndMessages(null);

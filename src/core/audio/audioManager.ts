@@ -63,6 +63,25 @@ let queue: Item[] = [];
 let current: Item | null = null;
 let seq = 0;
 let interrupting = false;
+let speechGeneration = 0;
+let stoppingTts: Promise<void> | null = null;
+let localSpeechQuietUntil = 0;
+
+/** Serialize native stop requests; a delayed stop must never cut the next utterance. */
+function stopTts() {
+  if (stoppingTts) return stoppingTts;
+  interrupting = true;
+  const stopped = Promise.resolve().then(() => ttsEngine().stop()).catch(() => undefined);
+  stoppingTts = stopped;
+  void stopped.then(() => {
+    if (stoppingTts === stopped) {
+      stoppingTts = null;
+      interrupting = false;
+      localSpeechQuietUntil = Date.now() + 250;
+    }
+  });
+  return stopped;
+}
 
 const volume = () => Math.max(0, Math.min(1, (getSettings().assistantVolume ?? 100) / 100));
 
@@ -99,6 +118,10 @@ function enqueue(item: Item) {
 
 async function pump() {
   if (current || interrupting) return;
+  drainPcm();
+  // Both native TTS and Gemini PCM use this ownership boundary. A network gap inside a
+  // Live sentence is not permission to start a second voice.
+  if (pcmTurnOpen || livePcmPlaying()) return;
   let next = queue.shift();
   while (next && next.isCurrent && !next.isCurrent()) {
     next.resolve('dropped');
@@ -120,6 +143,7 @@ async function pump() {
   }
   if (current === next) {
     current = null;
+    if (result === 'spoken') localSpeechQuietUntil = Date.now() + 250;
     if (result === 'spoken') useAudio.setState({ lastSpoken: { text: next.text, lang: next.lang } });
     next.resolve(result);
   }
@@ -131,27 +155,24 @@ export function say(text: string, o: { lang: ReplyLang; priority?: Priority; ded
   if (o.isCurrent && !o.isCurrent()) return Promise.resolve('dropped');
   const priority = o.priority ?? 'normal';
   // Safety and other P0/P1 items always preempt the Live model's voice.
-  if (RANK[priority] >= RANK.high && livePcmPlaying()) interruptPcm();
+  if (RANK[priority] >= RANK.high && (pcmTurnOpen || livePcmPlaying())) interruptPcm(true);
   return new Promise<SayResult>((resolve) => {
     const item: Item = { id: ++seq, queuedAt: Date.now(), text, lang: o.lang, priority, dedupeKey: o.dedupeKey, resolve, isCurrent: o.isCurrent, resumable: priority === 'user' || priority === 'vision' || priority === 'normal' };
+    enqueue(item);
     if (current && RANK[priority] > RANK[current.priority] && RANK[priority] >= RANK.user) {
       const cut = current;
+      const generation = speechGeneration;
       current = null;
-      interrupting = true;
       interruptListeners.forEach((l) => l(cut.text));
-      void ttsEngine()
-        .stop()
-        .finally(() => {
-          interrupting = false;
-          if (cut.resumable && (!cut.isCurrent || cut.isCurrent()) && Date.now() - cut.queuedAt < RESUME_WINDOW_MS) enqueue({ ...cut, resumable: false });
+      void stopTts().then(() => {
+          if (generation === speechGeneration && cut.resumable && (!cut.isCurrent || cut.isCurrent()) && Date.now() - cut.queuedAt < RESUME_WINDOW_MS) enqueue({ ...cut, resumable: false });
           else cut.resolve('interrupted');
-          enqueue(item);
           publish();
           void pump();
         });
+      publish();
       return;
     }
-    enqueue(item);
     publish();
     void pump();
   });
@@ -159,6 +180,7 @@ export function say(text: string, o: { lang: ReplyLang; priority?: Priority; ded
 
 /** Stop everything (e.g. user starts talking, or "stop"). */
 export async function stopAll() {
+  speechGeneration++;
   interruptPcm();
   const q = queue;
   queue = [];
@@ -167,11 +189,8 @@ export async function stopAll() {
   current = null;
   if (cut) cut.resolve('interrupted');
   publish();
-  try {
-    await ttsEngine().stop();
-  } catch {
-    /* ignore */
-  }
+  await stopTts();
+  void pump();
 }
 
 /** Discard only obsolete route/scene-owned items; preserve the active conversation and PCM owner. */
@@ -192,16 +211,17 @@ export function discardInvalidSpeech() {
   current = null;
   cut.resolve('interrupted');
   interruptListeners.forEach(listener => listener(cut.text));
-  interrupting = true;
   publish();
-  void ttsEngine().stop().catch(() => undefined).finally(() => {
-    interrupting = false;
+  void stopTts().then(() => {
     publish();
     void pump();
   });
 }
 
 export const audioVolume = volume;
+
+/** Do not feed the app's own native directions back into the assistant microphone. */
+export const localSpeechActive = () => !!current || interrupting || Date.now() < localSpeechQuietUntil;
 
 
 // ── Gemini Live voice (24 kHz PCM) ──────────────────────────────────────────
@@ -214,6 +234,12 @@ let pcmStartTime = 0;
 const liveSources = new Set<AudioBufferSourceNode>();
 let liveSessionOpen = false;
 const pcmInterruptListeners = new Set<() => void>();
+let pcmTurnOpen = false;
+let pcmTurnSuppressed = false;
+let pcmGapTimer: ReturnType<typeof setTimeout> | undefined;
+const pendingPcm: { data: string; sampleRate: number; seconds: number }[] = [];
+let pendingPcmSeconds = 0;
+const MAX_PENDING_PCM_SECONDS = 20;
 
 /**
  * The model's voice plays on the app's shared AudioContext — the one the user's first tap
@@ -235,6 +261,8 @@ function getAudioCtx(): AudioContext | null {
 export function setLiveSessionOpen(open: boolean) {
   liveSessionOpen = open;
   if (!open) interruptPcm();
+  pcmTurnSuppressed = false;
+  if (!open) void pump();
 }
 
 /** True while a Live session is open (its voice may start at any moment). */
@@ -243,13 +271,42 @@ export function liveAudioActive() {
 }
 
 export function playPcmChunk(base64: string, sampleRate = 24000) {
-  if (!getSettings().voiceOut) return;
+  if (!getSettings().voiceOut || pcmTurnSuppressed) return;
   // A P0/P1 announcement is speaking: the model must not talk over a safety alert.
-  if (current && RANK[current.priority] >= RANK.high) return;
+  if (current && RANK[current.priority] >= RANK.high) {
+    interruptPcm(true);
+    return;
+  }
+  if (!Number.isFinite(sampleRate) || sampleRate < 8000 || sampleRate > 48000 || !base64) return;
+  clearTimeout(pcmGapTimer);
+  pcmTurnOpen = true;
+  pcmGapTimer = setTimeout(() => finishPcmTurn(), 5000);
+  if (current || interrupting) {
+    const seconds = base64.length * 0.75 / 2 / sampleRate;
+    if (pendingPcmSeconds + seconds > MAX_PENDING_PCM_SECONDS) {
+      interruptPcm(true);
+      return;
+    }
+    pendingPcm.push({ data: base64, sampleRate, seconds });
+    pendingPcmSeconds += seconds;
+    return;
+  }
+  schedulePcm(base64, sampleRate);
+}
+
+function drainPcm() {
+  if (current || interrupting || pcmTurnSuppressed) return;
+  for (const chunk of pendingPcm.splice(0)) schedulePcm(chunk.data, chunk.sampleRate);
+  pendingPcmSeconds = 0;
+}
+
+function schedulePcm(base64: string, sampleRate: number) {
   const ctx = getAudioCtx();
   if (!ctx) return;
-  const bin = atob(base64);
+  let bin: string;
+  try { bin = atob(base64); } catch { return; }
   const n = bin.length >> 1;
+  if (!n) return;
   const buffer = ctx.createBuffer(1, n, sampleRate);
   // Decode into the buffer we will play; avoid a second PCM array and copy per chunk.
   const floats = buffer.getChannelData(0);
@@ -270,11 +327,31 @@ export function playPcmChunk(base64: string, sampleRate = 24000) {
     source.onended = null;
     source.disconnect();
     liveSources.delete(source);
+    // A broken stream must not keep local guidance waiting forever. Normal completion
+    // releases ownership immediately; this guard applies only to a missing server boundary.
+    if (!liveSources.size && pcmTurnOpen) {
+      clearTimeout(pcmGapTimer);
+      pcmGapTimer = setTimeout(() => finishPcmTurn(), 5000);
+    }
+    void pump();
   };
 }
 
+/** Server turn boundary: queued local guidance starts only after the final PCM sample drains. */
+export function finishPcmTurn() {
+  clearTimeout(pcmGapTimer);
+  pcmTurnOpen = false;
+  pcmTurnSuppressed = false;
+  void pump();
+}
+
 /** Stops the Live voice now (barge-in, server "interrupted", safety alert, session end). */
-export function interruptPcm() {
+export function interruptPcm(suppressRemainder = false) {
+  clearTimeout(pcmGapTimer);
+  pcmTurnOpen = false;
+  pcmTurnSuppressed = suppressRemainder;
+  pendingPcm.length = 0;
+  pendingPcmSeconds = 0;
   for (const src of liveSources) {
     try {
       src.stop();
@@ -295,7 +372,7 @@ export function resetPcmStream() {
 
 /** True while model audio is audible or scheduled. */
 export function livePcmPlaying() {
-  return liveSources.size > 0;
+  return liveSources.size > 0 || pendingPcm.length > 0;
 }
 
 export function onPcmInterrupted(cb: () => void) {

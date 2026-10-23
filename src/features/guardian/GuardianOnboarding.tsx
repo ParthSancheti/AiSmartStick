@@ -14,7 +14,7 @@ import { PairingQr } from '../../components/PairingQr';
 import { Wordmark } from '../../components/Logo';
 import { SafetyHalo } from './parts';
 import { useRuntime } from '../../core/runtime/mode';
-import { useAuth } from '../../core/auth/authStore';
+import { signInPresentation, useAuth } from '../../core/auth/authStore';
 import { signInWithGoogle } from '../../core/auth/authService';
 import { createPairingCode, useRelationship } from '../../core/pairing/pairingService';
 import { firebaseConfigured } from '../../core/runtime/env';
@@ -70,6 +70,7 @@ export function GuardianOnboarding() {
   const session = useSession();
   const demo = useRuntime((x) => x.mode) === 'demo';
   const auth = useAuth();
+  const signIn = signInPresentation(auth);
   const rel = useRelationship();
   const [step, setStep] = useState<Step>(!demo && auth.status === 'signedIn' ? 'person' : 'intro');
   const [phone, setPhone] = useState(session.guardian.phone ?? '');
@@ -170,7 +171,8 @@ export function GuardianOnboarding() {
                 variant="white"
                 size="lg"
                 className="w-full"
-                disabled={signing || auth.busy || (!demo && !firebaseConfigured())}
+                disabled={signing || (!demo && (signIn.pending || !firebaseConfigured()))}
+                aria-busy={signing || (!demo && signIn.pending)}
                 onClick={async () => {
                   if (demo) {
                     // DEMO ONLY: no account is created.
@@ -183,8 +185,8 @@ export function GuardianOnboarding() {
                   await signInWithGoogle('guardian').catch(() => undefined);
                 }}
               >
-                {signing || auth.busy ? <Loader2 size={20} className="animate-spin" /> : <GoogleG />}
-                {signing || auth.busy ? 'Signing in…' : 'Continue with Google'}
+                {signing || (!demo && signIn.pending) ? <Loader2 size={20} className="animate-spin" /> : <GoogleG />}
+                <span role={!demo && signIn.pending ? 'status' : undefined}>{signing ? 'Signing in…' : demo ? 'Continue with Google' : signIn.label}</span>
               </GlassButton>
               {!demo && !firebaseConfigured() && <p className="mt-3 rounded-[16px] bg-amber-soft px-4 py-3 text-[14px] font-medium text-amber-ink">This build has no Firebase configuration, so sign-in is unavailable.</p>}
               {auth.error && <p className="mt-3 rounded-[16px] bg-amber-soft px-4 py-3 text-[14px] font-medium text-amber-ink" role="alert">{auth.error}</p>}

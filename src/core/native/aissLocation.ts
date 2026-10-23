@@ -53,6 +53,10 @@ export interface NativeLocationDiagnostics extends NativePermission {
 }
 
 export interface AissLocationPlugin {
+  /** Native odometer; new APKs only. Ownership prevents mixing accounts on shared phones. */
+  configureWalking(opts: { owner: string; seed?: { owner: string; day: string; distanceM: number; durationS: number; sessions: number } }): Promise<NativeWalkingState>;
+  getWalkingState(): Promise<NativeWalkingState>;
+  controlWalking(opts: { command: 'start' | 'pause' | 'resume' | 'end' | 'clear' | 'stop'; owner?: string }): Promise<NativeWalkingState>;
   checkPermission(): Promise<NativePermission>;
   /** FINE + COARSE in one dialog; an "Approximate" answer counts as granted. upgrade=true asks again for Precise. */
   requestPermission(opts?: { upgrade?: boolean }): Promise<NativePermission>;
@@ -68,6 +72,19 @@ export interface AissLocationPlugin {
   getDiagnostics(): Promise<NativeLocationDiagnostics>;
   addListener(event: 'location', cb: (f: NativeFix) => void): Promise<PluginListenerHandle>;
   addListener(event: 'status', cb: (s: NativeLocationStatus) => void): Promise<PluginListenerHandle>;
+  addListener(event: 'walking', cb: (s: NativeWalkingState) => void): Promise<PluginListenerHandle>;
+}
+
+export interface NativeWalkingState {
+  /** Orders bridge responses and service events within the current native process. */
+  revision?: number;
+  owner: string;
+  enabled: boolean;
+  tracking: boolean;
+  paused: boolean;
+  error: string | null;
+  today: { day: string; distanceM: number; durationS: number; sessions: number };
+  current: { id: string; startTime: number; endTime: number | null; distanceM: number; durationS: number; accSum: number; accN: number; rejected: number } | null;
 }
 
 export const AissLocation = registerPlugin<AissLocationPlugin>('AissLocation');

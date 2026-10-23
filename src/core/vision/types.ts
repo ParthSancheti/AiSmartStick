@@ -1,4 +1,5 @@
-import type { SensorContext } from './sensorConditioning';
+import type { SensorContext } from '../perception/sensorCore';
+import { EVIDENCE_FRESHNESS } from '../perception/evidencePolicy';
 
 export interface BoundingBox {
   x: number; // normalized 0..1
@@ -25,12 +26,27 @@ export interface Vector2D {
   y: number;
 }
 
+/**
+ * A temporal change of an image box, including possible camera/ego motion and detector jitter.
+ * This is neither physical approach, object velocity, range nor time to collision.
+ */
+export interface ImageMotionEvidence {
+  trend: 'UNKNOWN' | 'STABLE' | 'EXPANDING' | 'SHRINKING';
+  /** Natural logarithm of visible image-area ratio per second; never metres/second. */
+  logAreaRatePerSecond: number | null;
+  sampleCount: number;
+  spanMs: number;
+  reason: 'insufficient_history' | 'gap' | 'missed' | 'edge_clipped' | 'inconsistent' | null;
+}
+
 export interface ObjectTrack {
   trackId: number;
   label: string;
   currentBox: BoundingBox;
   previousBox: BoundingBox | null;
-  velocity: Vector2D; // normalized units per second
+  velocity: Vector2D; // image coordinates per second, including possible camera motion
+  /** Optional for legacy snapshots. Produced by the deterministic tracker, not a depth model. */
+  imageMotion?: ImageMotionEvidence;
   ageFrames: number;
   hits: number;
   misses: number;
@@ -41,7 +57,7 @@ export interface ObjectTrack {
 
 export type SpatialSide = 'LEFT' | 'CENTER' | 'RIGHT';
 /** Existing frame-freshness budget; this is a software age limit, not a validated walking speed. */
-export const VISION_OBSERVATION_STALE_MS = 1500;
+export const VISION_OBSERVATION_STALE_MS = EVIDENCE_FRESHNESS.cameraMs;
 /** Legacy image-position categories. These do not measure physical range or traversable space. */
 export type SpatialDepth = 'NEAR' | 'MID' | 'FAR' | 'UNKNOWN';
 export type VisualEvidenceState = 'confirmed' | 'tentative' | 'lost' | 'stale' | 'invalid';

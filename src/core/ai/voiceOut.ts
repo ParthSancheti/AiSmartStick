@@ -75,7 +75,8 @@ function attemptAnnouncement(line: L | string, opts: AnnouncementOptions, tries:
     if (opts.dedupeKey) pendingAnnouncements.set(opts.dedupeKey, { timer, opts });
   };
   if (!urgent && opts.nav && liveAudioActive()) {
-    // Let the current Live sentence finish, then keep the existing turn-by-turn priority policy.
+    // Prefer a sentence boundary. After this brief wait the unified queue still owns
+    // serialization, so a longer answer can never overlap native navigation speech.
     if (livePcmPlaying() && tries < 6) {
       retry(800);
       return;

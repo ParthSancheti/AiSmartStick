@@ -3,6 +3,7 @@ import type { PlaceResult } from '../maps/mapsService';
 import { navigateTo } from '../navigation/realNavigator';
 import { useNavView } from '../navigation/navView';
 import { log } from '../log';
+import { useUI } from '../store/ui';
 
 /**
  * Voice navigation hand-off, deterministic:
@@ -93,6 +94,7 @@ export async function startNavigationTo(place: PlaceResult, opts: { announce?: b
   useNavIntent.setState({ starting: true });
   try {
     const r = await navigateTo(place, opts);
+    useUI.setState({ liveAiOpen: false, mapOpen: true });
     if (r.status === 'waiting_for_gps') {
       log.info('voice navigation: destination set, waiting for GPS', { placeId: place.placeId });
       return { started: false as const, waitingForGps: true as const };
@@ -105,8 +107,8 @@ export async function startNavigationTo(place: PlaceResult, opts: { announce?: b
 }
 
 /** The user said yes to the pending offer. */
-export async function confirmPendingOffer() {
+export async function confirmPendingOffer(opts: { announce?: boolean } = {}) {
   const place = pendingOffer();
   if (!place) return null;
-  return { place, ...(await startNavigationTo(place)) };
+  return { place, ...(await startNavigationTo(place, opts)) };
 }

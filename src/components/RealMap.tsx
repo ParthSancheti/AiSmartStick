@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { LocateFixed, MapPinned, RotateCcw, WifiOff } from 'lucide-react';
-import { loadMaps, mapsErrorFrom, onMapsAuthFailure, type MapsError } from '../core/maps/mapsLoader';
+import { loadMaps, mapsErrorFrom, onMapsAuthFailure, currentMapsAuthError, type MapsError } from '../core/maps/mapsLoader';
 import { ENV } from '../core/runtime/env';
 import { locationProblem, useLocation } from '../core/location/locationService';
 
@@ -104,6 +104,7 @@ export function RealMap({
   useEffect(() => {
     if (!ENV.mapsBrowserKey || !el.current) return;
     let alive = true;
+    let ownedMap: google.maps.Map | null = null;
     loadMaps()
       .then(({ maps }) => {
         if (!alive || !el.current) return;
@@ -117,11 +118,12 @@ export function RealMap({
             mapId: ENV.mapsMapId || 'DEMO_MAP_ID',
             gestureHandling: 'greedy',
           });
+          ownedMap = m;
           m.addListener('dragstart', () => setFollow(false));
           m.addListener('click', (e: google.maps.MapMouseEvent) => {
             if (e.latLng && clickCb.current) clickCb.current({ lat: e.latLng.lat(), lng: e.latLng.lng() });
           });
-          setErr(null);
+          setErr(currentMapsAuthError());
           setMap(m);
         } catch (e) {
           setErr(mapsErrorFrom(e));
@@ -130,6 +132,18 @@ export function RealMap({
       .catch((e) => alive && setErr(mapsErrorFrom(e)));
     return () => {
       alive = false;
+      // Release SDK listeners and overlays on retry/unmount; otherwise they retain the map DOM.
+      if (ownedMap) google.maps.event.clearInstanceListeners(ownedMap);
+      me.current?.setMap(null);
+      dot.current?.remove();
+      dest.current?.remove();
+      routeLine.current?.setMap(null);
+      travelledLine.current?.setMap(null);
+      me.current = null;
+      dot.current = dest.current = null;
+      routeLine.current = travelledLine.current = null;
+      fittedPath.current = null;
+      setMap(null);
     };
   }, [attempt]);
 

@@ -144,6 +144,8 @@ export function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise
 let running: LocationState['source'] = null;
 /** GPS was asked for (startLocation) and not stopped (sign-out). */
 let wanted = false;
+let lifecycle = 0;
+const currentLifecycle = (generation: number) => wanted && generation === lifecycle;
 let starting: Promise<void> | null = null;
 let startedAt = 0;
 let watchId: string | null = null;
@@ -270,9 +272,9 @@ const askNative = (upgrade = false) =>
  * One permission request at a time for the whole app (boot, setup, map and SOS may all ask at
  * once): later callers share the answer of the dialog already on screen.
  */
-async function nativePermission(request: boolean, upgrade = false): Promise<NativePermission> {
+async function nativePermission(request: boolean, upgrade = false, generation = lifecycle): Promise<NativePermission> {
   let p = await checkNative();
-  if ((p.state === 'granted' && !upgrade) || !request) return p;
+  if (!currentLifecycle(generation) || (p.state === 'granted' && !upgrade) || !request) return p;
   if (permissionFlight) return permissionFlight;
   permissionFlight = (async () => {
     const t0 = Date.now();
@@ -280,9 +282,9 @@ async function nativePermission(request: boolean, upgrade = false): Promise<Nati
     p = await askNative(upgrade);
     // Android shows one permission dialog at a time and silently cancels the others (e.g. the
     // notification prompt at start-up). An instant "not answered" means ours never appeared: ask again once.
-    if (p.state === 'prompt' && Date.now() - t0 < 1500) {
+    if (currentLifecycle(generation) && p.state === 'prompt' && Date.now() - t0 < 1500) {
       await sleep(1500);
-      p = await askNative(upgrade);
+      if (currentLifecycle(generation)) p = await askNative(upgrade);
     }
     locLog('permission answer', { state: p.state, precise: p.precise, coarse: p.coarse });
     return p;
@@ -293,14 +295,15 @@ async function nativePermission(request: boolean, upgrade = false): Promise<Nati
 }
 
 /** Returns false only when the plugin itself is unusable (caller falls back). */
-async function startAndroid(request: boolean): Promise<boolean> {
+async function startAndroid(request: boolean, generation: number): Promise<boolean> {
   let perm: NativePermission;
   try {
-    perm = await nativePermission(request);
+    perm = await nativePermission(request, false, generation);
   } catch (e) {
     locLog('AissLocation unusable, falling back', { error: String((e as Error)?.message ?? e) });
     return false;
   }
+  if (!currentLifecycle(generation)) return true;
   set({ source: 'android', precise: perm.state === 'granted' ? perm.precise : null, permission: perm.state });
   if (perm.state !== 'granted') {
     setPermissionProblem(perm.state);
@@ -308,16 +311,30 @@ async function startAndroid(request: boolean): Promise<boolean> {
   }
   try {
     if (!nativeSubs.length) {
-      nativeSubs = await withTimeout(
-        Promise.all([AissLocation.addListener('location', (f) => acceptFix(fromNative(f), 'android')), AissLocation.addListener('status', onNativeStatus)]),
+      const registering = Promise.all([AissLocation.addListener('location', (f) => { if (wanted) acceptFix(fromNative(f), 'android'); }), AissLocation.addListener('status', (state) => { if (wanted) onNativeStatus(state); })]).then(async subscriptions => {
+        if (currentLifecycle(generation)) { nativeSubs = subscriptions; return subscriptions; }
+        await Promise.all(subscriptions.map(handle => handle.remove().catch(() => undefined)));
+        return [];
+      });
+      const subscriptions = await withTimeout(
+        registering,
         CHECK_MS,
         'addListener',
       );
+      if (!currentLifecycle(generation)) {
+        await Promise.all(subscriptions.map(handle => handle.remove().catch(() => undefined)));
+        return true;
+      }
+      nativeSubs = subscriptions;
     }
     startedAt = Date.now();
     const cur = useLocation.getState();
     if (!cur.fix || cur.status === 'error' || cur.status === 'idle') set({ status: 'acquiring', reason: null, error: null });
     const st = await withTimeout(AissLocation.start({ intervalMs: 1000 }), 8000, 'start');
+    if (!currentLifecycle(generation)) {
+      if (!wanted) await AissLocation.stop().catch(() => undefined);
+      return true;
+    }
     locLog('AissLocation started', { started: st.started, reason: st.reason ?? null, enabled: st.enabled, gps: st.gps, network: st.network, providers: st.providers });
     running = 'android';
     if (!st.started) {
@@ -331,6 +348,7 @@ async function startAndroid(request: boolean): Promise<boolean> {
     startTick();
     armFallback(FALLBACK_AFTER_MS);
   } catch (e) {
+    if (!currentLifecycle(generation)) return true;
     running = null;
     const msg = (e as Error)?.message ?? 'Location failed to start';
     locLog('AissLocation start failed', { error: msg });
@@ -356,26 +374,35 @@ function armFallback(ms: number) {
   }, ms);
 }
 
-const positionCb = (from: FixSource) => (p: Position | null, err?: unknown) => {
+const positionCb = (from: FixSource, generation: number) => (p: Position | null, err?: unknown) => {
+  if (!currentLifecycle(generation)) return;
   if (p) return acceptFix(fromPosition(p), from);
   if (err) locLog(`${from} error`, { error: String((err as { message?: string })?.message ?? err), code: (err as { code?: unknown })?.code ?? null });
 };
 
 async function startFallbacks() {
+  const generation = lifecycle;
+  if (!currentLifecycle(generation)) return;
   const d = useLocationDiag.getState();
   // 1) @capacitor/geolocation (Google Play Services fused provider on Android).
   if (!fallbackWatchId) {
     try {
       const raw = await withTimeout(Geolocation.checkPermissions(), CHECK_MS, 'geolocation.checkPermissions');
+      if (!currentLifecycle(generation)) return;
       const perm = permOf(raw);
       if (perm === 'granted') {
         // enableHighAccuracy needs FINE: asking for it with only an Approximate grant opens the
         // Android permission dialog by itself (@capacitor/geolocation), so it follows the grant.
-        fallbackWatchId = await withTimeout(
-          Geolocation.watchPosition({ enableHighAccuracy: fineGranted(raw), timeout: 20000, maximumAge: 3000, interval: 1000, minimumUpdateInterval: 1000 }, positionCb('capacitor')),
+        const registered = Geolocation.watchPosition({ enableHighAccuracy: fineGranted(raw), timeout: 20000, maximumAge: 3000, interval: 1000, minimumUpdateInterval: 1000 }, positionCb('capacitor', generation)).then(async id => {
+          if (!currentLifecycle(generation) || (fallbackWatchId && fallbackWatchId !== id)) { await Geolocation.clearWatch({ id }).catch(() => undefined); return; }
+          fallbackWatchId = id;
+        });
+        await withTimeout(
+          registered,
           CHECK_MS,
           'geolocation.watchPosition',
         );
+        if (!currentLifecycle(generation)) return;
         useLocationDiag.setState({ fallback: [...new Set([...d.fallback, 'capacitor' as const])] });
         locLog('fallback @capacitor/geolocation started');
       } else locLog('fallback @capacitor/geolocation not allowed', { perm });
@@ -383,15 +410,17 @@ async function startFallbacks() {
       locLog('fallback @capacitor/geolocation failed', { error: String((e as Error)?.message ?? e) });
     }
   }
+  if (!currentLifecycle(generation)) return;
   // 2) The WebView's own geolocation (Chromium: Play Services or LocationManager). Capacitor's
   //    WebChromeClient grants it only when the app holds FINE and COARSE; otherwise it opens the
   //    Android permission dialog by itself, so on a phone it runs only with a precise grant.
   const webviewAllowed = !Capacitor.isNativePlatform() || (await nativeGeoAccess()).fine;
+  if (!currentLifecycle(generation)) return;
   if (!webviewAllowed) locLog('fallback WebView geolocation skipped (no precise permission; it would open a dialog)');
   if (webviewAllowed && webWatchId == null && typeof navigator !== 'undefined' && navigator.geolocation?.watchPosition) {
     try {
       webWatchId = navigator.geolocation.watchPosition(
-        (p) => acceptFix(fromPosition(p as unknown as Position), 'webview'),
+        (p) => { if (currentLifecycle(generation)) acceptFix(fromPosition(p as unknown as Position), 'webview'); },
         (e) => locLog('fallback WebView geolocation error', { code: e.code, error: e.message }),
         { enableHighAccuracy: true, maximumAge: 5000, timeout: 30000 },
       );
@@ -405,17 +434,19 @@ async function startFallbacks() {
 
 async function stopFallbacks() {
   clearTimeout(fallbackTimer);
-  if (fallbackWatchId) await Geolocation.clearWatch({ id: fallbackWatchId }).catch(() => undefined);
+  const fallbackId = fallbackWatchId;
+  const webId = webWatchId;
   fallbackWatchId = null;
-  if (webWatchId != null) {
+  webWatchId = null;
+  useLocationDiag.setState({ fallback: [] });
+  if (webId != null) {
     try {
-      navigator.geolocation.clearWatch(webWatchId);
+      navigator.geolocation.clearWatch(webId);
     } catch {
       /* ignore */
     }
   }
-  webWatchId = null;
-  useLocationDiag.setState({ fallback: [] });
+  if (fallbackId) await Geolocation.clearWatch({ id: fallbackId }).catch(() => undefined);
 }
 
 // ------------------------------------------------------------------ Capacitor Geolocation (web / fallback)
@@ -439,7 +470,8 @@ async function nativeGeoAccess(): Promise<{ granted: boolean; fine: boolean }> {
   }
 }
 
-async function startCapacitor(request: boolean) {
+async function startCapacitor(request: boolean, generation: number) {
+  if (!currentLifecycle(generation)) return;
   const native = Capacitor.isNativePlatform();
   // Native: high accuracy only with a FINE grant (with Approximate only it would open a dialog).
   let highAccuracy = true;
@@ -453,10 +485,13 @@ async function startCapacitor(request: boolean) {
     let perm: LocationPermission = 'unknown';
     try {
       let raw = await Geolocation.checkPermissions();
+      if (!currentLifecycle(generation)) return;
       perm = permOf(raw);
       if (perm !== 'granted' && request) perm = permOf((raw = await Geolocation.requestPermissions()));
+      if (!currentLifecycle(generation)) return;
       highAccuracy = fineGranted(raw);
     } catch (e) {
+      if (!currentLifecycle(generation)) return;
       if (/not enabled|0007|disabled/i.test(String((e as { code?: string })?.code ?? '') + (e as Error)?.message)) {
         set({ servicesOn: false, status: 'unavailable', reason: 'off', error: MSG.off });
         return; // resume recovery restarts it after the user switches Location on
@@ -473,7 +508,8 @@ async function startCapacitor(request: boolean) {
   if (!useLocation.getState().fix) set({ status: 'acquiring', reason: null, error: null });
   try {
     const from: FixSource = native ? 'capacitor' : 'browser';
-    watchId = await Geolocation.watchPosition({ enableHighAccuracy: highAccuracy, timeout: 20000, maximumAge: 3000, interval: 1000, minimumUpdateInterval: 1000 }, (p, err) => {
+    const id = await Geolocation.watchPosition({ enableHighAccuracy: highAccuracy, timeout: 20000, maximumAge: 3000, interval: 1000, minimumUpdateInterval: 1000 }, (p, err) => {
+      if (!currentLifecycle(generation)) return;
       if (p) {
         acceptFix(fromPosition(p), from);
         return;
@@ -487,19 +523,22 @@ async function startCapacitor(request: boolean) {
         if (!useLocation.getState().fix || useLocation.getState().status === 'stale') set({ reason: 'no_signal', error: MSG.noSignal });
       } else set({ status: useLocation.getState().fix ? 'stale' : 'unavailable', reason: 'error', error: msg });
     });
+    if (!currentLifecycle(generation)) { await Geolocation.clearWatch({ id }).catch(() => undefined); return; }
+    watchId = id;
     running = native ? 'capacitor' : 'browser';
     startTick();
   } catch (e) {
+    if (!currentLifecycle(generation)) return;
     set({ status: 'unavailable', reason: 'error', error: (e as Error)?.message ?? 'Location failed to start' });
   }
 }
 
 // ------------------------------------------------------------------ public API
 
-async function doStart(request: boolean) {
+async function doStart(request: boolean, generation: number) {
   locLog('starting', { request, platform: Capacitor.getPlatform(), aissLocation: isAndroidNative() });
-  if (isAndroidNative() && (await startAndroid(request))) return;
-  await startCapacitor(request);
+  if (isAndroidNative() && (await startAndroid(request, generation))) return;
+  if (currentLifecycle(generation)) await startCapacitor(request, generation);
 }
 
 /**
@@ -512,7 +551,7 @@ export function startLocation(opts: { request?: boolean } = {}): Promise<void> {
   startWatchdog();
   if (running) return Promise.resolve();
   if (starting) return starting;
-  const mine = doStart(opts.request ?? true)
+  const mine = doStart(opts.request ?? true, ++lifecycle)
     .catch((e) => {
       locLog('start failed', { error: String((e as Error)?.message ?? e) });
     })
@@ -545,8 +584,11 @@ function startWatchdog() {
  * Location switched on, or the first start failed. Safe to call often; a healthy watch is left alone.
  */
 export async function ensureLocation(opts: { request?: boolean } = {}) {
+  wanted = true;
+  const generation = lifecycle;
   // A start waiting on a lost native answer must not block every later caller forever.
   if (starting) await withTimeout(starting, opts.request === false ? 15_000 : DIALOG_MS + 5000, 'start').catch(() => undefined);
+  if (!currentLifecycle(generation)) return;
   const s = useLocation.getState();
   if (running && (s.status === 'ok' || s.status === 'poor' || (s.status === 'acquiring' && s.reason === null))) return;
   if (running === 'android' && opts.request === false) {
@@ -554,14 +596,19 @@ export async function ensureLocation(opts: { request?: boolean } = {}) {
     // changes, so just refresh what we know. An explicit Retry re-registers it below.
     try {
       const perm = await checkNative();
+      if (!currentLifecycle(generation)) return;
       if (perm.state !== 'granted') {
         await halt();
-        return startLocation(opts);
+        if (currentLifecycle(generation)) return startLocation(opts);
+        return;
       }
       set({ permission: 'granted', precise: perm.precise });
-      applyServices((await withTimeout(AissLocation.isLocationEnabled(), CHECK_MS, 'isLocationEnabled')).enabled);
+      const status = await withTimeout(AissLocation.isLocationEnabled(), CHECK_MS, 'isLocationEnabled');
+      if (!currentLifecycle(generation)) return;
+      applyServices(status.enabled);
       if (useLocation.getState().status !== 'unavailable') {
         const { fix } = await withTimeout(AissLocation.getLastKnown(), CHECK_MS, 'getLastKnown');
+        if (!currentLifecycle(generation)) return;
         if (fix) acceptFix(fromNative(fix), 'android');
       }
       // Still nothing live long after start: the native watch is silent, try the other sources.
@@ -571,7 +618,9 @@ export async function ensureLocation(opts: { request?: boolean } = {}) {
       /* fall through to a full restart */
     }
   }
+  if (!currentLifecycle(generation)) return;
   await halt();
+  if (!currentLifecycle(generation)) return;
   starting = null;
   await startLocation(opts);
 }
@@ -579,9 +628,11 @@ export async function ensureLocation(opts: { request?: boolean } = {}) {
 /** Explicit user action ("Allow location" / "Use precise location"). Resolves with the new permission. */
 export async function requestLocationPermission(opts: { upgrade?: boolean } = {}): Promise<LocationPermission> {
   wanted = true;
+  const generation = lifecycle;
   if (isAndroidNative()) {
     try {
       const p = await nativePermission(true, !!opts.upgrade);
+      if (!currentLifecycle(generation)) return 'unknown';
       set({ permission: p.state, precise: p.state === 'granted' ? p.precise : null });
       await ensureLocation({ request: false });
       return p.state;
@@ -589,7 +640,9 @@ export async function requestLocationPermission(opts: { upgrade?: boolean } = {}
       /* fall back below */
     }
   }
+  if (!currentLifecycle(generation)) return 'unknown';
   await halt();
+  if (!currentLifecycle(generation)) return 'unknown';
   await startLocation({ request: true });
   return useLocation.getState().permission;
 }
@@ -634,22 +687,28 @@ export function hookLocationRecovery() {
 /** Stops the watch but keeps the last position (internal restart). */
 async function halt() {
   const src = running;
+  const id = watchId;
   running = null;
-  clearInterval(tick);
-  await stopFallbacks();
-  if (watchId) await Geolocation.clearWatch({ id: watchId }).catch(() => undefined);
   watchId = null;
-  if (src === 'android') await withTimeout(AissLocation.stop(), CHECK_MS, 'stop').catch(() => undefined);
+  clearInterval(tick);
+  const nativeStop = src === 'android' ? withTimeout(AissLocation.stop(), CHECK_MS, 'stop').catch(() => undefined) : Promise.resolve();
+  await Promise.all([nativeStop, stopFallbacks(), id ? Geolocation.clearWatch({ id }).catch(() => undefined) : Promise.resolve()]);
 }
 
 /** Stops GPS and forgets the position (sign-out: nothing of the previous account stays on screen). */
 export async function stopLocation() {
   wanted = false;
+  const generation = ++lifecycle;
+  starting = null;
   clearInterval(watchdog);
   watchdog = undefined;
-  if (starting) await withTimeout(starting, 5000, 'start').catch(() => undefined);
-  await halt();
-  useLocation.setState({ ...INITIAL });
+  // The native start may have registered GPS even when its bridge response never arrived.
+  // Explicit stop must reach Android in that case too, before any new account starts.
+  const runningNative = running === 'android';
+  const stopping = halt();
+  const pendingNative = !runningNative && isAndroidNative() ? withTimeout(AissLocation.stop(), CHECK_MS, 'stop').catch(() => undefined) : Promise.resolve();
+  await Promise.all([stopping, pendingNative]);
+  if (generation === lifecycle) useLocation.setState({ ...INITIAL });
 }
 
 /** Test helper: forget everything (module state + store). */

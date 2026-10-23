@@ -41,7 +41,7 @@ import { haptics } from '../src/core/feedback/haptics';
 import { stickNavCue } from '../src/core/navigation/stickHaptics';
 import { useNavView } from '../src/core/navigation/navView';
 import { emptyWalkingGuidance, useWalkingGuidance } from '../src/core/guidance/guidanceState';
-import { armNavigation, currentDestination, pendingDestination, realNavActive, reroute, startRealNavigation, stopRealNavigation } from '../src/core/navigation/realNavigator';
+import { armNavigation, currentDestination, navigateTo, pendingDestination, realNavActive, reroute, startRealNavigation, stopRealNavigation } from '../src/core/navigation/realNavigator';
 
 const destination: PlaceResult = { placeId: 'destination', name: 'Entrance', lat: 0.002, lng: 0.001, address: null, distanceM: null, openNow: null, primaryType: null };
 const alternate: PlaceResult = { ...destination, placeId: 'alternate', name: 'Second entrance' };
@@ -71,6 +71,20 @@ function deferred<T>() {
 const flush = () => vi.advanceTimersByTimeAsync(0);
 
 describe('real walking route safety and lifecycle scenarios', () => {
+  it('speaks the maneuver at the turn, rather than only playing a cue', async () => {
+    await startRealNavigation(destination);
+    vi.advanceTimersByTime(50000);
+    emit(fix(0.00095, 0));
+    expect(testState.spoken).toContain('Now, Turn right');
+  });
+
+  it('announces distance and time after progress on a long stretch', async () => {
+    await startRealNavigation(destination);
+    vi.advanceTimersByTime(91000);
+    emit(fix(0.00055, 0));
+    expect(testState.spoken.some(s => /metres remaining, about .*minutes/.test(s))).toBe(true);
+  });
+
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-10-10T09:00:00Z'));
@@ -86,6 +100,86 @@ describe('real walking route safety and lifecycle scenarios', () => {
   afterEach(() => {
     stopRealNavigation();
     vi.useRealTimers();
+  });
+
+  it('lets Live own route-start narration when requested, while retaining turn guidance', async () => {
+    await navigateTo(destination, { announce: false });
+    expect(testState.spoken).toEqual([]);
+    vi.advanceTimersByTime(50000);
+    emit(fix(0.00095, 0));
+    expect(testState.spoken).toEqual(['Now, Turn right']);
+  });
+
+  it('announces only the immediate turn when a GPS update first lands inside its now window', async () => {
+    await startRealNavigation(destination);
+    testState.spoken.length = 0;
+    vi.advanceTimersByTime(50000);
+    emit(fix(0.00095, 0));
+    expect(testState.spoken).toEqual(['Now, Turn right']);
+    expect(announce).toHaveBeenLastCalledWith('Now, Turn right', expect.objectContaining({ high: true, nav: true }));
+  });
+
+  it('retains a missed junction maneuver when a GPS update skips into the next leg', async () => {
+    await startRealNavigation(destination);
+    testState.spoken.length = 0;
+    vi.advanceTimersByTime(50000);
+    emit(fix(0.001, 0.00004));
+    expect(useNavView.getState()).toMatchObject({ state: 'MANEUVER_NOW', next: { text: 'Turn right', maneuver: 'right', inM: 0 } });
+    expect(testState.spoken).toEqual(['Now, Turn right']);
+    vi.advanceTimersByTime(1000);
+    emit(fix(0.001, 0.00005));
+    expect(testState.spoken).toEqual(['Now, Turn right']);
+    vi.advanceTimersByTime(1000);
+    emit(fix(0.001, 0.0002));
+    expect(useNavView.getState().next).toMatchObject({ text: 'Turn left', maneuver: 'left' });
+  });
+
+  it('expires an approaching prompt when the immediate turn takes priority', async () => {
+    await startRealNavigation(destination);
+    vi.advanceTimersByTime(50000);
+    emit(fix(0.0008, 0));
+    const opts = vi.mocked(announce).mock.calls.find(([line]) => typeof line !== 'string' && line.en.startsWith('In '))![1]!;
+    expect(opts.isCurrent!()).toBe(true);
+    vi.advanceTimersByTime(1000);
+    emit(fix(0.00095, 0));
+    expect(opts.isCurrent!()).toBe(false);
+  });
+
+  it('gives a faster walker more lead time while keeping noisy GPS from claiming an exact turn', async () => {
+    useLocation.setState({ fix: fix(0, 0, { speedMps: 2.5 }) });
+    await startRealNavigation(destination);
+    vi.advanceTimersByTime(30000);
+    emit(fix(0.00065, 0, { speedMps: 2.5 }));
+    expect(useNavView.getState().state).toBe('APPROACHING_MANEUVER');
+    expect(testState.spoken.some(line => line.startsWith('In 40 meters'))).toBe(true);
+    vi.advanceTimersByTime(15000);
+    emit(fix(0.00095, 0, { speedMps: 2.5, accuracyM: 25 }));
+    expect(useNavView.getState().state).toBe('APPROACHING_MANEUVER');
+    expect(testState.spoken).not.toContain('Now, Turn right');
+    vi.advanceTimersByTime(1000);
+    emit(fix(0.000951, 0, { speedMps: 2.5, accuracyM: 5 }));
+    expect(useNavView.getState().state).toBe('MANEUVER_NOW');
+    expect(testState.spoken).toContain('Now, Turn right');
+  });
+
+  it.each([Infinity, NaN, 100, -1])('does not corrupt ETA with GPS speed %s', async speedMps => {
+    await startRealNavigation(destination);
+    vi.advanceTimersByTime(30000);
+    emit(fix(0.0005, 0, { speedMps }));
+    expect(useNavView.getState().etaSec).toBeGreaterThan(100);
+    expect(useNavView.getState().etaSec).toBeLessThan(400);
+  });
+
+  it('anchors turns to their actual junction when provider distances differ from simplified geometry', async () => {
+    const result = route();
+    result.steps[0].distanceM = 200;
+    result.distanceM = 422;
+    vi.mocked(routeWalking).mockResolvedValueOnce(result);
+    await startRealNavigation(destination);
+    vi.advanceTimersByTime(50000);
+    emit(fix(0.00095, 0));
+    expect(useNavView.getState()).toMatchObject({ state: 'MANEUVER_NOW', next: { maneuver: 'right' } });
+    expect(testState.spoken).toContain('Now, Turn right');
   });
 
   it('does not revive a stopped route when its initial network request finishes', async () => {
@@ -205,6 +299,7 @@ describe('real walking route safety and lifecycle scenarios', () => {
 
   it('does not claim arrival when the mapped path ends far from the selected destination', async () => {
     await startRealNavigation({ ...destination, lat: 0.004 });
+    vi.advanceTimersByTime(180000);
     emit(fix(0.002, 0.001));
     expect(useNavView.getState()).toMatchObject({ active: true, arrived: false, state: 'NAVIGATION_ERROR', next: null });
     expect(testState.spoken.some((line) => /arrived/i.test(line))).toBe(false);
@@ -213,6 +308,7 @@ describe('real walking route safety and lifecycle scenarios', () => {
 
   it('announces valid arrival immediately once and clears its timer when stopped', async () => {
     await startRealNavigation(destination);
+    vi.advanceTimersByTime(180000);
     emit(fix(destination.lat, destination.lng));
     emit(fix(destination.lat, destination.lng));
     expect(testState.spoken.filter((line) => /arrived/i.test(line))).toHaveLength(1);
@@ -223,7 +319,7 @@ describe('real walking route safety and lifecycle scenarios', () => {
 
   it('does not advance turns from duplicate, older, or stale fixes', async () => {
     await startRealNavigation(destination);
-    vi.advanceTimersByTime(1000);
+    vi.advanceTimersByTime(50000);
     const approach = fix(0.0008, 0);
     emit(approach);
     expect(testState.spoken.filter((line) => line.startsWith('In '))).toHaveLength(1);
@@ -240,6 +336,7 @@ describe('real walking route safety and lifecycle scenarios', () => {
     await startRealNavigation(destination);
     testState.spoken.length = 0;
     testState.maneuverAllowed = false;
+    vi.advanceTimersByTime(50000);
     emit(fix(0.0008, 0));
     expect(useNavView.getState().next).toBeNull();
     expect(testState.spoken).toEqual([]);
@@ -253,6 +350,7 @@ describe('real walking route safety and lifecycle scenarios', () => {
 
   it('invalidates queued turn speech when stopped, rerouting, passed, or blocked', async () => {
     await startRealNavigation(destination);
+    vi.advanceTimersByTime(50000);
     emit(fix(0.0008, 0));
     const options = vi.mocked(announce).mock.calls.find(([line]) => typeof line !== 'string' && line.en.startsWith('In '))![1]!;
     expect(options.isCurrent!()).toBe(true);
@@ -289,6 +387,7 @@ describe('real walking route safety and lifecycle scenarios', () => {
 
   it('reannounces the current maneuver after returning from a temporary off-route pause', async () => {
     await startRealNavigation(destination);
+    vi.advanceTimersByTime(50000);
     emit(fix(0.0008, 0));
     expect(testState.spoken.filter(line => line.startsWith('In '))).toHaveLength(1);
     vi.advanceTimersByTime(1000);
@@ -302,6 +401,7 @@ describe('real walking route safety and lifecycle scenarios', () => {
 
   it('invalidates old turns while a different destination is loading', async () => {
     await startRealNavigation(destination);
+    vi.advanceTimersByTime(50000);
     emit(fix(0.0008, 0));
     const opts = vi.mocked(announce).mock.calls.find(([line]) => typeof line !== 'string' && line.en.startsWith('In '))![1]!;
     expect(opts.isCurrent!()).toBe(true);
@@ -320,6 +420,7 @@ describe('real walking route safety and lifecycle scenarios', () => {
 
   it('does not let the previous arrival grace timer cancel a newly selected destination', async () => {
     await startRealNavigation(destination);
+    vi.advanceTimersByTime(180000);
     emit(fix(destination.lat, destination.lng));
     expect(vi.getTimerCount()).toBe(1);
     const request = deferred<RouteResult>();
@@ -336,6 +437,7 @@ describe('real walking route safety and lifecycle scenarios', () => {
 
   it('pauses and invalidates pending turns when GPS expires without another fix', async () => {
     await startRealNavigation(destination);
+    vi.advanceTimersByTime(50000);
     emit(fix(0.0008, 0));
     const opts = vi.mocked(announce).mock.calls.find(([line]) => typeof line !== 'string' && line.en.startsWith('In '))![1]!;
     expect(opts.isCurrent!()).toBe(true);
@@ -348,6 +450,7 @@ describe('real walking route safety and lifecycle scenarios', () => {
 
   it.each(['warning', 'unavailable'] as const)('immediately hides a published turn when guidance becomes %s between GPS fixes', async (severity) => {
     await startRealNavigation(destination);
+    vi.advanceTimersByTime(50000);
     emit(fix(0.00096, 0));
     expect(useNavView.getState()).toMatchObject({ state: 'MANEUVER_NOW', next: { maneuver: 'right' } });
     vi.mocked(cancelInvalidAnnouncements).mockClear();

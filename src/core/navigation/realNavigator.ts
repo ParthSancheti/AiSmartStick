@@ -36,6 +36,7 @@ const OFF_ROUTE_M = 35;
 const ARRIVE_M = 15;
 const PRE_ANNOUNCE_M = 30;
 const NOW_M = 8;
+const GPS_MANEUVER_ACCURACY_M = 15;
 const REROUTE_RETRY_MS = 20_000;
 const GPS_DIRECTION_ACCURACY_M = 40;
 const GPS_UNAVAILABLE_TEXT = 'Waiting for a fresh GPS position. Walking directions are paused.';
@@ -53,6 +54,11 @@ interface Active {
   lastReroute: number;
   startedAt: number;
   lastFix: Fix | null;
+  directionsPaused?: boolean;
+  lastProgressAt?: number;
+  lastProgressM?: number;
+  walkingSpeedMps: number;
+  matched: { along: number; fix: Fix };
 }
 
 let active: Active | null = null;
@@ -124,15 +130,23 @@ function validateRoute(route: RouteResult) {
 
 function pauseForGps(fix: Fix | null) {
   if (active) {
+    active.directionsPaused = true;
     active.preAnnounced = -1;
     active.nowAnnounced = -1;
   }
-  useNavView.setState({ state: 'NAVIGATION_ERROR', next: null, error: fix && fixIsFresh(fix) ? GPS_INACCURATE_TEXT : GPS_UNAVAILABLE_TEXT });
+  const error = fix && fixIsFresh(fix) ? GPS_INACCURATE_TEXT : GPS_UNAVAILABLE_TEXT;
+  const changed = useNavView.getState().error !== error;
+  useNavView.setState({ state: 'NAVIGATION_ERROR', next: null, error });
   cancelInvalidAnnouncements();
+  if (changed) {
+    const owner = active;
+    announce(error, { nav: true, dedupeKey: 'nav-gps-paused', isCurrent: () => active === owner && !!active && useNavView.getState().error === error });
+  }
 }
 
 function pauseForGuidance() {
   if (!active || useNavView.getState().arrived) return;
+  active.directionsPaused = true;
   active.preAnnounced = -1;
   active.nowAnnounced = -1;
   const severity = useWalkingGuidance.getState().severity;
@@ -162,31 +176,52 @@ function project(p: { lat: number; lng: number }, a: [number, number], b: [numbe
   return { t, dist: Math.hypot(px - qx, py - qy) };
 }
 
-export function progressOnPath(path: [number, number][], cum: number[], p: { lat: number; lng: number }) {
-  let best = { along: 0, off: Infinity };
+export function progressOnPath(path: [number, number][], cum: number[], p: { lat: number; lng: number }, continuity?: { along: number; maxTravelM: number }) {
+  let best = { along: continuity?.along ?? 0, off: Infinity };
   for (let i = 0; i < path.length - 1; i++) {
     const r = project(p, path[i], path[i + 1]);
-    if (r.dist < best.off) best = { off: r.dist, along: cum[i] + r.t * (cum[i + 1] - cum[i]) };
+    const along = cum[i] + r.t * (cum[i + 1] - cum[i]);
+    // A physically nearby parallel/crossing leg can be hundreds of route metres away.
+    // Exclude impossible progress before comparing lateral GPS distance.
+    if (continuity && Math.abs(along - continuity.along) > continuity.maxTravelM) continue;
+    if (continuity
+      ? r.dist < best.off - 1 || (Math.abs(r.dist - best.off) <= 1 && Math.abs(along - continuity.along) < Math.abs(best.along - continuity.along))
+      : r.dist < best.off) best = { off: r.dist, along };
   }
   return best;
 }
 
-function build(place: PlaceResult, route: RouteResult): Active {
+function build(place: PlaceResult, route: RouteResult, origin: Fix): Active {
   const cum = [0];
   for (let i = 1; i < route.path.length; i++) cum.push(cum[i - 1] + haversineM({ lat: route.path[i - 1][0], lng: route.path[i - 1][1] }, { lat: route.path[i][0], lng: route.path[i][1] }));
   const stepEndsAt: number[] = [];
   let acc = 0;
-  for (const s of route.steps) stepEndsAt.push((acc += s.distanceM));
-  return { place, route, cum, stepEndsAt, lastStep: -1, preAnnounced: -1, nowAnnounced: -1, offCount: 0, lastReroute: 0, startedAt: Date.now(), lastFix: null };
+  const total = cum[cum.length - 1];
+  const stepDistance = route.steps.reduce((sum, step) => sum + step.distanceM, 0);
+  for (const s of route.steps) {
+    acc += s.distanceM;
+    const expected = stepDistance ? acc / stepDistance * total : total;
+    // Provider distances follow detailed geometry; the displayed polyline can be simplified.
+    // Locate the actual junction instead of comparing those different distance scales.
+    let boundary = { along: expected, off: Infinity };
+    for (let i = 0; i < route.path.length - 1; i++) {
+      const p = project(s.end, route.path[i], route.path[i + 1]);
+      const along = cum[i] + p.t * (cum[i + 1] - cum[i]);
+      if (along < (stepEndsAt[stepEndsAt.length - 1] ?? 0)) continue;
+      if (p.dist < boundary.off - 1 || (Math.abs(p.dist - boundary.off) <= 1 && Math.abs(along - expected) < Math.abs(boundary.along - expected))) boundary = { along, off: p.dist };
+    }
+    stepEndsAt.push(boundary.off <= OFF_ROUTE_M ? boundary.along : Math.max(stepEndsAt[stepEndsAt.length - 1] ?? 0, expected));
+  }
+  return { place, route, cum, stepEndsAt, lastStep: -1, preAnnounced: -1, nowAnnounced: -1, offCount: 0, lastReroute: 0, startedAt: Date.now(), lastFix: null, walkingSpeedMps: 1.2, matched: { along: 0, fix: origin } };
 }
 
-export function startRealNavigation(place: PlaceResult): Promise<RouteResult> {
+export function startRealNavigation(place: PlaceResult, opts: { announce?: boolean } = {}): Promise<RouteResult> {
   if (startingRoute?.generation === navigationGeneration && sameDestination(startingRoute.place, place)) return startingRoute.promise;
   const fix = freshFix();
   // A cached position (location off, indoors for long) would route from the wrong place.
   if (!fix) return Promise.reject(new Error('location-unavailable'));
   const generation = ++navigationGeneration;
-  const promise = computeStart(place, fix, generation);
+  const promise = computeStart(place, fix, generation, opts);
   const request = { generation, place, promise };
   startingRoute = request;
   clearTimeout(arrivalTimer);
@@ -201,7 +236,7 @@ export function startRealNavigation(place: PlaceResult): Promise<RouteResult> {
   return promise;
 }
 
-async function computeStart(place: PlaceResult, fix: Fix, generation: number) {
+async function computeStart(place: PlaceResult, fix: Fix, generation: number, opts: { announce?: boolean }) {
   // Cloud Function (Routes API) / in-app Maps DirectionsService (hedged), else OpenStreetMap.
   const route = await routeWalking({ lat: fix.lat, lng: fix.lng }, place);
   if (generation !== navigationGeneration) throw new Error('navigation-cancelled');
@@ -210,7 +245,7 @@ async function computeStart(place: PlaceResult, fix: Fix, generation: number) {
   clearPending();
   clearTimeout(arrivalTimer);
   arrivalTimer = undefined;
-  active = build(place, route);
+  active = build(place, route, fix);
   const started = active;
   unsubFix?.();
   unsubFix = onFix(onLocation);
@@ -244,7 +279,7 @@ async function computeStart(place: PlaceResult, fix: Fix, generation: number) {
   const mins = Math.max(1, Math.round(route.durationS / 60));
   const currentFix = freshFix() ?? fix;
   const first = fixIsFresh(currentFix) && currentFix.accuracyM <= GPS_DIRECTION_ACCURACY_M ? route.steps[0]?.instruction : undefined;
-  announce(
+  if (opts.announce !== false) announce(
     { en: `Walking to ${place.name}, ${Math.round(route.distanceM / 10) * 10} metres, about ${mins} minute${mins === 1 ? '' : 's'}.${first ? ` ${first}.` : ''}`, hi: `${place.name} तक पैदल, ${Math.round(route.distanceM / 10) * 10} मीटर, लगभग ${mins} मिनट।${first ? ` ${first}.` : ''}` },
     { nav: true, dedupeKey: 'nav-start', isCurrent: () => directionIsCurrent(started) },
   );
@@ -301,7 +336,7 @@ async function computeReroute(a: Active, fix: Fix) {
     const route = await routeWalking({ lat: fix.lat, lng: fix.lng }, a.place);
     if (active !== a || generation !== navigationGeneration || useNavView.getState().arrived) return;
     validateRoute(route);
-    active = build(a.place, route);
+    active = build(a.place, route, fix);
     active.lastReroute = a.lastReroute;
     const replacement = active;
     useNavView.setState({ path: route.path, totalM: route.distanceM, remainingM: route.distanceM, etaSec: route.durationS, next: null, offRoute: false, rerouting: false, error: null, state: 'NAVIGATING' });
@@ -331,7 +366,11 @@ function onLocation(fix: Fix) {
     cancelInvalidAnnouncements();
     return;
   }
-  const { along, off } = progressOnPath(a.route.path, a.cum, fix);
+  const elapsedS = Math.max(0, (fix.ts - a.matched.fix.ts) / 1000);
+  const uncertaintyM = Math.min(30, Math.max(15, a.matched.fix.accuracyM + fix.accuracyM));
+  const { along, off } = progressOnPath(a.route.path, a.cum, fix, { along: a.matched.along, maxTravelM: elapsedS * 3 + uncertaintyM });
+  // Rejected fixes never become the next anchor: repeated spikes cannot ratchet progress.
+  if (off <= OFF_ROUTE_M) a.matched = { along, fix };
   const total = a.cum[a.cum.length - 1] || a.route.distanceM;
   const remaining = Math.max(0, total - along);
   const toDest = haversineM(fix, { lat: a.place.lat, lng: a.place.lng });
@@ -342,7 +381,7 @@ function onLocation(fix: Fix) {
   }
 
   const arriveWithin = Math.max(ARRIVE_M, fix.accuracyM * 0.6);
-  if (toDest <= arriveWithin) {
+  if (toDest <= arriveWithin && remaining <= arriveWithin && off <= OFF_ROUTE_M) {
     if (useNavView.getState().arrived) return; // already announced; waiting for the grace period to end
     useNavView.setState({ arrived: true, remainingM: 0, etaSec: 0, next: { text: 'Arrived', maneuver: 'arrive', inM: 0 }, updatedAt: Date.now(), state: 'ARRIVED' });
     cancelInvalidAnnouncements();
@@ -389,40 +428,66 @@ function onLocation(fix: Fix) {
 
   let stepIdx = a.stepEndsAt.findIndex((end) => along < end);
   if (stepIdx === -1) stepIdx = a.route.steps.length - 1;
-  const nextIdx = Math.min(stepIdx + 1, a.route.steps.length - 1);
+  // A GPS sample may skip over the junction itself. Keep that maneuver through its
+  // short departure window rather than immediately announcing the following turn.
+  const atLegStart = stepIdx > 0 && along - a.stepEndsAt[stepIdx - 1] <= NOW_M;
+  const nextIdx = atLegStart ? stepIdx : Math.min(stepIdx + 1, a.route.steps.length - 1);
   const nextStep = a.route.steps[nextIdx];
-  const toNext = Math.max(0, a.stepEndsAt[stepIdx] - along);
+  const toNext = atLegStart ? 0 : Math.max(0, a.stepEndsAt[stepIdx] - along);
   const man = maneuverFrom(nextStep?.maneuver, nextStep?.instruction);
+  const finalLeg = nextIdx === stepIdx && !atLegStart;
+  const pastLastTurn = along - (a.stepEndsAt[stepIdx - 1] ?? 0) > NOW_M;
+  const nextInstruction = finalLeg && pastLastTurn ? `Continue along the mapped route toward ${a.place.name}` : nextStep?.instruction;
 
+  // Ignore non-walking GPS speed spikes and smooth valid samples so ETA/lead time do not
+  // jump on every location update. A stationary fix retains the last walking estimate.
+  if (fix.speedMps != null && Number.isFinite(fix.speedMps) && fix.speedMps >= 0.35 && fix.speedMps <= 3) {
+    a.walkingSpeedMps = a.lastStep === -1 ? fix.speedMps : a.walkingSpeedMps * 0.7 + fix.speedMps * 0.3;
+  }
+  a.lastStep = stepIdx;
+  const speed = a.walkingSpeedMps;
+  const preAnnounceM = Math.max(PRE_ANNOUNCE_M, Math.min(50, speed * 20));
+  const maneuverNow = toNext <= NOW_M && fix.accuracyM <= GPS_MANEUVER_ACCURACY_M;
   let currentState: NavState = 'NAVIGATING';
 
-  if (nextStep && nextIdx !== stepIdx) {
-    if (toNext <= PRE_ANNOUNCE_M) currentState = 'APPROACHING_MANEUVER';
-    if (toNext <= NOW_M) currentState = 'MANEUVER_NOW';
+  if (nextStep && !finalLeg) {
+    if (toNext <= preAnnounceM) currentState = 'APPROACHING_MANEUVER';
+    if (maneuverNow) currentState = 'MANEUVER_NOW';
   }
 
-  const speed = fix.speedMps && fix.speedMps > 0.3 ? fix.speedMps : 1.2;
   useNavView.setState({
     offRoute: false,
     error: null,
     state: currentState,
     remainingM: remaining,
     etaSec: Math.round(remaining / speed),
-    next: nextStep ? { text: nextStep.instruction, maneuver: man, inM: toNext, stepIdx: nextIdx } : null,
+    next: nextStep ? { text: nextInstruction!, maneuver: finalLeg && pastLastTurn ? 'straight' : man, inM: finalLeg ? 0 : toNext, stepIdx: nextIdx } : null,
     progressIdx: Math.max(0, a.cum.findIndex(c => c >= along)),
     updatedAt: Date.now(),
   });
   cancelInvalidAnnouncements();
 
-  if (nextStep && nextIdx !== stepIdx) {
-    if (toNext <= PRE_ANNOUNCE_M && a.preAnnounced !== nextIdx) {
+  if (a.directionsPaused || (Date.now() - (a.lastProgressAt ?? a.startedAt) >= 90_000 && along - (a.lastProgressM ?? 0) >= 50)) {
+    a.directionsPaused = false;
+    a.lastProgressAt = Date.now();
+    a.lastProgressM = along;
+    const nextText = nextStep ? finalLeg ? ` ${nextInstruction}.` : ` In ${Math.max(0, Math.round(toNext))} metres, ${nextStep.instruction}.` : '';
+    if (currentState === 'NAVIGATING') announce(`${Math.round(remaining)} metres remaining, about ${Math.max(1, Math.round(remaining / speed / 60))} minutes.${nextText}`, {
+      nav: true, dedupeKey: 'nav-progress', isCurrent: () => directionIsCurrent(a) && useNavView.getState().next?.stepIdx === nextIdx,
+    });
+  }
+
+  if (nextStep && !finalLeg) {
+    if (toNext <= preAnnounceM && !maneuverNow && a.preAnnounced !== nextIdx) {
       a.preAnnounced = nextIdx;
-      const upcomingIsCurrent = () => directionIsCurrent(a) && a.preAnnounced === nextIdx && useNavView.getState().next?.stepIdx === nextIdx && ['APPROACHING_MANEUVER', 'MANEUVER_NOW'].includes(useNavView.getState().state);
+      const upcomingIsCurrent = () => directionIsCurrent(a) && a.preAnnounced === nextIdx && useNavView.getState().next?.stepIdx === nextIdx && useNavView.getState().state === 'APPROACHING_MANEUVER';
       announce({ en: `In ${Math.round(toNext / 5) * 5 || 5} meters, ${nextStep.instruction}`, hi: `In ${Math.round(toNext / 5) * 5 || 5} meters, ${nextStep.instruction}` }, { nav: true, dedupeKey: 'nav-next', isCurrent: upcomingIsCurrent });
       void stickNavCue('upcoming', () => directionIsCurrent(a) && a.preAnnounced === nextIdx);
     }
-    if (toNext <= NOW_M && a.nowAnnounced !== nextIdx) {
+    if (maneuverNow && a.nowAnnounced !== nextIdx) {
       a.nowAnnounced = nextIdx;
+      announce(`Now, ${nextStep.instruction}`, { nav: true, high: true, dedupeKey: 'nav-now',
+        isCurrent: () => directionIsCurrent(a) && a.nowAnnounced === nextIdx && useNavView.getState().next?.stepIdx === nextIdx && useNavView.getState().state === 'MANEUVER_NOW' });
       if (man === 'left' || man === 'right') {
         haptics.play(man);
         void stickNavCue(man, () => directionIsCurrent(a) && a.nowAnnounced === nextIdx && useNavView.getState().next?.stepIdx === nextIdx);
@@ -449,7 +514,7 @@ export type NavStart = { status: 'started'; route: RouteResult } | { status: 'wa
  */
 export async function navigateTo(place: PlaceResult, opts: { announce?: boolean } = {}): Promise<NavStart> {
   const fix = freshFix();
-  if (fix && fix.accuracyM <= START_ACCURACY_M) return { status: 'started', route: await startRealNavigation(place) };
+  if (fix && fix.accuracyM <= START_ACCURACY_M) return { status: 'started', route: await startRealNavigation(place, opts) };
   armNavigation(place, opts);
   return { status: 'waiting_for_gps' };
 }

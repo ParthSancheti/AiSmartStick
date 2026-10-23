@@ -13,6 +13,8 @@ describe('Google Maps error reporting (never a silent grey map)', () => {
   test('API not enabled / billing / bad key are told apart', () => {
     expect(mapsErrorFromCode('ApiNotActivatedMapError').kind).toBe('api_not_enabled');
     expect(mapsErrorFromCode('ApiTargetBlockedMapError').kind).toBe('api_not_enabled');
+    expect(mapsErrorFromCode('ApiTargetBlockedMapError').message).toContain('key does not allow');
+    expect(mapsErrorFromCode('ApiTargetBlockedMapError').hint).toContain('Firebase Android key');
     expect(mapsErrorFromCode('BillingNotEnabledMapError').kind).toBe('billing');
     expect(mapsErrorFromCode('InvalidKeyMapError').kind).toBe('invalid_key');
     expect(mapsErrorFromCode(null).kind).toBe('auth');

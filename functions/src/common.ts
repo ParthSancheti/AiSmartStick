@@ -13,7 +13,7 @@ export const GEMINI_API_KEY = defineSecret('GEMINI_API_KEY');
 export const MAPS_SERVER_KEY = defineSecret('MAPS_SERVER_KEY');
 export const GEMINI_LIVE_MODEL = defineString('GEMINI_LIVE_MODEL', { default: 'gemini-3.8-live' });
 export const GEMINI_FLASH_MODEL = defineString('GEMINI_FLASH_MODEL', { default: 'gemini-3.8-flash' });
-export const GEMINI_VISION_MODEL = defineString('GEMINI_VISION_MODEL', { default: 'gemini-3.8-flash' });
+export const GEMINI_VISION_MODEL = defineString('GEMINI_VISION_MODEL', { default: 'gemini-3.5-flash-lite' });
 
 setGlobalOptions({ region: 'asia-south1', maxInstances: 20 });
 

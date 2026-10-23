@@ -39,6 +39,7 @@ export function pickVoiceIndex(voices: { name?: string; voiceURI?: string; lang?
 class NativeTts implements TtsEngine {
   readonly name = 'native' as const;
   private voices: Promise<SpeechSynthesisVoice[]> | null = null;
+  private generation = 0;
   private async voiceFor(lang: string) {
     this.voices ??= TextToSpeech.getSupportedVoices()
       .then((r) => r.voices ?? [])
@@ -46,18 +47,23 @@ class NativeTts implements TtsEngine {
     return pickVoiceIndex(await this.voices, lang, typeof navigator === 'undefined' || navigator.onLine !== false);
   }
   async speak(text: string, o: { lang: ReplyLang; rate: number; volume: number }) {
+    const generation = this.generation;
     const lang = tag(o.lang);
     const voice = await this.voiceFor(lang).catch(() => undefined);
+    // stop() may arrive while Android is discovering voices. Never revive that utterance.
+    if (generation !== this.generation) return;
     // A touch slower than the engine default: calmer for spoken guidance.
     const rate = Math.max(0.5, Math.min(2, o.rate * 0.95));
     try {
       await TextToSpeech.speak({ text, lang, rate, volume: o.volume, pitch: 1.0, category: 'playback', ...(voice != null ? { voice } : {}) });
     } catch (e) {
+      if (generation !== this.generation) return;
       if (voice == null) throw e;
       await TextToSpeech.speak({ text, lang, rate, volume: o.volume, pitch: 1.0, category: 'playback' });
     }
   }
   async stop() {
+    this.generation++;
     await TextToSpeech.stop();
   }
 }
@@ -65,6 +71,7 @@ class NativeTts implements TtsEngine {
 class WebTts implements TtsEngine {
   readonly name = 'web' as const;
   private voices: SpeechSynthesisVoice[] = [];
+  private finishCurrent: (() => void) | null = null;
   constructor() {
     const load = () => (this.voices = window.speechSynthesis.getVoices());
     load();
@@ -91,17 +98,28 @@ class WebTts implements TtsEngine {
         if (done) return;
         done = true;
         clearTimeout(guard);
+        if (this.finishCurrent === finish) this.finishCurrent = null;
+        u.onend = null;
+        u.onerror = null;
         resolve();
       };
       // Some engines never fire onend; never leave the assistant stuck in "speaking".
-      const guard = setTimeout(finish, Math.min(20000, 1500 + (text.length * 90) / o.rate));
+      const guard = setTimeout(() => {
+        // Releasing the queue while this engine is still speaking would overlap Live PCM.
+        s.cancel();
+        finish();
+      }, Math.min(20000, 1500 + (text.length * 90) / o.rate));
       u.onend = finish;
       u.onerror = finish;
+      this.finishCurrent = finish;
       s.speak(u);
     });
   }
   async stop() {
     window.speechSynthesis.cancel();
+    // Several WebView engines omit the cancellation event. Clear that utterance's guard
+    // immediately so it cannot cancel the next item later.
+    this.finishCurrent?.();
   }
 }
 

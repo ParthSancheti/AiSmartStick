@@ -148,12 +148,18 @@ describe('route hold and data freshness', () => {
     expect(evaluate({ context: context(250), snapshot: scene([unconfirmed]), previous: old }).routeHold).toBe(true);
   });
 
-  it('releases map hold only after both fresh greater forward range and a fresh resolved scene', () => {
+  it('releases map hold only after sustained distinct ranges and resolved camera frames', () => {
     const previous = previousHold();
     expect(evaluate({ context: context(250), snapshot: null, previous }).routeHold).toBe(true);
     expect(evaluate({ context: context(null), snapshot: scene(), previous }).routeHold).toBe(true);
     expect(evaluate({ context: context(20), snapshot: scene(), previous }).routeHold).toBe(true);
-    const resolved = evaluate({ context: context(250), snapshot: scene(), previous });
+    let resolved = evaluate({ context: context(250), snapshot: scene(), previous });
+    expect(resolved.routeHold).toBe(true); // A single empty image and far echo are insufficient.
+    for (const at of [now + 200, now + 600, now + 1000]) {
+      const ctx = context(250, { timestamp: at });
+      const snapshot = { ...scene(), timestamp: at, frameTimestamp: at, sensorContext: ctx, frameSensorContext: ctx };
+      resolved = evaluate({ context: ctx, snapshot, previous: resolved, now: at });
+    }
     expect(resolved).toMatchObject({ routeHold: false, severity: 'none', plan: 'OBSERVE' });
     expect(JSON.stringify(resolved)).not.toContain('FREE');
   });

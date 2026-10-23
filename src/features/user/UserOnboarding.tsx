@@ -8,7 +8,7 @@ import { ProfilePhotoEditor } from '../../components/Avatar';
 import { StickVisual } from '../../components/StickVisual';
 import { BrandLogo } from '../../core/brand/BrandLogo';
 import { BRAND } from '../../core/brand/brand';
-import { useAuth } from '../../core/auth/authStore';
+import { signInPresentation, useAuth } from '../../core/auth/authStore';
 import { signInWithGoogle } from '../../core/auth/authService';
 import { firebaseConfigured } from '../../core/runtime/env';
 import { useRuntime } from '../../core/runtime/mode';
@@ -122,6 +122,7 @@ function SetupProgress({ index }: { index: number }) {
 
 function SignIn({ onBack, onDemo }: { onBack: () => void; onDemo: () => void }) {
   const auth = useAuth();
+  const signIn = signInPresentation(auth);
   useBackHandler(true, onBack);
   return (
     <SafeAreaContent className="px-6" bottomInset={false}>
@@ -150,9 +151,9 @@ function SignIn({ onBack, onDemo }: { onBack: () => void; onDemo: () => void }) 
         ) : (
           <>
             {auth.error && <p className="mb-4 rounded-[18px] bg-amber/15 px-4 py-3 text-[14px] font-medium text-amber-ink" role="alert">{auth.error}</p>}
-            <GlassButton variant="teal" className="flex h-14 w-full items-center justify-center rounded-[20px] text-[16px] font-bold" disabled={auth.busy} onClick={() => void signInWithGoogle('user').catch(() => undefined)}>
-              {auth.busy ? (
-                <Loader2 size={20} className="animate-spin" />
+            <GlassButton variant="teal" className="flex h-14 w-full items-center justify-center rounded-[20px] text-[16px] font-bold" disabled={signIn.pending} aria-busy={signIn.pending} onClick={() => void signInWithGoogle('user').catch(() => undefined)}>
+              {signIn.pending ? (
+                <><Loader2 size={20} className="mr-3 animate-spin" /><span role="status">{signIn.label}</span></>
               ) : (
                 <>
                   <svg viewBox="0 0 24 24" width="22" height="22" className="mr-3 rounded-full bg-white p-[2px]" aria-hidden>
@@ -161,7 +162,7 @@ function SignIn({ onBack, onDemo }: { onBack: () => void; onDemo: () => void }) 
                     <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" />
                     <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
                   </svg>
-                  Continue with Google
+                  {signIn.label}
                 </>
               )}
             </GlassButton>

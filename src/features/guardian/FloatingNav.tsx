@@ -21,8 +21,8 @@ export function FloatingNav() {
   };
 
   return (
-    <nav aria-label="Main Navigation" className="absolute inset-x-0 bottom-6 z-30 flex justify-center px-4">
-      <div className="glass flex items-center gap-1.5 rounded-full p-2 shadow-2xl">
+    <nav aria-label="Main navigation" className="absolute inset-x-0 z-30 flex justify-center px-4" style={{ bottom: 'calc(var(--sab) + 16px)' }}>
+      <div className="glass flex max-w-full items-center gap-1 rounded-full p-2 shadow-2xl">
         {TABS.map(({ id, label, Icon }) => {
           const active = tab === id;
           return (
@@ -30,9 +30,10 @@ export function FloatingNav() {
               key={id}
               type="button"
               onClick={() => go(id)}
+              aria-label={label}
               aria-current={active ? 'page' : undefined}
               className={cx(
-                'relative flex h-12 items-center justify-center gap-2 rounded-full px-4 text-[14px] font-bold transition-all duration-300 ease-out',
+                'relative flex h-12 min-w-12 items-center justify-center gap-2 rounded-full px-3 text-[14px] font-bold transition-colors duration-200 ease-out',
                 active ? 'text-teal-ink' : 'text-ink-2 hover:text-ink'
               )}
             >
@@ -43,7 +44,7 @@ export function FloatingNav() {
                   transition={{ type: 'spring', stiffness: 500, damping: 30 }}
                 />
               )}
-              <Icon size={20} strokeWidth={active ? 2.5 : 2} className="relative z-10" />
+              <Icon size={20} strokeWidth={active ? 2.5 : 2} className="relative z-10 shrink-0" aria-hidden />
               {active && (
                 <motion.span
                   initial={{ opacity: 0, width: 0 }}

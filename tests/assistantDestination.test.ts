@@ -30,6 +30,9 @@ import { useLocation } from '../src/core/location/locationService';
 import { useNavView } from '../src/core/navigation/navView';
 import { stopRealNavigation } from '../src/core/navigation/realNavigator';
 import { clearOffer } from '../src/core/ai/navIntent';
+import { useUI } from '../src/core/store/ui';
+import { liveSession } from '../src/core/ai/liveSession';
+import { useWalkingGuidance, emptyWalkingGuidance } from '../src/core/guidance/guidanceState';
 import { locationLine, withLocation, wantsLocation, ageText } from '../src/core/location/shareLocation';
 import { smsMessage } from '../src/core/safety/sos';
 
@@ -42,6 +45,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   stopRealNavigation('user');
   clearOffer();
+  useWalkingGuidance.setState(emptyWalkingGuidance());
   useDevice.setState({ ...initialDevice(), link: 'disconnected', internet: true });
   useLocation.setState({ fix: null, permission: 'granted', status: 'acquiring' });
   useNavView.setState({ active: false });
@@ -50,6 +54,52 @@ beforeEach(() => {
 });
 
 describe('the assistant can always set a destination', () => {
+  test('starting from rough GPS explains why the map has no spoken turn yet', async () => {
+    useLocation.setState({ fix: { ...freshFix(), accuracyM: 60 }, status: 'ok' });
+    const result = await executeAction(act('set_destination', 'navigation.setDestination', { query: 'City Hospital' }));
+    expect(result.data).toMatchObject({ directions: 'started', guidancePaused: true, firstInstruction: null, pauseReason: expect.stringContaining('GPS accuracy') });
+  });
+  test('time-left queries return a spoken summary and explain paused GPS', async () => {
+    useNavView.setState({ active: true, destination: { name: 'Hospital', placeId: 'h', lat: 20, lng: 73 }, remainingM: 500, etaSec: 420, error: 'Waiting for a fresh GPS position.', next: { text: 'Turn left', maneuver: 'left', inM: 20 }, state: 'NAVIGATION_ERROR' });
+    const status = await executeAction(act('get_route_status', 'navigation.getRouteStatus'));
+    expect(status.data).toMatchObject({ remainingM: 500, etaMin: 7, next: null, spoken: expect.stringContaining('500 metres remaining') });
+    expect((status.data as any).spoken).toContain('7 minutes');
+    expect((status.data as any).spoken).toContain('Waiting for a fresh GPS');
+    expect((status.data as any).spoken).not.toContain('Turn left');
+  });
+
+  test('the assistant cannot speak a raw route turn while local sensing holds the route', async () => {
+    useLocation.setState({ fix: freshFix(), status: 'ok' });
+    useWalkingGuidance.setState({ ...emptyWalkingGuidance(), severity: 'danger', routeHold: true, evaluatedAt: Date.now() });
+    const result = await executeAction(act('set_destination', 'navigation.setDestination', { query: 'City Hospital' }));
+    expect(result.ok).toBe(true);
+    expect(result.data).toMatchObject({ obstacleHold: true, firstInstruction: null, instruction: expect.stringContaining('stop and check') });
+    const status = await executeAction(act('get_route_status', 'navigation.getRouteStatus'));
+    expect(status.data).toMatchObject({ obstacleHold: true, next: null });
+  });
+
+  test('reroute cannot report success without a running route', async () => {
+    const result = await executeAction(act('reroute', 'navigation.reroute'));
+    expect(result.ok).toBe(false);
+  });
+  test('opens the map without closing the Live transport', async () => {
+    useUI.setState({ mapOpen: false, liveAiOpen: true });
+    const stop = vi.spyOn(liveSession, 'stop');
+    const result = await executeAction(act('set_destination', 'navigation.setDestination', { query: 'City Hospital' }));
+    expect(result.ok).toBe(true);
+    expect(useUI.getState()).toMatchObject({ mapOpen: true, liveAiOpen: false });
+    expect(stop).not.toHaveBeenCalled();
+    stop.mockRestore();
+  });
+
+  test('a failed route leaves the assistant open to explain the error', async () => {
+    useLocation.setState({ fix: freshFix(), status: 'ok' });
+    useUI.setState({ mapOpen: false, liveAiOpen: true });
+    ds.routeWalking.mockRejectedValueOnce(new Error('no-route'));
+    const result = await executeAction(act('set_destination', 'navigation.setDestination', { query: 'City Hospital' }));
+    expect(result.ok).toBe(false);
+    expect(useUI.getState()).toMatchObject({ mapOpen: false, liveAiOpen: true });
+  });
   test('search and destination tools do not require a GPS fix', () => {
     for (const n of ['search_place', 'find_nearest_place', 'set_destination', 'start_navigation', 'get_current_location']) expect(TOOL_BY_NAME.get(n)!.requires).not.toContain('location');
   });

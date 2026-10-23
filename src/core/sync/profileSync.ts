@@ -79,6 +79,7 @@ export function startProfileSync(uid: string) {
     onSnapshot(
       userRef,
       (snap) => {
+        if (ref !== userRef) return;
         if (!snap.exists()) return;
         docExists = true;
         if (snap.metadata.hasPendingWrites) return; // our own write, not yet confirmed

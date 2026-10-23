@@ -3,6 +3,7 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import type { Contact, GlassTier, ReplyLang, Role, ThemePref } from '../types';
 import { isWide } from '../util';
 import { useRuntime } from '../runtime/mode';
+import { BUILD_ROLE } from '../runtime/appRole';
 import type { ImuCalibration } from '../telemetry/imu';
 
 
@@ -158,7 +159,7 @@ const stage = isWide();
 
 const seeded: SessionData = demo
   ? {
-      entryRole: 'user',
+      entryRole: BUILD_ROLE ?? 'user',
       guardianOnboarded: stage,
       userOnboarded: stage,
       guardian: { name: 'Demo Guardian', email: 'demo@example.com', heardAs: 'Mom', phone: '+91 00000 00001' },
@@ -169,7 +170,7 @@ const seeded: SessionData = demo
       settings: defaultSettings,
     }
   : {
-      entryRole: 'user',
+      entryRole: BUILD_ROLE ?? 'user',
       guardianOnboarded: false,
       userOnboarded: false,
       guardian: { name: '', email: '', heardAs: '', phone: null },
@@ -195,7 +196,7 @@ export const useSession = create<SessionState>()(
       merge: (persisted, current) => {
         const p = (persisted ?? {}) as Partial<SessionData>;
         // Installs that persisted no role (the removed entry flow set it) are the stick user's phone.
-        const entryRole = p.entryRole ?? current.entryRole;
+        const entryRole = BUILD_ROLE ?? p.entryRole ?? current.entryRole;
         return { ...current, ...p, entryRole, settings: { ...defaultSettings, ...current.settings, ...(p.settings ?? {}) } };
       },
       partialize: (s) => ({

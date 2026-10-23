@@ -17,7 +17,6 @@ import { placeCall, sendSms } from '../phone';
 import { say, stopAll, useAudio } from '../audio/audioManager';
 import { usePhoneInfo, phoneLabel } from '../native/deviceInfo';
 import { captureFrame } from '../vision/relay';
-import { liveSession } from './liveSession';
 import { call } from '../backend/api';
 import type { VisionRequest, VisionResult, VisionTask } from '../../../shared/assistantContract';
 import { loadMessages } from './history';
@@ -26,6 +25,9 @@ import { resolveLang } from './voiceOut';
 import { fuseScene, measuredSuffix, sensorContext, SPOKEN_SENSOR_FRESH_MS } from '../vision/fusion';
 import { offerDestination, startNavigationTo, navigatingTo, pendingOffer } from './navIntent';
 import { liveAudioActive } from '../audio/audioManager';
+import { routeManeuverAllowed } from '../guidance/guidanceState';
+import { localNetworkBlockMessage } from '../transport/connectionError';
+import { useUI } from '../store/ui';
 
 /**
  * REAL MODE tool executor. Gemini proposes actions; this decides and does them.
@@ -42,7 +44,7 @@ function unmet(req: Requirement[]): string | null {
   const d = useDevice.getState();
   for (const r of req) {
     if (r === 'device' && !isLinked(d.link)) return 'The stick is not connected to the phone.';
-    if (r === 'internet' && d.internet !== true) return 'The phone has no internet connection.';
+    if (r === 'internet' && d.internet === false) return 'The phone has no internet connection.';
     if (r === 'location') {
       const l = useLocation.getState();
       if (!l.fix) return l.permission === 'denied' ? 'Location permission is denied.' : 'No GPS position yet.';
@@ -65,10 +67,20 @@ async function blobToB64(b: Blob) {
  * not deployed) and the AI picture service (key problem on the server).
  */
 export function visionFailureReason(e: unknown): string {
+  const blocked = localNetworkBlockMessage(e);
+  if (blocked) return blocked;
   // Only string codes are server codes (a DOMException has a number code, e.g. 23 for a timeout).
   const raw = (e as { code?: unknown })?.code;
   const code = typeof raw === 'string' ? raw.replace(/^functions\//, '') : '';
   const msg = String((e as Error)?.message ?? e ?? '');
+  const details = (e as { details?: { service?: unknown; reason?: unknown } })?.details;
+  if (details?.service === 'vision-model') {
+    if (details.reason === 'configuration') return 'The AI picture service configuration needs attention on the server. Signing in again will not fix it.';
+    if (details.reason === 'timeout') return 'The AI picture service took too long to analyse the photo. Please try again.';
+    if (details.reason === 'quota') return 'The AI picture service is busy. Wait a minute and try again.';
+    if (details.reason === 'request') return 'The AI picture service could not process this photo request. Please try again.';
+    return 'The AI picture service is temporarily unavailable. Please try again.';
+  }
   if (msg === 'stick-offline') return 'The stick camera is offline: the stick is not connected to the phone. Ask the user to switch the stick on and connect it.';
   if (/camera: busy|\b409\b/i.test(msg)) return 'The stick camera is busy right now (the live video is using it). Try again in a few seconds.';
   // Errors without a server code come from the stick side (capture request, live stream).
@@ -82,7 +94,9 @@ export function visionFailureReason(e: unknown): string {
     case 'deadline-exceeded':
       return 'The server did not answer in time (slow internet, or the server is starting). Try again.';
     case 'unavailable':
-      return 'The phone could not reach the server. Check the internet connection.';
+      return /Photo analysis|AI picture service/i.test(msg)
+        ? 'The AI picture service is temporarily unavailable. Please try again.'
+        : 'The phone could not reach the server. Check the internet connection.';
     case 'failed-precondition':
       return keyWords.test(msg) ? 'The AI picture service is not set up on the server (Gemini key missing). Tell the user it does not work yet.' : 'The server refused the picture request. Try again later.';
     case 'internal':
@@ -156,31 +170,22 @@ async function goTo(a: Action, p: PlaceResult): Promise<ToolResult> {
     // The user's "yes" already started it (deterministic confirmation path). Never start twice.
     const n = useNavView.getState();
     const waiting = !n.path.length && n.remainingM == null;
-    return ok(a, { destination: p.name, alreadyNavigating: true, directions: waiting ? 'waiting_for_gps' : 'started', remainingM: n.remainingM == null ? null : Math.round(n.remainingM), next: n.next?.text ?? null, ...(waiting ? { instruction: waitInstruction() } : {}) });
-  }
-  
-  // The assistant map has been triggered. Disconnect the live assistant / chat so maps take over.
-  if (useAssistant.getState().phase !== 'idle') {
-    useAssistant.setState({ phase: 'idle' });
-  }
-  if (liveSession.isActive) {
-    liveSession.stop('idle');
-  }
-  // Try to close any open UI panels for the assistant
-  try {
-    const { useUI } = await import('../store/ui');
-    useUI.setState({ liveAiOpen: false, mapOpen: true });
-  } catch (e) {
-    // ui store not available in this scope, that's fine
+    return ok(a, { destination: p.name, alreadyNavigating: true, directions: waiting ? 'waiting_for_gps' : 'started', remainingM: n.remainingM == null ? null : Math.round(n.remainingM), next: routeManeuverAllowed() ? n.next?.text ?? null : null, ...routeSafetyNote(), ...(waiting ? { instruction: waitInstruction() } : {}) });
   }
 
-  // The internal navigator now speaks the start announcement instead of the model.
-  const r = await startNavigationTo(p, { announce: true });
-  
+  // Keep the conversation alive to deliver success/failure and accept follow-up commands.
+  const r = await startNavigationTo(p, { announce: !liveAudioActive() });
+
   if ('waitingForGps' in r && r.waitingForGps) return ok(a, { destination: placeOut(p), directions: 'waiting_for_gps', instruction: waitInstruction() });
   const route = r.started ? r.route : null;
   const n = useNavView.getState();
-  return ok(a, { destination: p.name, directions: 'started', distanceM: route ? Math.round(route.distanceM) : n.totalM, durationMin: route ? Math.max(1, Math.round(route.durationS / 60)) : null, firstInstruction: route?.steps[0]?.instruction ?? n.next?.text ?? null });
+  return ok(a, { destination: p.name, directions: 'started', distanceM: route ? Math.round(route.distanceM) : n.totalM, durationMin: route ? Math.max(1, Math.round(route.durationS / 60)) : null, firstInstruction: routeManeuverAllowed() && !n.error ? n.next?.text ?? null : null, guidancePaused: !!n.error || !routeManeuverAllowed(), pauseReason: n.error, ...routeSafetyNote() });
+}
+
+function routeSafetyNote() {
+  const held = !routeManeuverAllowed();
+  return { obstacleHold: held, navigationError: useNavView.getState().error,
+    ...(held ? { instruction: 'Walking directions are paused by local obstacle sensing. Ask the user to stop and check with their cane. A map route does not establish a clear path or a safe side bypass.' } : {}) };
 }
 
 /**
@@ -231,6 +236,9 @@ async function executeActionInner(a: Action): Promise<ToolResult> {
         return ok(a, { phone: phoneLabel(p), os: p.osVersion ?? 'Unavailable', phoneBatteryPercent: p.batteryPct, appVersion: p.appVersion });
       }
       // ── VISION ──
+      case 'vision.openCamera':
+        useUI.setState({ cameraOpen: true, liveAiOpen: false });
+        return ok(a, { opened: true, instruction: 'The stick camera preview is open. This is not a scene interpretation; use describe_scene if the user wants a description.' });
       case 'vision.captureScene': {
         try {
           const f = await captureFrame('assistant');
@@ -246,22 +254,9 @@ async function executeActionInner(a: Action): Promise<ToolResult> {
       case 'vision.describeEnvironment': {
         const task = spec.name as VisionTask;
         try {
-          if (liveSession.isActive) {
-            // Live sees images natively: send the photo into the conversation, no extra server call.
-            const f = await captureFrame('assistant');
-            if (liveSession.sendImage(await blobToB64(f.blob))) {
-              const s = sensorContext();
-              return ok(a, {
-                imageSentToLive: true,
-                task,
-                hint: (args.hint as string | undefined) ?? null,
-                measuredDistanceCm: s.forwardDistanceCm,
-                imageCapturedAt: f.ts,
-                sensorMeasuredAt: s.measuredAt,
-                instruction: 'The captured photo from the stick camera was sent to you as an image. Describe the photo, which may already differ from the current scene. A measuredDistanceCm value is a separate unidentified forward reflection at sensorMeasuredAt; never assign it to a visual object or report it as current after a delay. Left/right means image position; never infer metric distance, side clearance or a safe bypass. ' + (task === 'read_text' || task === 'read_sign' ? 'Read the text exactly; say if it is unclear.' : 'Describe visible obstacles first, briefly; say if unsure.'),
-              });
-            }
-          }
+          // Return interpreted evidence in THIS tool response. A realtime video send has no
+          // acknowledgement tying the image to a function call and can race its response.
+          // This is one on-demand photo, never the continuous local safety pipeline.
           const r = await runVision(task, args.hint as string | undefined);
           return ok(a, { ...r });
         } catch (e) {
@@ -312,24 +307,40 @@ async function executeActionInner(a: Action): Promise<ToolResult> {
           if (!p) return fail(a, `No place called "${query}" was found. Ask the user for the name or address again.`);
         }
         if (!p) return fail(a, id ? 'That place could not be found. Search for it with search_place first.' : 'Give a placeId from a search, or the place name as query.');
-        return goTo(a, p);
+        return await goTo(a, p);
       }
       case 'navigation.startNavigation': {
         const p = (args.placeId ? lastPlaces.find((x) => x.placeId === args.placeId) : null) ?? pendingOffer() ?? chosen;
         if (!p) return fail(a, 'No destination chosen. Search for a place first.');
-        return goTo(a, p);
+        return await goTo(a, p);
       }
       case 'navigation.stopNavigation':
         stopRealNavigation('user');
         return ok(a, { stopped: true });
-      case 'navigation.reroute':
+      case 'navigation.reroute': {
+        const previous = useNavView.getState();
+        if (!previous.active || previous.arrived || !previous.path.length) return fail(a, 'No running walking route to recalculate. Set a destination first.');
         await realReroute();
-        return ok(a, { rerouted: !useNavView.getState().error, error: useNavView.getState().error });
+        const current = useNavView.getState();
+        return ok(a, { rerouted: current.path !== previous.path, error: current.error,
+          ...routeSafetyNote(), note: 'Recalculation may return the same map route. It does not find or verify a way around a nearby physical obstacle.' });
+      }
       case 'navigation.repeatDirection':
       case 'navigation.getRouteStatus': {
         const n = useNavView.getState();
         if (!n.active) return ok(a, { active: false });
-        return ok(a, { active: true, destination: n.destination?.name, remainingM: n.remainingM == null ? null : Math.round(n.remainingM), etaMin: n.etaSec == null ? null : Math.max(1, Math.round(n.etaSec / 60)), next: n.next?.text ?? null, offRoute: n.offRoute });
+        const remainingM = n.remainingM == null ? null : Math.round(n.remainingM);
+        const etaMin = n.etaSec == null ? null : n.arrived ? 0 : Math.max(1, Math.round(n.etaSec / 60));
+        const allowed = routeManeuverAllowed() && !n.error && !n.offRoute && !n.rerouting && !n.arrived;
+        const next = allowed ? n.next?.text ?? null : null;
+        const nextInM = next && n.next?.inM != null ? Math.round(n.next.inM) : null;
+        const pauseReason = n.error || (!routeManeuverAllowed() ? 'Walking directions are paused for an obstacle warning.' : n.rerouting ? 'Recalculating the route.' : n.offRoute ? 'You are off the mapped route.' : !n.path.length ? 'Waiting for GPS before directions can start.' : null);
+        const spoken = n.arrived ? `You have reached ${n.destination?.name ?? 'your destination'}.` : [
+          remainingM == null ? 'Remaining distance is not available yet.' : `${remainingM} metres remaining to ${n.destination?.name ?? 'your destination'}.`,
+          etaMin == null ? 'Arrival time is not available yet.' : `About ${etaMin} minute${etaMin === 1 ? '' : 's'} of walking remaining${pauseReason ? ', excluding the current pause' : ''}.`,
+          pauseReason || (next ? `${nextInM != null && nextInM > 8 ? `In ${nextInM} metres, ` : ''}${next}` : 'Waiting for the next walking instruction.'),
+        ].join(' ');
+        return ok(a, { active: true, destination: n.destination?.name, remainingM, etaMin, next, nextInM, state: n.state, pauseReason, spoken, offRoute: n.offRoute, ...routeSafetyNote() });
       }
       // ── SAFETY ──
       case 'safety.getSafetyState': {

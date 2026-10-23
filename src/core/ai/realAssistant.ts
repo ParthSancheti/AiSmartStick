@@ -7,7 +7,7 @@ import { useSession } from '../store/session';
 import { useSafety } from '../store/safety';
 import { useLocation } from '../location/locationService';
 import { useNavView } from '../navigation/navView';
-import { executeAction, runVision } from './executor';
+import { executeAction, runVision, visionFailureReason } from './executor';
 import { speakReply } from './voiceOut';
 import { onStickButton } from '../device/bridge';
 import { startRecognition, abortRecognition } from '../voice/recognition';
@@ -175,7 +175,7 @@ export async function realWhereAmI(lang: ReplyLang) {
 /** Triple press: "What's in front of me?" — capture + vision, spoken with its uncertainty. */
 export async function realDescribeScene(lang: ReplyLang) {
   if (!isLinked(useDevice.getState().link)) return speakReply(lang === 'hi' ? 'स्टिक जुड़ी नहीं है, कैमरा उपलब्ध नहीं।' : 'The stick is not connected, so the camera is unavailable.', lang);
-  if (useDevice.getState().internet !== true) return speakReply(lang === 'hi' ? 'इंटरनेट नहीं है, तस्वीर समझ नहीं सकता। रुकावट सेंसर चालू है।' : 'No internet, so I cannot interpret the camera. The obstacle sensor is still working.', lang);
+  if (useDevice.getState().internet === false) return speakReply(lang === 'hi' ? 'इंटरनेट नहीं है, तस्वीर समझ नहीं सकता। रुकावट सेंसर चालू है।' : 'No internet, so I cannot interpret the camera. The obstacle sensor is still working.', lang);
   thinking(true);
   set({ phase: 'vision' });
   try {
@@ -185,8 +185,10 @@ export async function realDescribeScene(lang: ReplyLang) {
     await speakReply(r.spoken, lang, 'vision');
   } catch (e) {
     thinking(false);
-    set({ phase: 'error', unavailable: (e as Error).message === 'stick-offline' ? 'stick camera not responding' : 'vision unavailable' });
-    await speakReply((e as Error).message === 'stick-offline' ? 'The stick camera did not respond.' : 'I could not analyse the photo right now.', lang);
+    const reason = visionFailureReason(e);
+    set({ phase: 'error', unavailable: reason });
+    pushThread('system', reason);
+    await speakReply(reason, lang);
   }
 }
 

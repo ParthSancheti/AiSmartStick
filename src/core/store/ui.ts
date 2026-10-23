@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { isWide } from '../util';
 import { useRuntime } from '../runtime/mode';
+import { BUILD_ROLE } from '../runtime/appRole';
 
 export type GuardianTab = 'home' | 'map' | 'vision' | 'activity' | 'settings';
 
@@ -40,7 +41,7 @@ interface UIState extends UIData {
 
 export const useUI = create<UIState>((set) => ({
   // Two phones on one page only makes sense with simulated state: demo only.
-  layout: isWide() && useRuntime.getState().mode === 'demo' ? 'stage' : 'single',
+  layout: BUILD_ROLE === null && isWide() && useRuntime.getState().mode === 'demo' ? 'stage' : 'single',
   guardianTab: 'home',
   talkSheet: false,
   userSettings: false,

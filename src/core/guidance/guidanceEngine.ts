@@ -6,10 +6,12 @@ import { isLinked, useDevice } from '../store/device';
 import { getSettings, useSession } from '../store/session';
 import { useNavView } from '../navigation/navView';
 import { useWalking } from '../walking/walkTracker';
-import { getCurrentSensorContext, THRESHOLDS, type SensorContext } from '../vision/sensorConditioning';
+import { getCurrentSensorContext } from '../vision/sensorConditioning';
 import { SENSITIVITY } from '../telemetry/obstaclePolicy';
-import { emptyWalkingGuidance, evaluateWalkingGuidance, guidanceRank, useWalkingGuidance, WALKING_GUIDANCE_POLICY, type WalkingGuidance } from './guidanceState';
+import { emptyWalkingGuidance, evaluateWalkingGuidance, useWalkingGuidance, WALKING_GUIDANCE_POLICY, type WalkingGuidance } from './guidanceState';
 import { VISION_OBSERVATION_STALE_MS, type DetectionSnapshot } from '../vision/types';
+import { useLocation } from '../location/locationService';
+import { GuidanceSpeechPolicy } from './speechPolicy';
 
 /** Include only the evidence stated aloud, so ordinary changes within one zone do not cancel it. */
 function speechFact(state: WalkingGuidance, thresholds: { awarenessCm: number; warningCm: number; dangerCm: number }, boardWarning: boolean, walking: boolean) {
@@ -20,27 +22,18 @@ function speechFact(state: WalkingGuidance, thresholds: { awarenessCm: number; w
     return !measured && boardWarning ? 'warning-board' : 'warning-visual';
   }
   if (state.severity === 'awareness') {
-    if (!walking) return 'inactive';
     if (state.approaching) return 'awareness-approach';
+    if (!walking) return 'inactive';
     return measured && state.frontDistanceCm! <= thresholds.awarenessCm ? 'awareness-sensor' : 'awareness-visual';
   }
   return state.severity;
-}
-
-function poseSnapshotFresh(ctx: SensorContext, now: number) {
-  const elapsed = now - ctx.timestamp;
-  return elapsed >= 0 && (ctx.motion === 'STABLE' || ctx.motion === 'WALKING')
-    && ctx.orientation.state === 'valid' && ctx.gyro.state === 'valid'
-    && ctx.orientation.ageMs >= 0 && ctx.orientation.ageMs + elapsed <= THRESHOLDS.IMU_STALE_MS
-    && ctx.gyro.ageMs >= 0 && ctx.gyro.ageMs + elapsed <= THRESHOLDS.IMU_STALE_MS;
 }
 
 /** Phone guidance complements the independent ECU safety loop; it never controls sensor thresholds. */
 export class GuidanceEngine {
   private isStarted = false;
   private generation = 0;
-  private lastAlertTime = -Infinity;
-  private lastAlertSeverity: WalkingGuidance['severity'] = 'none';
+  private speechPolicy = new GuidanceSpeechPolicy();
   private lastSceneKey = '';
   private currentSpeechFact: ReturnType<typeof speechFact> = 'inactive';
   private requiredDuringWalk = false;
@@ -72,8 +65,7 @@ export class GuidanceEngine {
     if (this.freshnessTimer) clearInterval(this.freshnessTimer);
     this.freshnessTimer = null;
     this.requiredDuringWalk = false;
-    this.lastAlertTime = -Infinity;
-    this.lastAlertSeverity = 'none';
+    this.speechPolicy.reset();
     this.lastSceneKey = '';
     this.currentSpeechFact = 'inactive';
     useWalkingGuidance.setState(emptyWalkingGuidance());
@@ -100,48 +92,47 @@ export class GuidanceEngine {
     useWalkingGuidance.setState(state);
     cancelInvalidAnnouncements();
     const severity = state.severity;
+    const sceneKey = `${state.directionsReliable}:` + state.observedObjects.map(o => `${o.label}:${o.occupiedSides.join(',')}`).sort().join('|');
+    const eligible = severity === 'unavailable' ? walking : severity !== 'awareness' || walking || state.approaching;
+    const decision = this.speechPolicy.decide(state, ctx, useLocation.getState().fix, sceneKey, now, eligible);
     if (severity === 'none') {
-      this.lastAlertSeverity = 'none';
-      this.lastSceneKey = '';
       return;
     }
     if (severity === 'unavailable' && !walking) return;
-    if (severity === 'awareness' && (!walking || (!state.approaching
+    if (severity === 'awareness' && ((!walking && !state.approaching) || (!state.approaching
       && !(state.frontDistanceCm != null && state.frontDistanceCm <= thresholds.awarenessCm)
       && !state.observedObjects.length))) return;
-    const sceneKey = `${state.directionsReliable}:` + state.observedObjects.map(o => `${o.label}:${o.occupiedSides.join(',')}`).sort().join('|');
     const repeatMs = severity === 'danger' ? WALKING_GUIDANCE_POLICY.alertRepeatMs
       : severity === 'warning' ? WALKING_GUIDANCE_POLICY.warningRepeatMs : WALKING_GUIDANCE_POLICY.awarenessRepeatMs;
-    const escalation = guidanceRank(severity) > guidanceRank(this.lastAlertSeverity);
-    const unavailableTransition = severity === 'unavailable' && this.lastAlertSeverity !== 'unavailable';
     const sceneChanged = severity === 'awareness' && sceneKey !== this.lastSceneKey;
-    if (!escalation && !unavailableTransition && now - this.lastAlertTime < repeatMs) return;
-    // Do not repeat an unchanged purely visual scene indefinitely while the user is standing there.
-    if (severity === 'awareness' && state.frontDistanceCm === null && !state.approaching && !sceneChanged) return;
-    this.lastAlertTime = now;
-    this.lastAlertSeverity = severity;
+    if (!decision.speak) return;
     this.lastSceneKey = sceneKey;
     const generation = this.generation;
-    const instructionKey = state.inspectionCandidates.join(',');
     const fact = this.currentSpeechFact;
     const sensorFact = fact === 'danger-sensor' || fact === 'danger-board' || fact === 'warning-sensor'
       || fact === 'warning-board' || fact === 'awareness-approach' || fact === 'awareness-sensor';
-    const sideHint = state.inspectionCandidates.length === 1;
-    const visualFact = fact === 'warning-visual' || fact === 'awareness-visual' || sideHint;
+    const visualFact = fact === 'warning-visual' || fact === 'awareness-visual';
     const isCurrent = () => {
       const at = Date.now();
       const current = useWalkingGuidance.getState();
       if (!this.isStarted || this.generation !== generation || this.currentSpeechFact !== fact
         || current.severity !== severity || at < now || at - now > repeatMs || at < current.evaluatedAt) return false;
       if (sensorFact && at > current.validUntil) return false;
-      if ((severity === 'warning' || severity === 'danger') && current.inspectionCandidates.join(',') !== instructionKey) return false;
       if (severity === 'awareness' && `${current.directionsReliable}:` + current.observedObjects.map(o => `${o.label}:${o.occupiedSides.join(',')}`).sort().join('|') !== sceneKey) return false;
       if (visualFact) {
         const latest = visionEngine.latestSnapshot;
         if (latest?.frameTimestamp == null || !Number.isFinite(latest.frameTimestamp)
           || at < latest.frameTimestamp || at - latest.frameTimestamp > VISION_OBSERVATION_STALE_MS) return false;
-        if (sideHint && (!poseSnapshotFresh(latest.frameSensorContext ?? latest.sensorContext, at)
-          || !poseSnapshotFresh(getCurrentSensorContext(thresholds.warningCm), at))) return false;
+        // Telemetry/camera state may change before the next store callback or freshness tick.
+        // Reuse the pure reducer's finite-value, tilt, capture-skew and pose-change checks;
+        // this read-only validation executes none of its proposed route/alert effects.
+        const device = useDevice.getState();
+        const rechecked = evaluateWalkingGuidance({ context: getCurrentSensorContext(thresholds.warningCm), snapshot: latest,
+          thresholds, boardZone: device.zone, linked: isLinked(device.link), walking,
+          sensorRequired: current.sensorRequired, previous: current, now: at });
+        if (speechFact(rechecked, thresholds, device.zone === 'warning' || device.zone === 'danger', walking) !== fact) return false;
+        if (fact === 'awareness-visual' && (`${rechecked.directionsReliable}:`
+          + rechecked.observedObjects.map(o => `${o.label}:${o.occupiedSides.join(',')}`).sort().join('|')) !== sceneKey) return false;
       }
       return true;
     };
@@ -160,30 +151,25 @@ export class GuidanceEngine {
         : forwardWarning ? 'रुकिए। सामने के सेंसर को रुकावट मिली है।'
           : !measured && (d.zone === 'warning' || d.zone === 'danger') ? 'रुकिए। स्टिक की रुकावट चेतावनी चालू है। अभी दूरी की पुष्टि नहीं है।'
           : 'रुकिए और सामने जाँचिए। कैमरे में रुकावट दिख रही है।';
-      if (state.inspectionCandidates.length === 1) {
-        const left = state.inspectionCandidates[0] === 'LEFT';
-        en += ` Check the ${left ? 'left' : 'right'} side with your cane before choosing a way around.`;
-        hi += ` रास्ता चुनने से पहले ${left ? 'बाईं' : 'दाईं'} ओर अपनी छड़ी से जाँचिए।`;
-      } else {
-        en += ' Check the surroundings with your cane.';
-        hi += ' अपनी छड़ी से आसपास जाँचिए।';
-      }
+      // Image bands have no calibrated yaw relationship to the user's body or cane.
+      en += ' Check the surroundings with your cane.';
+      hi += ' अपनी छड़ी से आसपास जाँचिए।';
       announce({ en, hi }, { critical: severity === 'danger', high: severity === 'warning', dedupeKey: 'walking-obstacle', isCurrent });
     } else if (severity === 'unavailable') {
       announce({ en: 'Obstacle distance cannot be confirmed. Pause and check with your cane.', hi: 'रुकावट की दूरी की पुष्टि नहीं हो रही है। रुककर अपनी छड़ी से जाँचिए।' },
         { high: true, dedupeKey: 'walking-sensing', isCurrent });
-    } else if (walking) {
+    } else if (walking || state.approaching) {
       if (state.approaching || (state.frontDistanceCm != null && state.frontDistanceCm <= thresholds.awarenessCm)) {
         earcon('warning');
         haptics.play('warning');
         announce({ en: state.approaching ? 'Forward sensor range is decreasing. Slow down and check ahead.' : 'The forward sensor detects something ahead. Slow down and check.',
           hi: state.approaching ? 'सामने की सेंसर दूरी घट रही है। धीमे चलिए और सामने जाँचिए।' : 'सामने के सेंसर को कुछ मिला है। धीमे चलिए और जाँचिए।' },
         { high: state.approaching, dedupeKey: 'walking-awareness', isCurrent });
-      } else if (sceneChanged && state.observedObjects.length) {
+      } else if (state.observedObjects.length && (sceneChanged || decision.speak)) {
         const objects = state.observedObjects.slice(0, 3);
-        const enScene = objects.map(o => state.directionsReliable ? `${o.label} ${o.side === 'CENTER' ? 'ahead' : `on the ${o.side.toLowerCase()} of the camera view`}` : o.label).join(', ');
-        const hiScene = objects.map(o => state.directionsReliable ? `${o.side === 'CENTER' ? 'सामने' : o.side === 'LEFT' ? 'कैमरे के बाईं ओर' : 'कैमरे के दाईं ओर'} ${o.label}` : o.label).join(', ');
-        announce({ en: `Camera sees ${enScene}. ${state.directionsReliable ? 'Distance and side clearance are unknown.' : 'Direction and distance cannot be confirmed.'}`, hi: `कैमरे में ${hiScene} दिख रहे हैं। ${state.directionsReliable ? 'दूरी और बगल की जगह मापी नहीं गई है।' : 'दिशा और दूरी की पुष्टि नहीं है।'}` },
+        const enScene = objects.map(o => state.directionsReliable ? `${o.label} ${o.side === 'CENTER' ? 'in the center of the camera view' : `on the ${o.side.toLowerCase()} of the camera view`}` : o.label).join(', ');
+        const hiScene = objects.map(o => state.directionsReliable ? `${o.side === 'CENTER' ? 'कैमरे के दृश्य के बीच में' : o.side === 'LEFT' ? 'कैमरे के बाईं ओर' : 'कैमरे के दाईं ओर'} ${o.label}` : o.label).join(', ');
+        announce({ en: `Camera sees ${enScene}.`, hi: `कैमरे में ${hiScene} दिख रहे हैं।` },
           { dedupeKey: 'walking-scene', isCurrent });
       }
     }

@@ -11,8 +11,8 @@ import { useMemo } from 'react';
  *  - reduced motion: static;
  *  - phones (html.low-power): two fields instead of four, smaller textures (styles.css);
  *  - paused while the app is in the background (html.page-hidden);
- *  - `still`: a non-animated copy for opaque full-screen pages that cover the live one, so two
- *    animated backgrounds are never composited at the same time.
+ *  - `still`: freezes the current frame for opaque full-screen pages, rather than snapping the
+ *    fields back to their initial positions.
  */
 const FIELDS = [
   { cls: 'atmo-field atmo-a', dur: 46 },
@@ -25,7 +25,9 @@ export function Atmosphere({ variant = 'user', still = false }: { variant?: 'gua
   // Same delay for every instance mounted at the same moment of the cycle → identical frames.
   const delays = useMemo(() => {
     const t = Date.now() / 1000;
-    return FIELDS.map((f) => `${-(t % f.dur).toFixed(2)}s`);
+    // Alternate animations take two iterations to return to their starting frame. Keeping the
+    // whole cycle preserves direction as well as position when a page mounts its own background.
+    return FIELDS.map((f) => `${-(t % (f.dur * 2)).toFixed(2)}s`);
   }, []);
   return (
     <div className={still ? 'atmo-root atmo-still' : 'atmo-root'} data-variant={variant} aria-hidden>

@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, vi } from 'vitest';
+import { afterEach, describe, test, expect, beforeEach, vi } from 'vitest';
 import { startRealNavigation, stopRealNavigation, progressOnPath, reroute, realNavActive, savedNavigation } from '../src/core/navigation/realNavigator';
 import { announce } from '../src/core/ai/voiceOut';
 import { useNavView } from '../src/core/navigation/navView';
@@ -56,6 +56,7 @@ const route = () => ({
 const dest = { placeId: 'p_end', name: 'End Point', lat: 0.002, lng: 0, address: null, distanceM: 222, openNow: true, primaryType: null };
 
 describe('Walking Navigation State Machine', () => {
+  afterEach(() => vi.useRealTimers());
   beforeEach(() => {
     stopRealNavigation('user');
     useNavView.setState({ active: false, state: 'IDLE' });
@@ -107,12 +108,14 @@ describe('Walking Navigation State Machine', () => {
   });
 
   test('speaks the start, announces arrival exactly once, and forgets the saved route', async () => {
+    vi.useFakeTimers();
     vi.mocked(walkingRoute).mockResolvedValueOnce(route() as any);
     useLocation.setState({ fix: { lat: 0, lng: 0, accuracyM: 5, ts: Date.now(), speedMps: 1 } as any });
     await startRealNavigation(dest);
     expect(vi.mocked(announce).mock.calls.some(([l]) => typeof l === 'object' && /Walking to End Point/.test((l as any).en))).toBe(true);
     expect(savedNavigation()?.placeId).toBe('p_end');
 
+    vi.advanceTimersByTime(120000);
     walkTo(0.002, 0);
     walkTo(0.002, 0);
     walkTo(0.002, 0);

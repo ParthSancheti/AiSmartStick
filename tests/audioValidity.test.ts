@@ -44,7 +44,7 @@ const ctx = {
   },
 };
 
-import { discardInvalidSpeech, livePcmPlaying, playPcmChunk, say, stopAll, useAudio } from '../src/core/audio/audioManager';
+import { discardInvalidSpeech, finishPcmTurn, livePcmPlaying, playPcmChunk, say, stopAll, useAudio } from '../src/core/audio/audioManager';
 
 const flush = () => vi.advanceTimersByTimeAsync(0);
 async function finishCurrent() {
@@ -71,6 +71,34 @@ describe('validity in the existing unified audio queue', () => {
     vi.useRealTimers();
   });
 
+  it('does not revive an interrupted reply or alert after stopAll during a pending native stop', async () => {
+    let finishStop!: () => void;
+    state.stopBarrier = new Promise<void>(resolve => { finishStop = resolve; });
+    const reply = say('Old response', { lang: 'en', priority: 'user' });
+    const alert = say('Old alert', { lang: 'en', priority: 'critical' });
+    const stopped = stopAll();
+    finishStop();
+    state.stopBarrier = null;
+    await stopped;
+    await flush();
+    expect(await reply).toBe('interrupted');
+    expect(await alert).toBe('interrupted');
+    expect(state.spoken).toEqual(['Old response']);
+    expect(useAudio.getState()).toMatchObject({ speaking: false, queueLength: 0 });
+    expect(state.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it('continues safety speech without an unhandled rejection when native stop fails', async () => {
+    const nav = say('Turn left', { lang: 'en', priority: 'nav' });
+    state.failStop = true;
+    const alert = say('Stop. Obstacle ahead.', { lang: 'en', priority: 'critical' });
+    await flush();
+    expect(await nav).toBe('interrupted');
+    expect(state.spoken).toEqual(['Turn left', 'Stop. Obstacle ahead.']);
+    await finishCurrent();
+    expect(await alert).toBe('spoken');
+  });
+
   it.each(['hazard', 'route stop'] as const)('drops navigation queued behind critical speech after %s', async (reason) => {
     let active = true;
     let obstacleClear = true;
@@ -91,7 +119,7 @@ describe('validity in the existing unified audio queue', () => {
     playPcmChunk('AAAA');
     expect(livePcmPlaying()).toBe(true);
     expect(await say('Obsolete alert', { lang: 'en', priority, isCurrent: () => false })).toBe('dropped');
-    expect(sources[0].stop).not.toHaveBeenCalled();
+    expect(sources).toHaveLength(0); // PCM waits for the native conversation to finish.
     expect(state.stop).not.toHaveBeenCalled();
     expect(state.spoken).toEqual(['Conversation response']);
     await finishCurrent();
@@ -175,6 +203,10 @@ describe('validity in the existing unified audio queue', () => {
     expect(state.stop).toHaveBeenCalledTimes(1);
     expect(sources[0].stop).not.toHaveBeenCalled();
     expect(livePcmPlaying()).toBe(true);
+    expect(state.spoken).toEqual(['Turn left now']);
+    finishPcmTurn();
+    sources[0].onended!();
+    await flush();
     expect(state.spoken).toEqual(['Turn left now', 'Conversation information']);
     await finishCurrent();
     expect(await reply).toBe('spoken');

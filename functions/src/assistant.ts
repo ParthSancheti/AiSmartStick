@@ -1,5 +1,5 @@
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
-import { GoogleGenAI, type Content, type Part } from '@google/genai';
+import { GoogleGenAI, ThinkingLevel, type Content, type Part } from '@google/genai';
 import { FieldValue } from 'firebase-admin/firestore';
 import { CALLABLE, GEMINI_API_KEY, GEMINI_LIVE_MODEL, GEMINI_FLASH_MODEL, GEMINI_VISION_MODEL, db, quota, requireAuth, str } from './common';
 import { TOOLS, TOOL_BY_NAME } from './shared/tools';
@@ -22,8 +22,9 @@ HOW TO ANSWER
 - Use tools for anything about the stick, location, places, routes, camera, safety, calls, texts or settings. Never guess their results.
 
   VISION (CRITICAL)
+  - When asked to open or start the camera preview, call open_camera.
   - YOU HAVE A CAMERA. When asked what is in front of you, what the user is holding, or to read text/signs, you MUST call the appropriate vision tool (describe_scene, identify_object, read_text, read_sign).
-  - Do NOT apologize or say you cannot see. Call the tool, and you will receive the image in the next turn.
+  - Call the tool before claiming camera access is unavailable. The tool returns a camera-based description in result.spoken; preserve its uncertainty and earlier-photo timing. If it fails, explain the actual error. Never invent visual details.
 
   SAFETY RULES (strict)
 - Never say it is safe to cross a road, walk ahead, or that a path is clear. Describe what was observed and how certain it is; remind the user to use their cane and hearing.
@@ -33,6 +34,8 @@ HOW TO ANSWER
 - Never invent places, addresses, coordinates, distances or phone numbers. Places come only from search_place / find_nearest_place / set_destination.
 
 NAVIGATION (CRITICAL)
+- For remaining time, distance, progress or where to walk, call get_route_status every time and read its spoken summary. Preserve paused-GPS/obstacle warnings; do not estimate from conversation memory.
+- On starting a route, say its distance and estimated minutes, plus the supplied first instruction. If directions are paused, explain why instead of telling the user to move.
 - NEVER tell the user to open a map app or use another app to navigate. You MUST handle navigation yourself natively using the tools.
 - NEVER ask the user for their current location. You already know it from the context below, or you can call get_current_location if needed.
 - "Nearest X" -> find_nearest_place (or search_place for a name). Say the offered place's name (and distance when given) and ask if they want to go there; on yes call start_navigation with that placeId.
@@ -228,7 +231,25 @@ export function visionSensorEvidenceNote(sn: VisionRequest['sensors']): string {
     : 'No measured forward range is available for this photo. This does not establish a clear path. Do not infer distances from the photo.';
 }
 
+/** Only safe categories leave this boundary. SDK errors can contain request/key details. */
+export function visionModelFailure(error: unknown): HttpsError {
+  const e = error as { status?: unknown; code?: unknown; name?: unknown; message?: unknown };
+  const message = typeof e?.message === 'string' ? e.message : '';
+  // ApiError.status is numeric. Some transports expose the API's JSON error as a message.
+  let status = typeof e?.status === 'number' ? e.status : typeof e?.code === 'number' ? e.code : null;
+  if (status == null) {
+    try { const body = JSON.parse(message); if (typeof body?.error?.code === 'number') status = body.error.code; } catch { /* not API JSON */ }
+  }
+  const timeout = status === 408 || status === 504 || /TimeoutError|AbortError/.test(String(e?.name)) || /deadline|timed? ?out|timeout/i.test(message);
+  if (timeout) return new HttpsError('deadline-exceeded', 'The AI picture service took too long to analyse the photo. Please try again.', { service: 'vision-model', reason: 'timeout' });
+  if (status === 429) return new HttpsError('resource-exhausted', 'The AI picture service is busy. Please wait a minute and try again.', { service: 'vision-model', reason: 'quota' });
+  if (status === 401 || status === 403 || status === 404) return new HttpsError('failed-precondition', 'The AI picture service configuration needs attention on the server.', { service: 'vision-model', reason: 'configuration' });
+  if (status === 400 || status === 422) return new HttpsError('internal', 'The AI picture service could not process this request.', { service: 'vision-model', reason: 'request' });
+  return new HttpsError('unavailable', 'The AI picture service is temporarily unavailable. Please try again.', { service: 'vision-model', reason: 'upstream' });
+}
+
 export const assistantVision = onCall({ ...CALLABLE, secrets: [GEMINI_API_KEY], timeoutSeconds: 60, memory: '512MiB' }, async (request): Promise<VisionResult> => {
+  const startedAt = Date.now();
   const uid = requireAuth(request);
   const r = request.data as VisionRequest;
   if (!r || !(r.task in VISION_TASK_INSTRUCTIONS) || typeof r.imageBase64 !== 'string') throw new HttpsError('invalid-argument', 'Malformed vision request.');
@@ -236,11 +257,14 @@ export const assistantVision = onCall({ ...CALLABLE, secrets: [GEMINI_API_KEY], 
   const head = Buffer.from(r.imageBase64.slice(0, 8), 'base64');
   if (head[0] !== 0xff || head[1] !== 0xd8) throw new HttpsError('invalid-argument', 'Not a JPEG.');
   await quota(uid, 'vision', 12, 400);
+  console.info('vision_stage', { stage: 'quota_ready', elapsedMs: Date.now() - startedAt });
 
   const lang = r.lang === 'hi' ? 'simple Hindi' : 'simple Indian English';
   const sensorNote = visionSensorEvidenceNote(r.sensors);
   const ai = client();
-  const res = await generate(ai, {
+  // One bounded attempt: retrying a slow image makes the photo older and can
+  // outlast the phone's callable deadline. Keep reasoning/output budgets explicit.
+  const res = await ai.models.generateContent({
     model: GEMINI_VISION_MODEL.value(),
     contents: [
       {
@@ -255,8 +279,15 @@ Rules: write "spoken" in ${lang}. Describe this captured photo, not the current 
         ],
       },
     ],
-    config: { responseMimeType: 'application/json', responseJsonSchema: VISION_SCHEMA, temperature: 0.2, maxOutputTokens: 700 },
+    config: { responseMimeType: 'application/json', responseJsonSchema: VISION_SCHEMA, temperature: 0.2,
+      maxOutputTokens: 1500, thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
+      httpOptions: { timeout: 20000, retryOptions: { attempts: 1 } } },
+  }).catch((error: unknown) => {
+    const failure = visionModelFailure(error);
+    console.warn('vision_stage', { stage: 'model_failed', elapsedMs: Date.now() - startedAt, code: failure.code, reason: (failure.details as { reason: string }).reason });
+    throw failure;
   });
+  console.info('vision_stage', { stage: 'model_ready', elapsedMs: Date.now() - startedAt, finishReason: res.candidates?.[0]?.finishReason });
 
   let out: VisionResult;
   try {
@@ -292,6 +323,10 @@ export const getLiveToken = onCall({ ...CALLABLE, secrets: [GEMINI_API_KEY] }, a
         expireTime: new Date(now + 30 * 60_000).toISOString(),
         newSessionExpireTime: new Date(now + 2 * 60_000).toISOString(),
         liveConnectConstraints: { model: liveModel },
+          // Omitting this locks ALL unspecified setup fields to empty defaults: the
+          // client tools, system instruction and transcription settings are ignored.
+          // Lock the supplied model only; let the app supply its existing tool surface.
+          lockAdditionalFields: [],
         httpOptions: { apiVersion: 'v1alpha' },
       },
     });

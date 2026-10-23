@@ -42,7 +42,7 @@ import { useSafetyEval } from '../../core/safety/safetyRuntime';
 import { useNavView } from '../../core/navigation/navView';
 import { useLocation, freshnessLabel, locationProblem } from '../../core/location/locationService';
 import { useProfileName, firstName } from '../../core/profile/profile';
-import { useWalking } from '../../core/walking/walkTracker';
+import { useWalking, useWalkingTracking } from '../../core/walking/walkTracker';
 import type { Suggestion } from '../../core/maps/mapsService';
 import { useDestinationSearch } from '../../core/maps/useDestinationSearch';
 import { searchErrorText, type DestinationSuggestion } from '../../core/maps/destinationSearch';
@@ -61,7 +61,7 @@ import { DiagnosticsRows } from './Diagnostics';
 /*
  * Home and its sub-pages.
  *
- * Layout: the Home header is fixed (outside the one scroll container); every sub-page is a
+ * Layout: the Home header floats above the one scroll container; every sub-page is a
  * SubPage (components/Layout.tsx) with a fixed header and one scroll container. Sub-pages that
  * show the shared animated background are transparent and Home hides itself underneath them, so
  * only ONE ambient background is ever animated and the content behind is out of TalkBack.
@@ -89,7 +89,7 @@ function ProfileMenu({ open, onClose }: { open: boolean; onClose: () => void }) 
     <AnimatePresence>
       {open && (
         <>
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }} onClick={onClose} className="fixed inset-0 z-[100] bg-black/10" aria-hidden="true" />
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }} onClick={onClose} className="pointer-events-auto fixed inset-0 z-[100] bg-black/10" aria-hidden="true" />
           <motion.div
             role="menu"
             aria-label="Profile menu"
@@ -97,7 +97,7 @@ function ProfileMenu({ open, onClose }: { open: boolean; onClose: () => void }) 
             animate={{ opacity: 1, transform: 'translate3d(0,0,0) scale(1)' }}
             exit={{ opacity: 0, transform: 'translate3d(0,-8px,0) scale(0.96)' }}
             transition={{ duration: 0.16, ease: [0.2, 0.8, 0.2, 1] }}
-            className="absolute right-5 top-full z-[101] bg-surface ring-1 ring-line mt-2 flex w-[min(17rem,calc(100vw-40px))] origin-top-right flex-col gap-0.5 rounded-[26px] p-2 shadow-2xl"
+            className="pointer-events-auto absolute right-5 top-full z-[101] bg-surface ring-1 ring-line mt-2 flex w-[min(17rem,calc(100vw-40px))] origin-top-right flex-col gap-0.5 rounded-[26px] p-2 shadow-2xl"
           >
             {(user || profileName) && (
               <div className="min-w-0 px-4 pb-2 pt-2">
@@ -133,12 +133,12 @@ function ProfileMenu({ open, onClose }: { open: boolean; onClose: () => void }) 
 }
 
 /** Fixed Home header: round logo, name, demo badge, profile. Never scrolls. */
-function HomeHeader({ headerRef }: { headerRef: React.Ref<HTMLElement> }) {
+function HomeHeader() {
   const [menuOpen, setMenuOpen] = useState(false);
   useBackHandler(menuOpen, () => setMenuOpen(false));
   return (
-    <header ref={headerRef} className="page-header relative z-30 shrink-0 px-5 pb-3" style={{ paddingTop: 'calc(var(--island, var(--sat)) + 10px)' }}>
-      <div className="home-header-bar glass flex h-16 items-center gap-3 rounded-full pl-2.5 pr-2 shadow-[0_10px_30px_-14px_rgba(0,0,0,.25)]">
+    <header className="home-floating-header pointer-events-none absolute inset-x-0 top-0 z-30 px-5 pb-3" style={{ paddingTop: 'calc(var(--island, var(--sat)) + 10px)' }}>
+      <div className="home-header-bar glass pointer-events-auto flex h-16 items-center gap-3 rounded-full pl-2.5 pr-2 shadow-[0_10px_30px_-14px_rgba(0,0,0,.25)]">
         <BrandLogo variant="round" size={44} />
         <span className="home-brand-name min-w-0 flex-1 truncate text-[17px] font-bold tracking-tight text-ink">{BRAND.name}</span>
         <span className="home-brand-spacer hidden flex-1" aria-hidden />
@@ -735,6 +735,17 @@ function HealthContent() {
   const cur = useWalking((s) => s.current);
   const paused = useWalking((s) => s.paused);
   const source = useWalking((s) => s.source);
+  const tracking = useWalkingTracking();
+  const location = useLocation();
+  const backgroundEnabled = useSession((s) => s.settings.runInBackground);
+  const trackingStatus = source === 'demo' ? 'Demo distance uses a simulated walk.'
+    : paused ? 'Walk paused. Resume to count distance again.'
+    : tracking.error ? tracking.error
+    : location.permission !== 'granted' || location.precise === false ? 'Allow precise location to measure walking distance.'
+    : location.servicesOn === false ? 'Location is switched off. Turn it on to measure walking distance.'
+    : !location.fix || location.status === 'stale' || location.fix.accuracyM > 25 ? 'Waiting for an accurate GPS signal. Your recorded distance is saved.'
+    : tracking.native && tracking.background && backgroundEnabled ? 'Background distance tracking is active. Reopen the app after a phone restart or force-stop.'
+    : 'Distance tracking works while this app is open. Enable Run in background in Settings for screen-off tracking.';
   const pace = today.distanceM > 50 && today.durationS > 0 ? (today.distanceM / today.durationS) * 3.6 : null;
   return (
     <>
@@ -760,6 +771,7 @@ function HealthContent() {
           Source: {source === 'demo' ? 'simulated demo walk' : 'phone GPS'} · readings worse than 25 m accuracy and jumps faster than walking are ignored
           {cur ? ` · walk ${paused ? 'paused' : 'in progress'} (${km(cur.distanceM)})` : ''}.
         </p>
+        <p className={`mt-3 rounded-[18px] px-3 py-3 text-[14px] leading-snug ${tracking.error && source !== 'demo' ? 'bg-amber/10 text-amber-ink' : 'bg-info/10 text-ink-2'}`} role="status">{trackingStatus}</p>
       </div>
       <div className="glass flex items-center gap-3 rounded-[24px] px-4 py-3">
         <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-teal/10 text-teal"><Activity size={22} /></span>
@@ -862,7 +874,9 @@ function LiveAiSubpage({ open, onClose }: { open: boolean; onClose: () => void }
   // false) this must not cancel a session started from the stick button.
   const wasOpen = useRef(open);
   useEffect(() => {
-    if (wasOpen.current && !open) cancel();
+    // A successful assistant navigation tool opens the map. Keep its socket alive
+    // for the pending tool result; explicit closing still ends the conversation.
+    if (wasOpen.current && !open && !useUI.getState().mapOpen && !useUI.getState().cameraOpen) cancel();
     wasOpen.current = open;
   }, [open, cancel]);
 
@@ -880,7 +894,7 @@ function LiveAiSubpage({ open, onClose }: { open: boolean; onClose: () => void }
           aria-modal="true"
           aria-label="Live assistant"
         >
-          <LiveAiPage onClose={onClose} />
+          <LiveAiPage onClose={() => { cancel(); onClose(); }} />
         </motion.div>
       )}
     </AnimatePresence>
@@ -1061,22 +1075,14 @@ export function UserHome() {
   // Home hides under full-screen pages: one animated background, nothing behind for TalkBack.
   const covered = safetyCenterOpen || chatOpen || cameraOpen || batteryOpen || mapOpen || stickDetailsOpen || liveAiOpen || healthOpen || audioOpen || otherScreen;
 
-  const header = useRef<HTMLElement>(null);
-  const scrolled = useRef(false);
-  const onScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
-    const s = e.currentTarget.scrollTop > 4;
-    if (s === scrolled.current) return;
-    scrolled.current = s;
-    header.current?.setAttribute('data-scrolled', String(s));
-  }, []);
   const openSafety = useCallback(() => setSafetyCenterOpen(true), []);
   const openChat = useCallback(() => setChatOpen(true), []);
 
   return (
     <AppScreen>
       <div className="home-layer absolute inset-0 flex flex-col" data-covered={covered ? 'true' : 'false'} aria-hidden={covered || undefined} inert={covered}>
-        <HomeHeader headerRef={header} />
-        <SafeAreaContent topInset={false} className="px-5 pt-1" onScroll={onScroll}>
+        <HomeHeader />
+        <SafeAreaContent topInset={false} className="home-scroll px-5">
           {/* Hero carousel: Stick · Walk · Assistant (home/HomeCarousel.tsx) */}
           <HomeCarousel label="Your stick, walk and assistant">
             <StickCard />

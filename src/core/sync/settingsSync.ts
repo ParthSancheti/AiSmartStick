@@ -130,6 +130,7 @@ export function startSettingsSync(uid: string) {
     onSnapshot(
       ref,
       (snap) => {
+        if (settingsRef !== ref) return;
         if (snap.metadata.hasPendingWrites) return; // our own write, not yet confirmed
         // A missing doc in the offline cache says nothing about the server: wait for the server.
         if (!snap.exists() && snap.metadata.fromCache) return;
@@ -155,7 +156,7 @@ export function startSettingsSync(uid: string) {
   let restoring = false;
   void getDocs(contactsCol)
     .then((snap) => {
-      if (!settingsRef) return; // stopped meanwhile (signed out)
+      if (settingsRef !== ref) return; // stopped, or another account started meanwhile
       const cloud = snap.docs.map((d) => d.data() as Contact).filter((c) => c && typeof c.id === 'string' && typeof c.phone === 'string');
       if (cloud.length && !useSession.getState().contacts.length) {
         restoring = true;

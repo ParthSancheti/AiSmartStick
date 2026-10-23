@@ -192,17 +192,6 @@ button { -webkit-user-select: none; user-select: none; touch-action: manipulatio
 
   /* Tier: lite (mid-range phones) */
   :root[data-glass="lite"] .glass { --glass-blur: 10px; }
-  /* Tier: solid (low-end phones, reduced transparency, high contrast) */
-  :root[data-glass="solid"] .glass,
-  [data-contrast="high"] .glass {
-    background: var(--solid-surface);
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
-  :root[data-glass="solid"] .glass::before,
-  [data-contrast="high"] .glass::before { display: none; }
-  [data-contrast="high"] .glass { border: 2px solid var(--ink); }
-
   /* Phones (html.low-power, util/platform.ts): no backdrop-filter anywhere. On Android WebView every
      blurred element is re-rendered each frame something moves underneath (the ambient background,
      a scroll, a page transition) - that was the stutter. Same tint, slightly more opaque. */
@@ -216,6 +205,18 @@ button { -webkit-user-select: none; user-select: none; touch-action: manipulatio
     backdrop-filter: none !important;
   }
   :root.low-power .glass-refract { -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+
+  /* Keep explicit solid/high-contrast surfaces opaque on phones too. This follows the
+     low-power tint so a performance profile cannot override an accessibility setting. */
+  :root[data-glass="solid"] .glass,
+  :root [data-contrast="high"] .glass {
+    background: var(--solid-surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  :root[data-glass="solid"] .glass::before,
+  [data-contrast="high"] .glass::before { display: none; }
+  [data-contrast="high"] .glass { border: 2px solid var(--ink); }
 
   /* Real refraction only where Chromium can render it */
   :root[data-glass="full"][data-engine="blink"] .glass-refract {
@@ -285,30 +286,31 @@ button { -webkit-user-select: none; user-select: none; touch-action: manipulatio
 /* Ambient background (components/Atmosphere.tsx): soft light fields in slow motion. */
 .atmo-root { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; background: var(--bg); contain: strict; }
 .atmo-field {
-  position: absolute; width: 95vmax; height: 95vmax; border-radius: 50%;
+  /* Size against the app surface, not the browser's longest edge. Viewport-sized fields were
+     largely clipped out of narrow phones and made the intended colour movement invisible. */
+  position: absolute; width: 160%; max-width: 800px; aspect-ratio: 1; border-radius: 50%;
   will-change: transform; animation-name: atmo-drift; animation-timing-function: ease-in-out;
   animation-iteration-count: infinite; animation-direction: alternate;
 }
-.atmo-a { left: -45vmax; top: -40vmax; background: radial-gradient(closest-side, color-mix(in srgb, var(--teal) 30%, transparent), transparent 72%); }
-.atmo-b { right: -50vmax; top: -10vmax; background: radial-gradient(closest-side, color-mix(in srgb, var(--info) 26%, transparent), transparent 72%); animation-name: atmo-drift-b; }
-.atmo-c { left: -30vmax; bottom: -55vmax; background: radial-gradient(closest-side, color-mix(in srgb, var(--teal) 22%, transparent), transparent 72%); animation-name: atmo-drift-c; }
-.atmo-d { right: -40vmax; bottom: -45vmax; background: radial-gradient(closest-side, color-mix(in srgb, var(--mint, var(--teal)) 18%, transparent), transparent 72%); animation-name: atmo-drift-b; }
+.atmo-a { left: -65%; top: -24%; background: radial-gradient(closest-side, color-mix(in srgb, var(--teal) 30%, transparent), transparent 72%); }
+.atmo-b { right: -65%; top: 8%; background: radial-gradient(closest-side, color-mix(in srgb, var(--info) 26%, transparent), transparent 72%); animation-name: atmo-drift-b; }
+.atmo-c { left: -45%; bottom: -35%; background: radial-gradient(closest-side, color-mix(in srgb, var(--teal) 22%, transparent), transparent 72%); animation-name: atmo-drift-c; }
+.atmo-d { right: -55%; bottom: -20%; background: radial-gradient(closest-side, color-mix(in srgb, var(--mint, var(--teal)) 18%, transparent), transparent 72%); animation-name: atmo-drift-b; }
 :root[data-theme="dark"] .atmo-field { opacity: .9; }
 :root[data-theme="light"] .atmo-field { opacity: .75; }
-@keyframes atmo-drift { 0% { transform: translate3d(0,0,0) scale(1); } 50% { transform: translate3d(14vmax, 9vmax, 0) scale(1.12); } 100% { transform: translate3d(4vmax, 20vmax, 0) scale(.94); } }
-@keyframes atmo-drift-b { 0% { transform: translate3d(0,0,0) scale(1.05); } 50% { transform: translate3d(-16vmax, 12vmax, 0) scale(.92); } 100% { transform: translate3d(-6vmax, -10vmax, 0) scale(1.1); } }
-@keyframes atmo-drift-c { 0% { transform: translate3d(0,0,0) scale(.95); } 50% { transform: translate3d(12vmax, -14vmax, 0) scale(1.1); } 100% { transform: translate3d(-10vmax, -4vmax, 0) scale(1); } }
+@keyframes atmo-drift { 0% { transform: translate3d(0,0,0) scale(1); } 50% { transform: translate3d(20%, 16%, 0) scale(1.12); } 100% { transform: translate3d(6%, 30%, 0) scale(.94); } }
+@keyframes atmo-drift-b { 0% { transform: translate3d(0,0,0) scale(1.05); } 50% { transform: translate3d(-24%, 18%, 0) scale(.92); } 100% { transform: translate3d(-9%, -15%, 0) scale(1.1); } }
+@keyframes atmo-drift-c { 0% { transform: translate3d(0,0,0) scale(.95); } 50% { transform: translate3d(18%, -21%, 0) scale(1.1); } 100% { transform: translate3d(-15%, -6%, 0) scale(1); } }
 @media (prefers-reduced-motion: reduce) { .atmo-field { animation: none; } }
 :root[data-reduce-motion="true"] .atmo-field { animation: none; }
-/* Phones: two light fields instead of four, smaller textures (a 95vmax square at DPR 3 is ~2700px
-   per layer), same slow drift - compositor-only transforms. Paused while the app is hidden. */
+/* Phones: two bounded light fields instead of four. Same slow transform-only drift. */
 :root.low-power .atmo-c, :root.low-power .atmo-d { display: none; }
-:root.low-power .atmo-field { width: 80vmax; height: 80vmax; }
-:root.low-power .atmo-a { left: -34vmax; top: -30vmax; }
-:root.low-power .atmo-b { right: -38vmax; top: auto; bottom: -26vmax; }
+:root.low-power .atmo-field { width: 145%; max-width: 640px; }
+:root.low-power .atmo-a { left: -50%; top: -16%; }
+:root.low-power .atmo-b { right: -50%; top: auto; bottom: -14%; }
 :root.page-hidden .atmo-field, :root.page-hidden .map-pulse { animation-play-state: paused; }
 /* A still copy of the background for opaque full-screen pages (no animation, one paint). */
-.atmo-still .atmo-field { animation: none; will-change: auto; }
+.atmo-still .atmo-field { animation-play-state: paused; will-change: auto; }
 
 /* ── Pages (components/Layout.tsx: SubPage / PageHeader) ─────────────────────
    One scroll container per page; the header never scrolls. */
@@ -328,6 +330,13 @@ button { -webkit-user-select: none; user-select: none; touch-action: manipulatio
   opacity: var(--header-shadow, 0); transition: opacity .15s linear;
 }
 .page-header[data-scrolled="true"] { --header-shadow: 1; }
+/* Only the rounded Home pill floats. Its surrounding gutter remains transparent and content
+   scrolls behind it; no full-width theme-colour strip travels with the pill. The initial inset
+   belongs to the scroll content, and scroll-padding keeps keyboard focus below the header. */
+.home-scroll {
+  padding-top: calc(var(--island, var(--sat)) + 90px);
+  scroll-padding-top: calc(var(--island, var(--sat)) + 90px);
+}
 /* Home hides under full-screen pages (UserHome.tsx): a quick fade, then out of layout work and
    out of TalkBack. Sub-pages over it are transparent and share the one animated background. */
 .home-layer { transition: opacity .16s ease-out; }
@@ -391,6 +400,17 @@ body { overflow-wrap: break-word; }
 /* Audio page: speaking ring. */
 .audio-ring { animation: audio-ring 1.6s ease-out infinite; will-change: transform, opacity; }
 @keyframes audio-ring { from { transform: scale(1); opacity: .8; } to { transform: scale(1.6); opacity: 0; } }
+:root[data-reduce-motion="true"] .audio-ring { animation: none; }
+@media (prefers-reduced-motion: reduce) { .audio-ring { animation: none; } }
+/* Decorative work stops when Android backgrounds the WebView. Safety/audio runtime continues
+   independently; these rules affect only presentation. */
+:root.page-hidden .live-aurora > span,
+:root.page-hidden .battery-wave,
+:root.page-hidden .orb-spin,
+:root.page-hidden .orb-pulse,
+:root.page-hidden .orb-ripple,
+:root.page-hidden .audio-ring,
+:root.page-hidden .shimmer { animation-play-state: paused; }
 
 
 .intro-spotlight { background: radial-gradient(circle at 50% 42%, color-mix(in srgb, var(--teal) 34%, transparent), transparent 62%); }

@@ -17,9 +17,22 @@ interface AuthState {
   profile: UserDoc | null;
   error: string | null;
   busy: boolean;
+  phase: 'restoring' | 'google' | 'profile' | null;
 }
 
-export const useAuth = create<AuthState>(() => ({ status: 'loading', user: null, role: null, profile: null, error: null, busy: false }));
+export const useAuth = create<AuthState>(() => ({ status: 'loading', user: null, role: null, profile: null, error: null, busy: false, phase: 'restoring' }));
+
+/** Keep both onboarding flows blocked until identity AND the account role are resolved. */
+export function signInPresentation(auth: Pick<AuthState, 'status' | 'busy' | 'phase' | 'user' | 'profile'>) {
+  const pending = auth.busy || auth.status === 'loading' || auth.status === 'signedIn';
+  const retryingProfile = !!auth.user && !auth.profile;
+  const label = auth.phase === 'google' ? 'Signing in with Google…'
+    : auth.phase === 'profile' || (auth.status === 'loading' && auth.user) ? 'Setting up your account…'
+    : auth.status === 'loading' ? 'Checking sign-in…'
+    : auth.status === 'signedIn' ? 'Signed in'
+    : retryingProfile ? 'Retry account setup' : 'Continue with Google';
+  return { pending, label };
+}
 
 export const currentUid = () => useAuth.getState().user?.uid ?? null;
 

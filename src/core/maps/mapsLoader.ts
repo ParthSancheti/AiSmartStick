@@ -38,8 +38,13 @@ export function mapsErrorFromCode(code: string | null): MapsError {
         message: 'Map blocked: the Google Maps key does not allow this app.',
         hint: `Google Cloud Console → Credentials → the browser key → Website restrictions: add ${LOCAL_ORIGIN}/* (Android app: https://localhost/*).`,
       };
-    case 'ApiNotActivatedMapError':
     case 'ApiTargetBlockedMapError':
+      return {
+        kind: 'api_not_enabled', code,
+        message: 'Map blocked: this key does not allow Maps JavaScript API.',
+        hint: 'Check that VITE_GOOGLE_MAPS_BROWSER_KEY uses the Maps browser key, not the Firebase Android key. Allow Maps JavaScript API in its API restrictions.',
+      };
+    case 'ApiNotActivatedMapError':
       return {
         kind: 'api_not_enabled',
         code,
@@ -137,6 +142,7 @@ export async function loadMaps() {
     const maps = await Promise.race([importLibrary('maps'), timeout]);
     // Advanced markers are optional: without them RealMap draws classic markers.
     const marker = await Promise.race([importLibrary('marker'), timeout]).catch(() => null);
+    if (authError) throw authError;
     return { maps, marker };
   } catch (e) {
     throw mapsErrorFrom(e);

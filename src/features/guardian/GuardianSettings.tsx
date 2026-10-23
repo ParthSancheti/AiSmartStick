@@ -6,6 +6,7 @@ import { useUI, toastGuardian } from '../../core/store/ui';
 import { useFeed, feedFresh, guardianActions } from '../../core/sync/guardianFeed';
 import { friendlyError } from '../../core/errors';
 import { useRuntime, switchMode } from '../../core/runtime/mode';
+import { BUILD_ROLE } from '../../core/runtime/appRole';
 import { ENV } from '../../core/runtime/env';
 import { BRAND } from '../../core/brand/brand';
 import { useAuth } from '../../core/auth/authStore';
@@ -434,7 +435,7 @@ export function GuardianSettings() {
                 label="Demo controls" detail="Simulate the stick, network and other phone"
                 onClick={() => useUI.setState({ demoOpen: true })} 
               />
-              {layout === 'single' && (
+              {layout === 'single' && BUILD_ROLE === null && (
                 <NavRow 
                   icon={<Smartphone size={20} />} iconBg="bg-teal/10 text-teal" 
                   label="Switch to stick user's app" detail=""

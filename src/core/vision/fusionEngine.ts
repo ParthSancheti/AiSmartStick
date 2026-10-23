@@ -1,4 +1,4 @@
-import type { SensorContext } from './sensorConditioning';
+import { THRESHOLDS, type SensorContext } from '../perception/sensorCore';
 import { VISION_OBSERVATION_STALE_MS, type ObjectTrack, type FusedObject, type PathState } from './types';
 import { getOccupiedSides, getSpatialSide, getSpatialDepth, isValidBoundingBox } from './spatial';
 
@@ -19,7 +19,8 @@ export function fuseSensors(tracks: ObjectTrack[], ctx: SensorContext, nowMs: nu
     const occupiedSides = getOccupiedSides(track.currentBox);
     const ageMs = nowMs - track.lastSeenMs;
     let evidence: FusedObject['evidence'];
-    if (!isValidBoundingBox(track.currentBox) || !Number.isFinite(ageMs) || ageMs < 0) evidence = 'invalid';
+    if (!isValidBoundingBox(track.currentBox) || !Number.isFinite(track.confidence) || track.confidence <= 0 || track.confidence > 1
+      || !Number.isFinite(ageMs) || ageMs < 0) evidence = 'invalid';
     else if (ageMs > VISION_OBSERVATION_STALE_MS) evidence = 'stale';
     else if (track.state === 'LOST' || track.misses > 0) evidence = 'lost';
     else if (track.state === 'CONFIRMED') evidence = 'confirmed';
@@ -58,7 +59,10 @@ export function fuseSensors(tracks: ObjectTrack[], ctx: SensorContext, nowMs: nu
   }
   
   // Preserve independent forward obstacle evidence even when vision has no usable tracks.
-  if (ctx.ultrasonic.state === 'valid' && ctx.ultrasonic.value !== null
+  const contextAgeMs = nowMs - ctx.timestamp;
+  const rangeAgeMs = ctx.ultrasonic.ageMs + contextAgeMs;
+  if (Number.isFinite(contextAgeMs) && contextAgeMs >= 0 && Number.isFinite(ctx.ultrasonic.ageMs) && ctx.ultrasonic.ageMs >= 0
+    && rangeAgeMs <= THRESHOLDS.US_STALE_MS && ctx.ultrasonic.state === 'valid' && ctx.ultrasonic.value !== null
     && Number.isFinite(ctx.ultrasonic.value) && ctx.ultrasonic.value >= 2 && ctx.ultrasonic.value < 150) {
     pathState.center = 'BLOCKED';
   }

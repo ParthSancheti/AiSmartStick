@@ -11,7 +11,7 @@ public class MainActivity extends BridgeActivity {
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         registerPlugin(AissNativePlugin.class);
         // Phone GPS via android.location.LocationManager (no Google Play Services needed).
-        registerPlugin(AissLocationPlugin.class);
+        if (BuildConfig.AISS_USER_APP) registerPlugin(AissLocationPlugin.class);
         super.onCreate(savedInstanceState);
         // Android's font-size setting would enlarge WebView text inside fixed-size cards and cut them
         // off on the right. Pin the WebView to 100 %; the app applies its own tested text size instead

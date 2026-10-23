@@ -8,6 +8,8 @@ import { useApplySettings } from './hooks/useApplySettings';
 import { SvgDefs } from './components/SvgDefs';
 import { DemoPanel } from './components/DemoPanel';
 import { StickUserApp } from './features/user/StickUserApp';
+import { GuardianApp } from './features/guardian/GuardianApp';
+import { appRole } from './core/runtime/appRole';
 import { Stage } from './features/stage/Stage';
 import { DetectionDebugView } from './features/debug/DetectionDebugView';
 import { useRuntime } from './core/runtime/mode';
@@ -19,7 +21,7 @@ function SinglePhone() {
   const entryRole = useSession((s) => s.entryRole);
   const demo = useRuntime((s) => s.mode) === 'demo';
   // Shipped builds are single-role; the combined dev build asks once.
-  const role = entryRole;
+  const role = appRole(entryRole);
   const taps = useRef<number[]>([]);
   const vTaps = useRef<number[]>([]);
 
@@ -43,9 +45,9 @@ function SinglePhone() {
 
   return (
     <div className="relative mx-auto h-full w-full max-w-[430px] overflow-hidden bg-transparent">
-      <StickUserApp />
+      {role === 'guardian' ? <GuardianApp /> : <StickUserApp />}
       {demo && <button type="button" aria-label="Open demo controls" onClick={cornerTap} className="absolute left-0 top-0 z-[95] h-11 w-11 opacity-0" />}
-      <button type="button" aria-label="Open vision debug" onClick={visionTap} className="absolute right-0 bottom-0 z-[95] h-12 w-12 opacity-0" />
+      {role === 'user' && <button type="button" aria-label="Open vision debug" onClick={visionTap} className="absolute right-0 bottom-0 z-[95] h-12 w-12 opacity-0" />}
       <AnimatePresence>
         {visionDebug && <DetectionDebugView onClose={() => useUI.setState({ visionDebug: false })} />}
       {demo && demoOpen && (

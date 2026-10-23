@@ -7,12 +7,22 @@ import { executeAction, visionFailureReason } from '../src/core/ai/executor';
 import { captureFrame } from '../src/core/vision/relay';
 import { call } from '../src/core/backend/api';
 import { useDevice, initialDevice } from '../src/core/store/device';
+import { useUI } from '../src/core/store/ui';
 
 const act = (name: string, type: string, args: Record<string, unknown> = {}) => ({ id: 'v1', name, type, arguments: args });
 const coded = (code: string, message: string) => Object.assign(new Error(message), { code });
 const jpeg = () => new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 0xff, 0xd9])], { type: 'image/jpeg' });
 
 describe('vision tool failures are clear reasons the assistant can say', () => {
+  it('opens the existing camera preview without a cloud call', async () => {
+    useUI.setState({ cameraOpen: false, liveAiOpen: true });
+    useDevice.setState({ internet: false });
+    const result = await executeAction(act('open_camera', 'vision.openCamera'));
+    expect(result.ok).toBe(true);
+    expect(useUI.getState()).toMatchObject({ cameraOpen: true, liveAiOpen: false });
+    expect(call).not.toHaveBeenCalled();
+    expect(captureFrame).not.toHaveBeenCalled();
+  });
   beforeEach(() => {
     vi.mocked(captureFrame).mockReset();
     vi.mocked(call).mockReset();
@@ -46,6 +56,22 @@ describe('vision tool failures are clear reasons the assistant can say', () => {
     expect(visionFailureReason(coded('functions/internal', 'INTERNAL'))).toMatch(/server error/);
   });
 
+  it.each([
+    ['deadline-exceeded', 'timeout', /AI picture service took too long/],
+    ['unavailable', 'upstream', /AI picture service is temporarily unavailable/],
+    ['resource-exhausted', 'quota', /AI picture service is busy/],
+    ['failed-precondition', 'configuration', /configuration needs attention/],
+    ['internal', 'request', /could not process this photo request/],
+  ])('keeps model %s separate from phone connectivity or Google sign-in', (code, reason, expected) => {
+    const error = Object.assign(coded(`functions/${code}`, 'server message'), { details: { service: 'vision-model', reason } });
+    expect(visionFailureReason(error)).toMatch(expected);
+    expect(visionFailureReason(error)).not.toMatch(/phone could not reach|Check the internet/);
+  });
+
+  it('recognizes the deployed legacy upstream failure message', () => {
+    expect(visionFailureReason(coded('functions/unavailable', 'Photo analysis did not finish. Please try again.'))).toMatch(/AI picture service is temporarily unavailable/);
+  });
+
   it('describe_scene returns a tool failure (not a throw) when the camera is busy', async () => {
     vi.mocked(captureFrame).mockRejectedValue(new Error('camera: busy'));
     const r = await executeAction(act('describe_scene', 'vision.describeScene'));
@@ -69,6 +95,16 @@ describe('vision tool failures are clear reasons the assistant can say', () => {
     const r = await executeAction(act('describe_scene', 'vision.describeScene'));
     expect(r.ok).toBe(true);
     expect(String((r.data as { spoken: string }).spoken)).toMatch(/^A door ahead\./);
+  });
+
+  it('unknown connectivity does not deny camera access before trying the backend', async () => {
+    useDevice.setState({ internet: null });
+    vi.mocked(captureFrame).mockResolvedValue({ blob: jpeg(), ts: Date.now(), scene: -1, origin: 'assistant' });
+    vi.mocked(call).mockResolvedValue({ spoken: 'A chair on the left.', uncertain: true, hazards: [], imageQuality: 'good' });
+    const result = await executeAction(act('describe_scene', 'vision.describeScene'));
+    expect(result.ok).toBe(true);
+    expect(call).toHaveBeenCalledWith('assistantVision', expect.objectContaining({ task: 'describe_scene', imageBase64: expect.any(String) }), 40000);
+    expect(result.data).toMatchObject({ spoken: expect.stringContaining('chair on the left'), uncertain: true });
   });
 
   it('capture_scene reports an offline camera as a tool failure', async () => {

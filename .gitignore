@@ -2,12 +2,14 @@ node_modules
 dist
 dist-demo
 dist-preview
+.build-tmp/
 .env
 .env.local
 .firebaserc
 functions/lib
 functions/src/shared
 android/app/google-services.json
+android/app/src/**/google-services.json
 node_modules/  
 functions/node_modules/  
 npm-debug.log* 
@@ -33,3 +35,19 @@ functions/iam_policy.json
 
 # Older bundled archive contains local .env files; use GitHub source archives.
 index.zip
+
+# Private device/cloud evidence and generated delivery artifacts.
+# Publish selected APKs as GitHub Release assets, not build history in source.
+validation/
+deliverables/
+coverage/
+*.log
+
+# Per-machine editor and connected-device state.
+.vscode/
+android/.idea/deploymentTargetSelector.xml
+
+# Obsolete local branding inventory and migration helpers.
+inventory.json
+build_inventory.cjs
+replace_text.cjs

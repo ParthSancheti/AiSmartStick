@@ -1,0 +1,82 @@
+{
+  "source": "Author-supplied NX 10 and STL files; original filenames retained",
+  "files": [
+    {
+      "file": "Bin.stl",
+      "bytes": 47084,
+      "sha256": "09af852646d6636cdb598e2c87e2f28b795999f6e455402f322a3506f6763f35",
+      "triangles": 940,
+      "rawBounds": {
+        "min": [
+          38.380653381347656,
+          -69.81407165527344,
+          -67.0
+        ],
+        "max": [
+          97.45115661621094,
+          -15.305244445800781,
+          3.0
+        ]
+      },
+      "rawDimensions": [
+        59.07050323486328,
+        54.508827209472656,
+        70.0
+      ],
+      "units": "STL has no declared unit; confirm scale in NX/slicer before printing"
+    },
+    {
+      "file": "BLIND MANS SUPPORT_x_t.prt",
+      "bytes": 3186688,
+      "sha256": "8dfc354c4a2fb2e872beaf9f1848e20c68407e2e845b8560f0cb2109441a18e1"
+    },
+    {
+      "file": "Main_Left.stl",
+      "bytes": 1549184,
+      "sha256": "a8205c7d12c01cc442ad3bd0b0b120012876ee864919f80e02ae5381bbc5c34b",
+      "triangles": 30982,
+      "rawBounds": {
+        "min": [
+          -50.0,
+          -236.67848205566406,
+          41.0
+        ],
+        "max": [
+          162.91397094726562,
+          62.844573974609375,
+          81.0
+        ]
+      },
+      "rawDimensions": [
+        212.91397094726562,
+        299.52305603027344,
+        40.0
+      ],
+      "units": "STL has no declared unit; confirm scale in NX/slicer before printing"
+    },
+    {
+      "file": "Main_Right.stl",
+      "bytes": 1256984,
+      "sha256": "5c3c2eafe8bfe00a4aa794cd95919ab469fd74d2621a88f7f428662d05959580",
+      "triangles": 25138,
+      "rawBounds": {
+        "min": [
+          -50.0,
+          -236.67848205566406,
+          11.0
+        ],
+        "max": [
+          162.91397094726562,
+          62.844573974609375,
+          50.5
+        ]
+      },
+      "rawDimensions": [
+        212.91397094726562,
+        299.52305603027344,
+        39.5
+      ],
+      "units": "STL has no declared unit; confirm scale in NX/slicer before printing"
+    }
+  ]
+}

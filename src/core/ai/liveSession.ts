@@ -75,6 +75,8 @@ function systemPrompt() {
   return `You are the AI SmartStick voice assistant for a blind or low-vision person, speaking through their phone while they walk. Be brief, warm and concrete: one or two short sentences. Reply in the language the user speaks (English or Hindi).
 
 NAVIGATION
+- For "how much time left", "how far", "where should I walk", or "repeat the direction", call get_route_status every time. Read its spoken summary, including any paused-GPS or obstacle warning. Never estimate from conversation memory.
+- When a route starts, say its destination, distance and estimated minutes, plus its first instruction only when supplied. If directions are paused, explain the reason instead of telling the user to move.
 - When the user wants to go somewhere: call find_nearest_place (category) or search_place (name). The result has an "offered" place.
 - Say the offered place's name and distance in metres, then ask "Should I take you there?". Never invent places or distances.
 - When the user says yes, call start_navigation with the offered placeId. Never search again for the same request. If the result says alreadyNavigating, just confirm that directions have started and give the first instruction.
@@ -82,9 +84,10 @@ NAVIGATION
 - GPS is NOT needed to search or to set a destination. If a result says directions "waiting_for_gps", say the destination is set and directions will start automatically as soon as GPS finds their position. Never tell the user that location or maps are unavailable when they ask to go somewhere.
 
   VISION (CRITICAL)
+  - When asked to open or start the camera preview, call open_camera.
   - YOU HAVE A CAMERA on the stick. When the user asks what is in front of them, you MUST call the describe_scene tool. Do not apologize or say you cannot see.
   - Before calling the tool, say "Analyzing the scene, please wait."
-  - After calling the tool, you will receive the image. Describe it aloud.
+  - The tool returns a camera-based description in result.spoken. Read it aloud, preserving uncertainty and any earlier-photo warning. If capture fails, explain the actual tool error. Never invent visual details.
 
   SAFETY
 - Never say it is safe to cross a road, walk ahead, or that a path is clear. Describe what was observed and how certain it is; remind the user to use their cane and hearing.
@@ -97,6 +100,13 @@ CONTEXT: user ${s.person.name || 'unknown'}; stick ${isLinked(d.link) ? 'connect
 }
 
 type StopReason = 'user' | 'idle' | 'error' | 'remote';
+type ToolResponse = { id?: string; name?: string; response: Record<string, unknown> };
+
+/** Stable tool identity: argument key order must not change what the user approved. */
+function toolSignature(name: string, args: unknown) {
+  return `${name}:${JSON.stringify(args ?? {}, (_key, value) => value && typeof value === 'object' && !Array.isArray(value)
+    ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b))) : value)}`;
+}
 
 export class LiveSession {
   private session: Session | null = null;
@@ -109,11 +119,15 @@ export class LiveSession {
   private idleTimer: ReturnType<typeof setTimeout> | undefined;
   private stopTone: () => void = () => {};
   /** Confirm-gated tool waiting for the user's "yes". */
-  private pendingConfirm: { name: string; args: unknown } | null = null;
-  private confirmedByUser = false;
+  private pendingConfirm: { signature: string; userUtterance: number } | null = null;
+  private userUtterance = 0;
   /** The user's last complete utterance (for confirmations arriving with the model's tool call). */
   private lastUserText = '';
   private wordsTimer: ReturnType<typeof setTimeout> | undefined;
+  private pendingTools = 0;
+  private cancelledTools = new Set<string>();
+  private runningTools = new Map<string, string>();
+  private toolResults = new Map<string, { signature: string; result: ToolResponse }>();
 
   get isActive() {
     return this.active;
@@ -122,8 +136,13 @@ export class LiveSession {
   /** One camera photo (JPEG base64) into the running Live conversation; Live sees it natively. */
   sendImage(b64: string): boolean {
     if (!this.active || !this.session || this.connecting) return false;
-    this.session.sendRealtimeInput({ video: { data: b64, mimeType: 'image/jpeg' } });
-    return true;
+    try {
+      this.session.sendRealtimeInput({ video: { data: b64, mimeType: 'image/jpeg' } });
+      return true;
+    } catch {
+      this.stop('error', 'The assistant connection was lost. Press the button to talk again.', 'Connection lost');
+      return false;
+    }
   }
 
   /** True while the Live socket is being set up (the connecting tune is playing). */
@@ -229,8 +248,22 @@ export class LiveSession {
       haptics.play('listen');
       const mic = new MicStream();
       this.mic = mic;
+      let localSpeechPaused = false;
       mic.onData = (data) => {
-        if (this.active && this.session) this.session.sendRealtimeInput({ audio: { data, mimeType: 'audio/pcm;rate=16000' } });
+        if (!this.active || !this.session) return;
+        // Native route/safety TTS is not part of Gemini's own echo cancellation stream.
+        // Pause input while it speaks so a spoken turn or SOS is never treated as a user command.
+        try {
+          if (audioManager.localSpeechActive()) {
+            if (!localSpeechPaused) this.session.sendRealtimeInput({ audioStreamEnd: true });
+            localSpeechPaused = true;
+            return;
+          }
+          localSpeechPaused = false;
+          this.session.sendRealtimeInput({ audio: { data, mimeType: 'audio/pcm;rate=16000' } });
+        } catch {
+          this.stop('error', 'The assistant connection was lost. Press the button to talk again.', 'Connection lost');
+        }
       };
       await mic.start();
       if (stale()) {
@@ -267,18 +300,22 @@ export class LiveSession {
   private bumpIdle() {
     clearTimeout(this.idleTimer);
     this.idleTimer = setTimeout(() => {
-      if (this.active && !audioManager.livePcmPlaying()) this.stop('idle');
+      if (this.active && !this.pendingTools && !audioManager.livePcmPlaying()) this.stop('idle');
       else if (this.active) this.bumpIdle();
     }, IDLE_CLOSE_MS);
   }
 
   private async onMessage(msg: LiveServerMessage) {
     const sc = msg.serverContent;
-    if (sc?.interrupted) audioManager.interruptPcm();
+    if (sc?.interrupted) {
+      audioManager.interruptPcm();
+      audioManager.finishPcmTurn();
+    }
 
     // What the user said (transcribed by the Live API).
     if (sc?.inputTranscription?.text) {
       this.bumpIdle();
+      if (!this.inText) this.userUtterance++;
       this.inText += sc.inputTranscription.text;
       useAssistant.setState({ heard: this.inText.trim() });
       // Transcription arrives in pieces ("Okay" … ", what about a hospital?"): judge the utterance
@@ -299,6 +336,7 @@ export class LiveSession {
       }
     }
 
+    if (sc?.turnComplete) audioManager.finishPcmTurn();
     if (sc?.turnComplete || sc?.generationComplete) {
       if (this.inText.trim()) {
         clearTimeout(this.wordsTimer);
@@ -316,7 +354,7 @@ export class LiveSession {
       if (this.active) useAssistant.setState({ phase: 'listening' });
     }
 
-    if (msg.toolCallCancellation?.ids?.length) log.info('live: tool calls cancelled', { ids: msg.toolCallCancellation.ids });
+    for (const id of msg.toolCallCancellation?.ids ?? []) this.cancelledTools.add(id);
     const calls = msg.toolCall?.functionCalls;
     if (calls?.length) await this.runTools(calls);
   }
@@ -329,11 +367,10 @@ export class LiveSession {
       return;
     }
     if (!isAffirmative(text)) return;
-    if (this.pendingConfirm) this.confirmedByUser = true;
     if (pendingOffer() && !confirming) {
       confirming = true;
       try {
-        const r = await confirmPendingOffer();
+        const r = await confirmPendingOffer({ announce: false });
         if (r?.started) {
           earcon('success');
           log.info('live: navigation confirmed by voice', { placeId: r.place.placeId });
@@ -347,49 +384,96 @@ export class LiveSession {
   }
 
   private async runTools(calls: NonNullable<LiveServerMessage['toolCall']>['functionCalls'] & object) {
-    const responses: { id?: string; name?: string; response: Record<string, unknown> }[] = [];
-    useAssistant.setState({ phase: 'thinking' });
-    for (const c of calls) {
-      const name = c.name ?? '';
-      const spec = TOOLS.find((t) => t.name === name);
-      if (!spec) {
-        responses.push({ id: c.id, name, response: { error: `Unknown tool ${name}` } });
-        continue;
-      }
-      if (spec.confirm) {
-        const same = this.pendingConfirm?.name === name;
-        // The "yes" may still be settling when the model calls the tool again.
-        const saidYes = this.confirmedByUser || isAffirmative(this.inText) || isAffirmative(this.lastUserText);
-        if (!same || !saidYes) {
-          this.pendingConfirm = { name, args: c.args };
-          this.confirmedByUser = false;
-          responses.push({ id: c.id, name, response: { needsConfirmation: true, instruction: 'Ask the user to confirm in one short sentence. Call this tool again only after they say yes.' } });
+    const generation = this.generation;
+    const session = this.session;
+    const current = () => this.active && this.generation === generation && this.session === session;
+    this.pendingTools++;
+    this.bumpIdle();
+    try {
+      const responses: ToolResponse[] = [];
+      useAssistant.setState({ phase: 'thinking' });
+      for (const c of calls) {
+        if (!current()) return;
+        if (c.id && this.cancelledTools.has(c.id)) continue;
+        const name = c.name ?? '';
+        const signature = toolSignature(name, c.args);
+        if (c.id) {
+          const completed = this.toolResults.get(c.id);
+          const running = this.runningTools.get(c.id);
+          if (completed) {
+            responses.push(completed.signature === signature ? completed.result : { id: c.id, name, response: { error: 'Tool call ID was reused with different arguments.' } });
+            continue;
+          }
+          if (running) {
+            if (running !== signature) responses.push({ id: c.id, name, response: { error: 'Tool call ID was reused with different arguments.' } });
+            continue;
+          }
+        }
+        const spec = TOOLS.find((t) => t.name === name);
+        if (!spec) {
+          responses.push({ id: c.id, name, response: { error: `Unknown tool ${name}` } });
           continue;
         }
-        this.pendingConfirm = null;
-        this.confirmedByUser = false;
+        if (spec.confirm) {
+          const same = this.pendingConfirm?.signature === signature;
+          // The "yes" may still be settling when the model calls the tool again.
+          const laterUtterance = !!this.pendingConfirm && this.userUtterance > this.pendingConfirm.userUtterance;
+          const saidYes = laterUtterance && isAffirmative(this.inText || this.lastUserText);
+          if (!same || !saidYes) {
+            this.pendingConfirm = { signature, userUtterance: this.userUtterance };
+            responses.push({ id: c.id, name, response: { needsConfirmation: true, instruction: 'Ask the user to confirm in one short sentence. Call this tool again only after they say yes.' } });
+            continue;
+          }
+          this.pendingConfirm = null;
+        }
+        if (c.id) this.runningTools.set(c.id, signature);
+        let result: ToolResponse;
+        try {
+          const out = await executeAction({ id: c.id ?? `live_${Date.now()}`, name: name as never, type: spec.type, arguments: (c.args ?? {}) as Record<string, unknown> });
+          result = { id: c.id, name, response: out.ok ? { result: out.data ?? {} } : { error: out.error ?? 'Unknown error' } };
+        } catch (e) {
+          result = { id: c.id, name, response: { error: (e as Error).message } };
+        }
+        if (!current()) return;
+        if (c.id) {
+          this.runningTools.delete(c.id);
+          this.toolResults.set(c.id, { signature, result });
+          // Keep retries idempotent without growing memory throughout a long conversation.
+          if (this.toolResults.size > 128) this.toolResults.delete(this.toolResults.keys().next().value!);
+        }
+        responses.push(result);
       }
-      try {
-        const out = await executeAction({ id: c.id ?? `live_${Date.now()}`, name: name as never, type: spec.type, arguments: (c.args ?? {}) as Record<string, unknown> });
-        responses.push({ id: c.id, name, response: out.ok ? { result: out.data ?? {} } : { error: out.error ?? 'Unknown error' } });
-      } catch (e) {
-        responses.push({ id: c.id, name, response: { error: (e as Error).message } });
+      if (!current()) return;
+      const valid = responses.filter(r => !r.id || !this.cancelledTools.has(r.id));
+      if (valid.length) {
+        try { session?.sendToolResponse({ functionResponses: valid }); }
+        catch { this.stop('error', 'The assistant connection was lost. Press the button to talk again.', 'Connection lost'); }
+      }
+      if (this.pendingTools === 1 && useAssistant.getState().phase === 'thinking') useAssistant.setState({ phase: 'listening' });
+    } finally {
+      if (current()) {
+        this.pendingTools--;
+        for (const c of calls) if (c.id && !this.runningTools.has(c.id)) this.cancelledTools.delete(c.id);
+        this.bumpIdle();
       }
     }
-    if (this.active && this.session) this.session.sendToolResponse({ functionResponses: responses });
-    if (this.active && useAssistant.getState().phase === 'thinking') useAssistant.setState({ phase: 'listening' });
   }
 
   /** Ends the session (or the connection attempt). Always silences the connecting tune. */
   stop(reason: StopReason = 'user', spoken?: string, label?: string) {
     const wasActive = this.active;
     this.generation++;
+    this.pendingTools = 0;
+    this.cancelledTools.clear();
+    this.runningTools.clear();
+    this.toolResults.clear();
     this.active = false;
     this.connecting = false;
     if (useLiveStatus.getState().connecting) useLiveStatus.setState({ connecting: false });
-      clearTimeout(this.idleTimer);
+    clearTimeout(this.idleTimer);
     clearTimeout(this.wordsTimer);
     this.lastUserText = '';
+    this.userUtterance = 0;
     this.stopTone();
     this.stopTone = () => {};
     this.mic?.stop();
@@ -405,7 +489,6 @@ export class LiveSession {
     this.inText = '';
     this.outText = '';
     this.pendingConfirm = null;
-    this.confirmedByUser = false;
     if (reason === 'error' || (reason === 'remote' && spoken)) {
       useAssistant.setState({ phase: 'error', unavailable: label ?? spoken ?? 'The assistant is unavailable.' });
       if (spoken) void audioManager.say(spoken, { lang: useAssistant.getState().lang, priority: 'user' });

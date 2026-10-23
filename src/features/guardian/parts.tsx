@@ -7,6 +7,8 @@ import { useNow } from '../../hooks/useNow';
 import { clock, meters, timeAgo } from '../../core/util';
 import { useFeed, feedFresh } from '../../core/sync/guardianFeed';
 import { useRuntime } from '../../core/runtime/mode';
+import { BUILD_ROLE } from '../../core/runtime/appRole';
+import { useBackHandler } from '../../core/backStack';
 import { signOut } from '../../core/auth/authService';
 import { useAuth } from '../../core/auth/authStore';
 import { AccountAvatar } from '../../components/Avatar';
@@ -19,7 +21,7 @@ import { cx } from '../../components/glass';
 export function GScreen({ children, wide }: { children: ReactNode; wide?: boolean }) {
   return (
     <div className="absolute inset-0 overflow-y-auto no-scrollbar" style={{ paddingTop: 'calc(var(--island, var(--sat)) + 10px)' }}>
-      <div className={cx('mx-auto px-4 pb-32', wide ? 'max-w-[980px]' : 'max-w-[680px]')}>{children}</div>
+      <div className={cx('mx-auto px-4', wide ? 'max-w-[980px]' : 'max-w-[680px]')} style={{ paddingBottom: 'calc(var(--sab) + 128px)' }}>{children}</div>
     </div>
   );
 }
@@ -32,7 +34,7 @@ export function GuardianProfileMenu({ open, onClose }: { open: boolean; onClose:
   const setUI = useUI((s) => s.set);
   const mode = useRuntime((s) => s.mode);
   const user = useAuth((s) => s.user);
-  const canSwitch = true;
+  const canSwitch = BUILD_ROLE === null;
 
   return (
     <AnimatePresence>
@@ -51,7 +53,9 @@ export function GuardianProfileMenu({ open, onClose }: { open: boolean; onClose:
             animate={{ opacity: 1, scale: 1, y: 0, x: 0 }}
             exit={{ opacity: 0, scale: 0.8, y: -20, x: 20 }}
             transition={{ type: 'spring', stiffness: 500, damping: 25 }}
-            className="fixed top-24 right-6 z-[101] glass w-64 rounded-[28px] p-2 flex flex-col gap-1 shadow-2xl origin-top-right"
+            className="absolute top-full right-1 z-[101] bg-surface ring-1 ring-line mt-2 w-[min(17rem,calc(100vw-40px))] rounded-[28px] p-2 flex flex-col gap-1 shadow-2xl origin-top-right"
+            role="menu"
+            aria-label="Profile menu"
           >
             {user && (
               <div className="px-4 pb-2 pt-2">
@@ -59,21 +63,21 @@ export function GuardianProfileMenu({ open, onClose }: { open: boolean; onClose:
                 <p className="truncate text-[13px] text-ink-3">{mode === 'demo' ? 'Demo mode · simulated data' : (user.email ?? '')}</p>
               </div>
             )}
-            <button type="button" className="glass interactive flex items-center gap-3 px-4 py-3 rounded-[20px] text-[15px] font-semibold text-ink w-full" onClick={() => { onClose(); setUI({ guardianTab: 'settings' }); }}>
+            <button type="button" role="menuitem" className="interactive flex min-h-12 items-center gap-3 px-4 py-3 rounded-[20px] text-[15px] font-semibold text-ink w-full" onClick={() => { onClose(); setUI({ guardianTab: 'settings' }); }}>
               <Settings size={18} /> Settings
             </button>
-            <button type="button" className="glass interactive flex items-center gap-3 px-4 py-3 rounded-[20px] text-[15px] font-semibold text-ink w-full" onClick={() => { updateSettings({ theme: isDark ? 'light' : 'dark' }); }}>
+            <button type="button" role="menuitem" className="interactive flex min-h-12 items-center gap-3 px-4 py-3 rounded-[20px] text-[15px] font-semibold text-ink w-full" onClick={() => { updateSettings({ theme: isDark ? 'light' : 'dark' }); }}>
               {isDark ? <Sun size={18} /> : <Moon size={18} />} Toggle Theme
             </button>
             {canSwitch && (
-              <button type="button" className="glass interactive flex items-center gap-3 px-4 py-3 rounded-[20px] text-[15px] font-semibold text-ink w-full" onClick={() => { onClose(); setSession({ entryRole: 'user' }); }}>
+              <button type="button" role="menuitem" className="interactive flex min-h-12 items-center gap-3 px-4 py-3 rounded-[20px] text-[15px] font-semibold text-ink w-full" onClick={() => { onClose(); setSession({ entryRole: 'user' }); }}>
                 <Smartphone size={18} /> Switch to User App
               </button>
             )}
             {mode === 'real' && (
               <>
                 <div className="h-px bg-ink/10 my-1 mx-2" />
-                <button type="button" className="glass interactive flex items-center gap-3 px-4 py-3 rounded-[20px] text-[15px] font-semibold text-sos w-full" onClick={() => { onClose(); void signOut(); }}>
+                <button type="button" role="menuitem" className="interactive flex min-h-12 items-center gap-3 px-4 py-3 rounded-[20px] text-[15px] font-semibold text-sos w-full" onClick={() => { onClose(); void signOut(); }}>
                   <LogOut size={18} /> Log out
                 </button>
               </>
@@ -87,26 +91,29 @@ export function GuardianProfileMenu({ open, onClose }: { open: boolean; onClose:
 
 import { useState } from 'react';
 
-export function TopNav() {
+export function TopNav({ topInset = false }: { topInset?: boolean }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  useBackHandler(menuOpen, () => setMenuOpen(false));
   
   return (
-    <div className="w-full relative z-[50] pt-10 flex-shrink-0 mb-4 px-1">
+    <div className="w-full relative z-[50] flex-shrink-0 mb-4 px-1" style={{ paddingTop: topInset ? 'calc(var(--island, var(--sat)) + 40px)' : 40 }}>
       <motion.div 
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-        className="glass flex items-center justify-between h-[68px] rounded-[34px] px-2 shadow-2xl"
+        className="home-header-bar glass flex min-w-0 items-center justify-between h-[68px] rounded-[34px] px-2 shadow-2xl"
       >
-        <div className="flex items-center gap-3 pl-2">
+        <div className="flex min-w-0 flex-1 items-center gap-3 pl-2">
           <BrandLogo variant="icon" size={44} />
-          <span className="text-[17px] font-bold text-ink tracking-tight">{BRAND.name}</span>
-          <ModeBadge />
+          <span className="home-brand-name min-w-0 truncate text-[17px] font-bold text-ink tracking-tight">{BRAND.name}</span>
+          <ModeBadge className="home-mode-badge shrink-0" />
         </div>
         <button 
           type="button" 
           className="h-11 w-11 rounded-full p-[2px] overflow-hidden interactive mr-2 shrink-0 bg-teal/10" 
           aria-label="Profile menu"
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
           onClick={() => setMenuOpen(true)}
         >
           <AccountAvatar size={40} />

@@ -30,7 +30,7 @@ const ctx = {
   }),
 };
 
-import { interruptPcm, livePcmPlaying, playPcmChunk, say, setLiveSessionOpen, stopAll } from '../src/core/audio/audioManager';
+import { finishPcmTurn, interruptPcm, livePcmPlaying, localSpeechActive, playPcmChunk, say, setLiveSessionOpen, stopAll } from '../src/core/audio/audioManager';
 import { useSession } from '../src/core/store/session';
 
 function pcm(samples: number[]) {
@@ -51,6 +51,7 @@ describe('Live PCM output in the unified audio owner', () => {
 
   afterEach(async () => {
     await stopAll();
+    vi.useRealTimers();
   });
 
   it('preserves signed little-endian samples, sample rate, volume, and contiguous scheduling', () => {
@@ -120,5 +121,93 @@ describe('Live PCM output in the unified audio owner', () => {
     useSession.getState().updateSettings({ voiceOut: false });
     playPcmChunk(pcm([789]));
     expect(sources).toHaveLength(1);
+  });
+
+  it('waits for the last sample of a completed Live answer before starting navigation', async () => {
+    playPcmChunk(pcm([123]));
+    const nav = say('In 20 metres, turn left', { lang: 'en', priority: 'nav' });
+    expect(tts.speak).not.toHaveBeenCalled();
+    finishPcmTurn();
+    expect(tts.speak).not.toHaveBeenCalled();
+    sources[0].onended!();
+    expect(await nav).toBe('spoken');
+    expect(tts.speak).toHaveBeenCalledExactlyOnceWith('In 20 metres, turn left', expect.anything());
+  });
+
+  it('keeps ownership during network gaps in a Live sentence and discards obsolete turns', async () => {
+    vi.useFakeTimers();
+    let routeCurrent = true;
+    playPcmChunk(pcm([123]));
+    const nav = say('Old left turn', { lang: 'en', priority: 'nav', isCurrent: () => routeCurrent });
+    sources[0].onended!();
+    await vi.advanceTimersByTimeAsync(800);
+    expect(tts.speak).not.toHaveBeenCalled();
+    playPcmChunk(pcm([456]));
+    routeCurrent = false;
+    finishPcmTurn();
+    sources[1].onended!();
+    expect(await nav).toBe('dropped');
+    expect(tts.speak).not.toHaveBeenCalled();
+  });
+
+  it('buffers a model response arriving during native TTS instead of rendering two voices', async () => {
+    let finish!: () => void;
+    tts.speak.mockReturnValueOnce(new Promise<void>(resolve => { finish = resolve; }));
+    const nav = say('Continue for 100 metres', { lang: 'en', priority: 'nav' });
+    playPcmChunk(pcm([123]));
+    playPcmChunk(pcm([456]));
+    finishPcmTurn();
+    expect(sources).toHaveLength(0);
+    expect(livePcmPlaying()).toBe(true);
+    finish();
+    expect(await nav).toBe('spoken');
+    expect(sources).toHaveLength(2);
+    expect(sources[0].start).toHaveBeenCalledBefore(sources[1].start);
+  });
+
+  it.each(['high', 'critical'] as const)('discards the remainder of a model answer after %s preemption, then accepts a fresh turn', async priority => {
+    playPcmChunk(pcm([123]));
+    await say(priority === 'high' ? 'Now, turn right' : 'Stop. Obstacle ahead.', { lang: 'en', priority });
+    playPcmChunk(pcm([456]));
+    expect(sources).toHaveLength(1);
+    expect(sources[0].stop).toHaveBeenCalledTimes(1);
+    finishPcmTurn();
+    playPcmChunk(pcm([789]));
+    expect(sources).toHaveLength(2);
+  });
+
+  it('releases queued navigation when Live closes mid-response', async () => {
+    setLiveSessionOpen(true);
+    playPcmChunk(pcm([123]));
+    const nav = say('Current right turn', { lang: 'en', priority: 'nav' });
+    setLiveSessionOpen(false);
+    expect(await nav).toBe('spoken');
+    expect(sources[0].stop).toHaveBeenCalledTimes(1);
+  });
+
+  it('releases guidance after a stalled stream boundary instead of blocking forever', async () => {
+    vi.useFakeTimers();
+    playPcmChunk(pcm([123]));
+    const nav = say('Current turn', { lang: 'en', priority: 'nav' });
+    sources[0].onended!();
+    await vi.advanceTimersByTimeAsync(4999);
+    expect(tts.speak).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(await nav).toBe('spoken');
+  });
+
+  it('blocks native speech echo and its short acoustic tail from entering the microphone', async () => {
+    vi.useFakeTimers();
+    await vi.advanceTimersByTimeAsync(250);
+    expect(localSpeechActive()).toBe(false);
+    let finish!: () => void;
+    tts.speak.mockReturnValueOnce(new Promise<void>(resolve => { finish = resolve; }));
+    const nav = say('Turn right', { lang: 'en', priority: 'nav' });
+    expect(localSpeechActive()).toBe(true);
+    finish();
+    await nav;
+    expect(localSpeechActive()).toBe(true);
+    await vi.advanceTimersByTimeAsync(250);
+    expect(localSpeechActive()).toBe(false);
   });
 });

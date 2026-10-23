@@ -50,6 +50,7 @@ const { mergeCloudProfile, profileCloudPatch, mergeCloudPhoto, setProfileName, p
 const { decideSettings, sanitizeCloudSettings, startSettingsSync, stopSettingsSync } = await import('../src/core/sync/settingsSync');
 const { profileUpdateOnSignIn } = await import('../src/core/auth/authService');
 const { pickEncoding } = await import('../src/core/profile/imageCompress');
+const { getDocs } = await import('firebase/firestore');
 
 const UID = 'u1';
 const USER = `users/${UID}`;
@@ -290,5 +291,40 @@ describe('profile sync', () => {
     expect(usePhotoCache.getState().custom).toBeNull();
     // Nothing that looks like "name/places deleted" went to the cloud.
     expect(writes.slice(before).filter((w) => w.path === USER)).toHaveLength(0);
+  });
+
+  it('ignores an old account contacts read finishing after the next account starts', async () => {
+    let finishA!: (value: any) => void;
+    let finishB!: (value: any) => void;
+    vi.mocked(getDocs).mockImplementationOnce(() => new Promise((resolve) => { finishA = resolve; }));
+    vi.mocked(getDocs).mockImplementationOnce(() => new Promise((resolve) => { finishB = resolve; }));
+    startSettingsSync('A');
+    stopSettingsSync();
+    startSettingsSync('B');
+    finishA({ docs: [{ data: () => ({ id: 'private-A', name: 'A contact', phone: 'A' }) }] });
+    await Promise.resolve(); await Promise.resolve();
+    expect(useSession.getState().contacts).toEqual([]);
+    finishB({ docs: [{ data: () => ({ id: 'B', name: 'B contact', phone: 'B' }) }] });
+    await Promise.resolve(); await Promise.resolve();
+    expect(useSession.getState().contacts.map((c) => c.id)).toEqual(['B']);
+  });
+
+  it('ignores a queued settings snapshot belonging to a stopped account', () => {
+    startSettingsSync('A');
+    const oldSnapshot = listeners.get('users/A/settings/app')!;
+    stopSettingsSync();
+    startSettingsSync('B');
+    oldSnapshot(snap({ sosMessage: 'Private A setting', updatedAt: 500 }));
+    expect(useSession.getState().settings.sosMessage).toBe(defaultSettings.sosMessage);
+  });
+
+  it('ignores a queued profile snapshot belonging to a stopped account', () => {
+    startSettingsSync('A');
+    const oldSnapshot = listeners.get('users/A')!;
+    stopSettingsSync();
+    startSettingsSync('B');
+    oldSnapshot(snap({ displayName: 'Private name A', phone: 'Private phone A', profileUpdatedAt: 500 }));
+    expect(useSession.getState().person.phone).toBe('');
+    expect(useSession.getState().person.name).toBe('');
   });
 });

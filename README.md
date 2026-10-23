@@ -1,73 +1,128 @@
-# Start here
+<p align="center"><img src="docs/assets/banner.png" alt="AI SmartStick — ESP32-CAM, Android and Siemens NX 10" width="100%"></p>
 
-Get the refined branch and set up the demo, Firebase, Android and ESP32 using [the complete setup guide](docs/SETUP.md). Matching existing Android adapters are included; [publication notes](GITHUB_PUBLICATION_NOTES.md) describe source provenance and checks.
+<p align="center"><a href="docs/BUILD_GUIDE.md"><b>Build guide</b></a> · <a href="docs/HARDWARE.md"><b>Parts & wiring</b></a> · <a href="hardware/README.md"><b>CAD & printing</b></a> · <a href="https://github.com/ParthSancheti/AiSmartStick/releases/tag/v0.2.0-prototype-20261018"><b>Download APKs</b></a></p>
 
-Refinement package: see [battery and system report](BATTERY_EFFICIENCY_REFINEMENT_REPORT.md) and [walking guidance behavior](WALKING_GUIDANCE_REFINEMENT_REPORT.md). The confirmed single HC-SR04/camera cannot establish 150 m ranging or exact safe side clearance; device validation remains required.
+# AI SmartStick
 
-# AI Smart Stick
+An assistive cane project combining **ESP32-CAM sensors and vibration feedback**, a **stick-user Android app**, and a separate **Guardian app**. The phone adds local perception, walking guidance, Google Maps navigation and Gemini scene/voice assistance. Firebase connects accounts and Guardian sharing. The enclosure was designed in **Siemens NX 10**.
 
-A smart white cane (ESP32-CAM + sensors) with an Android app for the person who uses it and a Guardian
-app for family. The app is built with React, TypeScript and Capacitor, and uses Firebase with Gemini
-(through Cloud Functions) and Google Maps.
+This repository contains the apps, backend, firmware, device-independent walking algorithm, original enclosure CAD, renders and a sanitized historical wiring-test sketch. The banner is an AI-generated illustration based on the supplied enclosure render; the original renders are below.
 
-| Part | Where | Ships as |
-|---|---|---|
-| Stick user app | `src/features/user` | Android (Capacitor): `npm run android:sync` |
-| Guardian app | `src/features/guardian` | PWA on Firebase Hosting: `npm run build`, then choose Guardian |
-| Backend | `functions/` | Cloud Functions (Gemini, Maps, pairing, push) |
-| Rules | `firestore.rules`, `storage.rules` | `firebase deploy --only firestore,storage` |
-| ECU firmware | `firmware/ai_smart_stick_v1` | Arduino-ESP32, protocol v1 (compile + host-tested, **not hardware-tested**) |
-| Contracts | `shared/` | Types shared by app + functions |
+> **Prototype for supervised testing.** Camera labels can miss obstacles or be incorrect. A single ultrasonic beam and monocular boxes do not establish safe clearance, stairs/drop-offs or crossing safety. Mounting, electrical assembly and field operation need validation. Use your normal mobility aid and a companion during trials.
 
-## Modes
-* **Real** (production default): Google sign-in, the paired stick, GPS, Google Maps and Gemini. Missing
-  data shows as missing ("Unavailable", "Waiting for device", "Updated 2 min ago"). Nothing falls back
-  to demo data.
-* **Demo** (`npm run dev:demo`, or Settings → Device information → Demo mode): simulated stick, street and
-  assistant, clearly badged **DEMO**, with its own separate local storage. On wide screens it shows both
-  phones and the demo control panel.
+## Start here
 
-## Commands
-```bash
+| Your goal | Follow this |
+|---|---|
+| Install the user app | [AI SmartStick user APK](https://github.com/ParthSancheti/AiSmartStick/releases/download/v0.2.0-prototype-20261018/AI-SmartStick-user.apk) |
+| Install the separate Guardian app | [SmartStick Guardian APK](https://github.com/ParthSancheti/AiSmartStick/releases/download/v0.2.0-prototype-20261018/SmartStick-Guardian.apk) |
+| Rebuild the whole system | [Beginner build guide](docs/BUILD_GUIDE.md) |
+| Buy parts and wire the electronics | [BOM and exact GPIO wiring](docs/HARDWARE.md) |
+| Inspect CAD or prepare an enclosure print | [CAD and printing notes](hardware/README.md) |
+| Configure cloud services | [Google/Firebase setup](docs/GOOGLE_CLOUD_SETUP.md) and [two-app setup](docs/DUAL_APP_SETUP.md) |
+| Test the assembled stick | [Acceptance checks](docs/REAL_DEVICE_ACCEPTANCE.md) and [device debugging](docs/DEVICE_DEBUG.md) |
+
+The APKs are **debug testing builds** connected to the maintainer's backend. Independent builders must configure their own backend, signing fingerprints and API restrictions. Use separate user and Guardian accounts. [Release notes](docs/RELEASE_NOTES.md) · [SHA-256 checksums](https://github.com/ParthSancheti/AiSmartStick/releases/download/v0.2.0-prototype-20261018/SHA256SUMS.txt).
+
+## How it works
+
+![Local sensing, user phone, cloud services and Guardian app](docs/assets/architecture.svg)
+
+1. **The stick** reads ultrasonic distance, MPU6050 motion, INA219 battery/current data and button gestures. Firmware controls local vibration warnings and exposes the device/camera protocol over Wi-Fi.
+2. **The user phone** runs EfficientDet-Lite0 detection, sensor conditioning and a deterministic walking reducer. It also handles GPS routes, audio priorities and native background walking tracking.
+3. **Cloud Functions** broker Gemini scene interpretation/Live credentials and Maps services. Long-lived server keys stay on the backend.
+4. **Guardian** uses its own app identity and an authorized relationship to access shared features.
+
+Real and demo modes use separate state. Missing evidence stays unknown; the real app does not substitute simulated measurements. Cloud assistance needs phone internet while the stick's Wi-Fi has no internet.
+
+## Hardware used
+
+The owner confirmed a **2500 mAh Li-ion battery**, **power-bank module**, **coin vibration motor** and **NPN transistor**. The code identifies an AI-Thinker ESP32-CAM/OV2640, HC-SR04, MPU6050, INA219 and momentary button. Exact cell configuration, module/motor/transistor ratings, shaft dimensions and print settings were not supplied.
+
+![Confirmed signal wiring overview](docs/assets/wiring-overview.svg)
+
+| Function | GPIO / address |
+|---|---|
+| Ultrasonic TRIG / protected ECHO | 13 / 12 |
+| Vibration driver control | 2 |
+| Button to ground, internal pull-up | 3 |
+| I2C SDA / SCL | 14 / 15 |
+| MPU6050 / INA219 | `0x68` / `0x40` |
+
+**Read the [full wiring guide](docs/HARDWARE.md) before powering it.** ECHO needs level protection; the motor needs a complete driver/protection circuit. The reported NPN-only build is distinguished from recommended base resistance, pull-down and flyback protection. Charging and supply connections depend on the actual power-bank module.
+
+## Enclosure and original files
+
+| Assembly | Interior |
+|---|---|
+| ![Original NX 10 assembly render](hardware/images/assembly.jpg) | ![Original NX 10 interior render](hardware/images/interior.jpg) |
+
+- [Main_Left.stl](hardware/cad/Main_Left.stl) · [Main_Right.stl](hardware/cad/Main_Right.stl) · [Bin.stl](hardware/cad/Bin.stl)
+- [Original NX 10 part](hardware/cad/BLIND%20MANS%20SUPPORT_x_t.prt)
+- [CAD bounds, triangle counts and hashes](hardware/cad/manifest.json)
+
+STL does not declare a physical unit. Confirm scale, fit, mounting, fasteners and strength before printing. The `.prt` filename is retained as provided; format conversion and print validation are not claimed.
+
+The [bench-test sketch](hardware/diagnostics/sketch_sep19b/sketch_sep19b.ino) has Wi-Fi credentials replaced by placeholders. It is a **historical standalone diagnostic**, with different endpoints and blocking test logic. Flash [`firmware/ai_smart_stick_v1`](firmware/ai_smart_stick_v1) for the current app.
+
+## Quick software setup
+
+Install the tools specified in the [complete guide](docs/BUILD_GUIDE.md), then:
+
+```powershell
+git clone https://github.com/ParthSancheti/AiSmartStick.git
+cd AiSmartStick
 npm ci
 npm --prefix functions ci
-npm run dev:demo         # explicit demo mode (Bash; PowerShell steps in docs/SETUP.md)
-npm run typecheck        # tsc
-npm test                 # vitest: 673 app tests incl. transport ↔ protocol e2e
-npm run test:firmware    # g++ host tests of the ECU safety logic
-npm run test:rules       # Firestore emulator (needs Java)
-npm run build            # typecheck + production build (real mode)
-npm run build:demo       # demo build → dist-demo/
-npm run functions:build  # Cloud Functions
+Copy-Item .env.example .env
+Copy-Item functions/.env.example functions/.env
 ```
 
-### Release: redeploy the Cloud Functions with every APK that changes `shared/tools.ts` or `functions/`
-The APK alone is not enough for the text assistant and server-side Maps:
-```bash
-cd functions && npm run build && firebase deploy --only functions
+Fill your own configuration and Android Firebase registrations before real builds. **Never put Gemini/server secrets in `VITE_*` variables.**
+
+For a clearly simulated UI demo in PowerShell:
+
+```powershell
+$env:VITE_APP_MODE = "demo"
+$env:VITE_APP_ROLE = "combined"
+npm run dev
 ```
-* `assistantTurn` validates the model's tool calls against its **own** copy of `shared/tools.ts`.
-  Until it is redeployed, `set_destination {query}` ("AI, take me to City Hospital") is rejected in
-  text chat, and the old prompt still says maps need GPS.
-* `mapsSearch` / `mapsAutocomplete` accept a search **without** GPS (no lat/lng) only after the deploy.
-  Before it, destination search without a fix uses only the in-app browser-key fallback.
-* Voice mode (Gemini Live, `src/core/ai/liveSession.ts`) uses the app's own `shared/tools.ts` and works
-  with the new APK alone.
 
-## Docs
-* [INTEGRATION_STATUS.md](INTEGRATION_STATUS.md): what is real, what is demo-only, known issues, test results
-* [DEVICE_PROTOCOL.md](DEVICE_PROTOCOL.md): stick ↔ phone protocol v1 (provisioning, HMAC auth, telemetry)
-* [FIREBASE_SCHEMA.md](FIREBASE_SCHEMA.md): data model, security model, write rates, functions
-* [docs/ANDROID_SETUP.md](docs/ANDROID_SETUP.md): Firebase / Maps / Gemini / FCM setup, permissions, build
-* [docs/GOOGLE_CLOUD_SETUP.md](docs/GOOGLE_CLOUD_SETUP.md): billing, APIs, browser / server / Gemini keys, App Check, deploy, and "message in the app → what to do" (the in-app Server & maps test points here)
-* [docs/DEVICE_DEBUG.md](docs/DEVICE_DEBUG.md): real-device test steps (camera view, live video, AI vision, maps, stick link) and what to send when something fails
-* [docs/DOCTOR.md](docs/DOCTOR.md): `npm run doctor`, the one command that checks the PC (including the Maps browser key), builds and installs the app
-* [PRODUCTION_CHECKLIST.md](PRODUCTION_CHECKLIST.md): feature traceability matrix, classification, release gates
-* [docs/FIRMWARE_SETUP.md](docs/FIRMWARE_SETUP.md): the owner's pin map audited, electrical conditions, power
-* [docs/FIRMWARE_SETUP.md](docs/FIRMWARE_SETUP.md): ECU modules, build/flash, hardware test procedure, OTA design
-* [PAIRING_FLOW.md](PAIRING_FLOW.md) · [AI_ARCHITECTURE.md](AI_ARCHITECTURE.md) · [AUDIO_ARCHITECTURE.md](AUDIO_ARCHITECTURE.md) · [CAMERA_PRIVACY.md](CAMERA_PRIVACY.md) · [SECURITY.md](SECURITY.md)
+Clear those shell overrides, then build the roles **sequentially** because they share output folders:
 
-## Brand and design
-* Product name: `src/core/brand/brand.ts`. Logo: **one file**, `src/core/brand/logo.svg` (also the favicon).
-* Colours: semantic tokens in `src/styles.css` (brand/teal, success/ok, warning/amber, emergency/sos,
-  info, muted). Components never use raw palette colours.
+```powershell
+Remove-Item Env:VITE_APP_MODE, Env:VITE_APP_ROLE -ErrorAction SilentlyContinue
+npm run apk:user
+npm run apk:guardian
+```
+
+Outputs: `deliverables/AI-SmartStick-user-debug.apk` and `deliverables/AI-SmartStick-guardian-debug.apk`. APK building does not deploy the backend. The guide covers Firebase, Maps/Gemini, App Check, firmware flashing, pairing and first-use checks.
+
+## Source and verification
+
+| Folder | Purpose |
+|---|---|
+| `src/features/user`, `src/features/guardian` | The two app experiences |
+| `src/core/perception` | Device-independent sensor/walking core |
+| `src/core/vision`, `src/core/ai`, `src/core/navigation` | Detection, assistance and routes |
+| `android` | Native networking, service and walking tracking |
+| `firmware/ai_smart_stick_v1` | ESP32-CAM protocol-v1 firmware |
+| `functions`, `shared` | Backend and shared contracts/tools |
+| `hardware` | NX/STL CAD, renders and diagnostic sketch |
+| `tests`, `docs` | Automated checks and rebuild documentation |
+
+```powershell
+npm test
+npm run typecheck
+npm run functions:build
+npm run algorithm:build
+npm run algorithm:smoke
+npm run test:walking-native
+```
+
+Recorded validation: **955 app tests across 80 files**, plus **20,000 seeded fault events / 155,268 assertions**. The owner confirmed scene analysis on the installed phone after the server/login fixes. These results do not measure field accuracy or battery life. See [verification](docs/VERIFICATION.md), [algorithm](docs/ALGORITHM.md) and [scene/sign-in fix](docs/SCENE_AND_LOGIN_FIX.md).
+
+References: [cloud setup](docs/GOOGLE_CLOUD_SETUP.md), [two-app architecture](docs/DUAL_APP_SETUP.md), [algorithm](docs/ALGORITHM.md), [firmware audit](firmware/FIRMWARE_AUDIT.md).
+
+Generated builds, personal configuration and private device logs are excluded from Git. Superseded files were moved to a recoverable local backup; see [cleanup notes](docs/CLEANUP.md). Third-party dependencies retain their own licenses. No project-wide redistribution license has been selected.
+
