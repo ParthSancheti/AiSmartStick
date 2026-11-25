@@ -47,7 +47,29 @@ async function googleReason(r: Response, k: string): Promise<string> {
 
 async function gpost<T>(url: string, body: unknown, fieldMask: string): Promise<T> {
   const k = key();
-  const r = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': k, 'x-goog-fieldmask': fieldMask }, body: JSON.stringify(body) });
+  const attempt = () => fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-goog-api-key': k, 'x-goog-fieldmask': fieldMask },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(10_000),
+  });
+  let r: Response;
+  try {
+    r = await attempt();
+    if (!r.ok && (r.status === 500 || r.status === 502 || r.status === 503 || r.status === 504)) {
+      await new Promise((res) => setTimeout(res, 350));
+      r = await attempt();
+    }
+  } catch (e) {
+    // One fast retry on transient network/socket drop.
+    await new Promise((res) => setTimeout(res, 350));
+    try {
+      r = await attempt();
+    } catch {
+      const name = (e as Error)?.name;
+      throw new HttpsError(name === 'TimeoutError' || name === 'AbortError' ? 'deadline-exceeded' : 'unavailable', 'Maps service request timed out.');
+    }
+  }
   if (!r.ok) {
     // Say WHY Google refused (API not enabled, key restriction…): the app shows it and the Server test reads it.
     const why = await googleReason(r, k);

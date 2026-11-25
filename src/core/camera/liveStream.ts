@@ -614,7 +614,7 @@ async function snapshotTick(gen: number) {
   else if (!snapshotInFlight) {
     snapshotInFlight = true;
     try {
-      const f = await withTimeout(t.captureFrame({ timeoutMs: 4000 }), 6500, 'camera photo');
+      const f = await withTimeout(t.captureFrame({ timeoutMs: 5500 }), 7000, 'camera photo');
       if (gen === snapGen && active) {
         let size = f.width && f.height ? { width: f.width, height: f.height } : null;
         if (!size) {
@@ -628,8 +628,13 @@ async function snapshotTick(gen: number) {
       }
     } catch (e) {
       const msg = (e as Error).message;
-      // 409 = the camera is busy for a moment: just try again next tick.
-      if (gen === snapGen && active && !/busy|\b409\b/i.test(msg)) set({ error: /offline/i.test(msg) ? STREAM_ERRORS.notConnected : streamErrorWords(msg) });
+      // 409 = the camera is busy for a moment: just try again next tick without flashing an error.
+      if (gen === snapGen && active && !/busy|\b409\b/i.test(msg)) {
+        const offline = /offline/i.test(msg);
+        if (offline || !lastArrival || Date.now() - lastArrival > STALL_MS) {
+          set({ error: offline ? STREAM_ERRORS.notConnected : streamErrorWords(msg) });
+        }
+      }
     } finally {
       snapshotInFlight = false;
     }

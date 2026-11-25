@@ -22,7 +22,7 @@ import { log } from '../log';
  * Gemini Live voice session (the stick's AI button in real mode).
  *
  *   button → getLiveToken (Firebase callable: signed-in user + App Check, one-use ephemeral token,
- *   model locked server-side) → ai.live.connect(v1alpha) → mic 16 kHz PCM → model voice 24 kHz PCM →
+ *   model locked server-side) → ai.live.connect(v1beta) → mic 16 kHz PCM → model voice 24 kHz PCM →
  *   audioManager (the one audio owner) → speaker / earbuds.
  *
  * Tools run through the same validated executor as the text assistant. Side-effect tools marked
@@ -34,7 +34,8 @@ export const CONNECT_TIMEOUT_MS = 20_000;
 const TOKEN_TIMEOUT_MS = 15_000;
 const TIMEOUT_MSG = 'The assistant took too long to connect.';
 /** Close the mic after this long with neither user speech nor model output. */
-const IDLE_CLOSE_MS = 45_000;
+const IDLE_CLOSE_MS = 60_000;
+const MAX_RESUME_ATTEMPTS = 2;
 
 /** UI hint: true while the Live assistant is connecting (show "Connecting…", not "Thinking…"). */
 export const useLiveStatus = create<{ connecting: boolean }>(() => ({ connecting: false }));
@@ -66,13 +67,24 @@ function closeQuietly(s: Session) {
   }
 }
 
-const tools = [{ functionDeclarations: TOOLS.map((t) => ({ name: t.name, description: t.description, parameters: toGeminiParameters(t.params) as never })) }];
+// Explicit BLOCKING behavior ensures Gemini 3.8 Live waits cleanly for tool execution
+// instead of continuing with ungrounded speech before a camera or navigation result returns.
+const tools = [{
+  functionDeclarations: TOOLS.map((t) => ({
+    name: t.name,
+    description: t.description,
+    behavior: 'BLOCKING' as never,
+    parameters: toGeminiParameters(t.params) as never,
+  })),
+}];
 
 function systemPrompt() {
   const s = useSession.getState();
   const d = useDevice.getState();
   const nav = useNavView.getState();
-  return `You are the AI SmartStick voice assistant for a blind or low-vision person, speaking through their phone while they walk. Be brief, warm and concrete: one or two short sentences. Reply in the language the user speaks (English or Hindi).
+  const name = s.person.name || '';
+  return `You are Saathi, the warm, steady, perceptive voice companion in AI SmartStick, speaking with ${name || 'the user'} while they walk or explore in India. Speak like a caring, attentive friend beside them — natural, reassuring, clear, never stiff or robotic.
+Keep quick acknowledgements and walking alerts concise (1-2 sentences). Give rich, practical spatial descriptions (2-3 crisp sentences) when asked about surroundings, signs, or objects. Reply naturally in the language they use (English, Hindi, or Hinglish).
 
 NAVIGATION
 - For "how much time left", "how far", "where should I walk", or "repeat the direction", call get_route_status every time. Read its spoken summary, including any paused-GPS or obstacle warning. Never estimate from conversation memory.
@@ -83,20 +95,19 @@ NAVIGATION
 - When the user names one specific place or address to go to ("set destination to City Hospital", "take me to MG Road"), call set_destination with query set to that name. It sets the destination and starts directions.
 - GPS is NOT needed to search or to set a destination. If a result says directions "waiting_for_gps", say the destination is set and directions will start automatically as soon as GPS finds their position. Never tell the user that location or maps are unavailable when they ask to go somewhere.
 
-  VISION (CRITICAL)
-  - When asked to open or start the camera preview, call open_camera.
-  - YOU HAVE A CAMERA on the stick. When the user asks what is in front of them, you MUST call the describe_scene tool. Do not apologize or say you cannot see.
-  - Before calling the tool, say "Analyzing the scene, please wait."
-  - The tool returns a camera-based description in result.spoken. Read it aloud, preserving uncertainty and any earlier-photo warning. If capture fails, explain the actual tool error. Never invent visual details.
+VISION (CRITICAL)
+- When asked to open or start the camera preview, call open_camera.
+- YOU HAVE A CAMERA on the stick. When asked what is in front of them, what they are holding, or to read a sign or text, immediately call describe_scene, identify_object, read_text, read_sign, or describe_environment. Do not apologize or claim you cannot see.
+- Share result.spoken naturally and clearly, preserving uncertainty and any earlier-photo timing when present. If capture fails, explain briefly and offer to retry. Never invent visual details.
 
-  SAFETY
+SAFETY
 - Never say it is safe to cross a road, walk ahead, or that a path is clear. Describe what was observed and how certain it is; remind the user to use their cane and hearing.
 - trigger_sos only when the user clearly asks for help or says it is an emergency. cancel_sos only when they say they are okay.
 - Tools marked as needing confirmation return needsConfirmation: ask the user, and call again only after they say yes.
 - A text message counts as sent only if the tool result says "sent".
 - If a tool fails, say briefly what failed and what still works (the stick keeps vibrating for obstacles offline).
 
-CONTEXT: user ${s.person.name || 'unknown'}; stick ${isLinked(d.link) ? 'connected' : 'not connected'}; GPS ${useLocation.getState().fix ? 'available' : 'not available yet (destinations can still be set)'}; navigating ${nav.active ? `to ${nav.destination?.name}` : 'no'}; local time ${new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}.`;
+CONTEXT: user ${name || 'unknown'}; stick ${isLinked(d.link) ? 'connected' : 'not connected'}; GPS ${useLocation.getState().fix ? 'available' : 'not available yet (destinations can still be set)'}; navigating ${nav.active ? `to ${nav.destination?.name}` : 'no'}; local time ${new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}.`;
 }
 
 type StopReason = 'user' | 'idle' | 'error' | 'remote';
@@ -128,6 +139,11 @@ export class LiveSession {
   private cancelledTools = new Set<string>();
   private runningTools = new Map<string, string>();
   private toolResults = new Map<string, { signature: string; result: ToolResponse }>();
+  private resumptionHandle: string | null = null;
+  private resumable = false;
+  private resumeAttempts = 0;
+  private goAwayTimer: ReturnType<typeof setTimeout> | undefined;
+  private lastConfig: { token: string; liveModel: string; tokenFetchedAt: number } | null = null;
 
   get isActive() {
     return this.active;
@@ -140,7 +156,7 @@ export class LiveSession {
       this.session.sendRealtimeInput({ video: { data: b64, mimeType: 'image/jpeg' } });
       return true;
     } catch {
-      this.stop('error', 'The assistant connection was lost. Press the button to talk again.', 'Connection lost');
+      log.warn('live: sendImage failed on active socket');
       return false;
     }
   }
@@ -150,44 +166,43 @@ export class LiveSession {
     return this.active && this.connecting;
   }
 
-  async start(): Promise<boolean> {
-    if (this.active) return true;
-    this.active = true;
-    this.connecting = true;
-    const gen = ++this.generation;
+  private async openSocket(cfg: { token: string; liveModel: string }, gen: number, isResume: boolean): Promise<{ session: Session; mic: MicStream } | null> {
     const stale = () => gen !== this.generation;
-    useAssistant.setState({ phase: 'thinking', unavailable: null, heard: '', reply: '' });
-    useLiveStatus.setState({ connecting: true });
-    // Started inside the tap / button handler, so the audio context is unlocked right here.
-    this.stopTone();
-    this.stopTone = startConnectingTune();
     let deadline: ReturnType<typeof setTimeout> | undefined;
-    try {
-      // One budget for token + socket + open: the tune never rings longer than this.
-      const timeout = new Promise<never>((_, rej) => {
-        deadline = setTimeout(() => rej(new Error(TIMEOUT_MSG)), CONNECT_TIMEOUT_MS);
-      });
-      const cfg = await Promise.race([call<Record<string, never>, { token: string; liveModel: string }>('getLiveToken', {}, TOKEN_TIMEOUT_MS), timeout]);
-      if (stale()) return false;
-      if (!cfg?.token || !cfg.liveModel) throw new Error('The server returned no Live token.');
-      const ai = new GoogleGenAI({ apiKey: cfg.token, httpOptions: { apiVersion: 'v1alpha' } });
+    const timeout = new Promise<never>((_, rej) => {
+      deadline = setTimeout(() => rej(new Error(TIMEOUT_MSG)), CONNECT_TIMEOUT_MS);
+    });
+    const ai = new GoogleGenAI({ apiKey: cfg.token, httpOptions: { apiVersion: 'v1beta' } });
 
-      let opened: () => void = () => {};
-      let failed: (e: Error) => void = () => {};
-      const openPromise = new Promise<void>((res, rej) => {
-        opened = res;
-        failed = rej;
-      });
-      // A socket error can arrive before anyone awaits openPromise: never an unhandled rejection.
-      openPromise.catch(() => undefined);
+    let opened: () => void = () => {};
+    let failed: (e: Error) => void = () => {};
+    const openPromise = new Promise<void>((res, rej) => {
+      opened = res;
+      failed = rej;
+    });
+    // A socket error can arrive before anyone awaits openPromise: never an unhandled rejection.
+    openPromise.catch(() => undefined);
+    try {
       const connect = ai.live.connect({
         model: cfg.liveModel,
         config: {
           responseModalities: [Modality.AUDIO],
+          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } },
           systemInstruction: { parts: [{ text: systemPrompt() }] },
           tools,
           inputAudioTranscription: {},
           outputAudioTranscription: {},
+          contextWindowCompression: { slidingWindow: {} },
+          sessionResumption: this.resumptionHandle ? { handle: this.resumptionHandle } : {},
+          realtimeInputConfig: {
+            automaticActivityDetection: {
+              disabled: false,
+              startOfSpeechSensitivity: 'START_SENSITIVITY_LOW' as never,
+              endOfSpeechSensitivity: 'END_SENSITIVITY_LOW' as never,
+              prefixPaddingMs: 60,
+              silenceDurationMs: 450,
+            },
+          },
         },
         callbacks: {
           onopen: () => opened(),
@@ -197,13 +212,23 @@ export class LiveSession {
           onerror: (e: ErrorEvent) => {
             log.error('live: socket error', { error: e?.message });
             failed(new Error(e?.message || 'Live connection error'));
-            if (!stale() && this.session && !this.connecting) this.stop('error', 'The assistant connection was lost. Press the button to talk again.', 'Connection lost');
+            if (!stale() && this.session && !this.connecting) {
+              if (this.resumable && this.resumptionHandle && this.resumeAttempts < MAX_RESUME_ATTEMPTS) {
+                void this.resumeSession();
+              } else {
+                this.stop('error', 'The assistant connection was lost. Press the button to talk again.', 'Connection lost');
+              }
+            }
           },
           onclose: (e: CloseEvent) => {
             failed(new Error(e?.reason || `Live connection closed (${e?.code ?? 'no code'})`));
             if (stale() || !this.active || this.connecting) return;
             // The server closes with a reason when the model, token or config is rejected.
             log.warn('live: closed by server', { code: e?.code, reason: e?.reason });
+            if (e?.code !== 1000 && this.resumable && this.resumptionHandle && this.resumeAttempts < MAX_RESUME_ATTEMPTS) {
+              void this.resumeSession();
+              return;
+            }
             this.stop('remote', e?.code && e.code !== 1000 ? `The assistant disconnected${e.reason ? `: ${e.reason}` : ''}.` : undefined, 'Assistant disconnected');
           },
         },
@@ -218,34 +243,14 @@ export class LiveSession {
       const session = await Promise.race([connect, timeout]);
       if (stale()) {
         closeQuietly(session);
-        return false;
+        return null;
       }
       this.session = session;
       await Promise.race([openPromise, timeout]);
-      clearTimeout(deadline);
-      if (stale()) return false;
-      // Connected: the tune stops now, then the "listening" earcon (never on top of each other).
-      this.connecting = false;
-      this.stopTone();
-      this.stopTone = () => {};
-      useLiveStatus.setState({ connecting: false });
-
-      // Automatically greet the user when connected.
-      try {
-        if (this.session) {
-          if (typeof this.session.sendClientContent === 'function') {
-            this.session.sendClientContent({ turns: 'Say a very short hello to let me know you are listening.', turnComplete: true });
-          } else {
-            (this.session as any).send({ clientContent: { turns: [{ role: 'user', parts: [{ text: 'Say a very short hello to let me know you are listening.' }] }], turnComplete: true } });
-          }
-        }
-      } catch (e) {
-        log.warn('could not send initial greeting', { error: e });
+      if (stale()) {
+        closeQuietly(session);
+        return null;
       }
-
-      audioManager.setLiveSessionOpen(true);
-      earcon('listen');
-      haptics.play('listen');
       const mic = new MicStream();
       this.mic = mic;
       let localSpeechPaused = false;
@@ -262,16 +267,117 @@ export class LiveSession {
           localSpeechPaused = false;
           this.session.sendRealtimeInput({ audio: { data, mimeType: 'audio/pcm;rate=16000' } });
         } catch {
-          this.stop('error', 'The assistant connection was lost. Press the button to talk again.', 'Connection lost');
+          if (this.resumable && this.resumptionHandle && this.resumeAttempts < MAX_RESUME_ATTEMPTS) {
+            void this.resumeSession();
+          } else {
+            this.stop('error', 'The assistant connection was lost. Press the button to talk again.', 'Connection lost');
+          }
         }
       };
       await mic.start();
       if (stale()) {
         // Stopped while the permission prompt / getUserMedia was pending: never leave the mic open.
         mic.stop();
-        return false;
+        return null;
       }
-      log.info('live: session open', { model: cfg.liveModel, micRate: mic.sampleRate });
+      if (isResume) {
+        log.info('live: session resumed', { model: cfg.liveModel, attempt: this.resumeAttempts });
+      }
+      return { session, mic };
+    } finally {
+      clearTimeout(deadline);
+    }
+  }
+
+  private async resumeSession(): Promise<void> {
+    if (!this.active || !this.resumptionHandle || this.connecting || this.resumeAttempts >= MAX_RESUME_ATTEMPTS) return;
+    this.resumeAttempts++;
+    this.connecting = true;
+    clearTimeout(this.goAwayTimer);
+    this.goAwayTimer = undefined;
+    const oldSession = this.session;
+    const oldMic = this.mic;
+    this.session = null;
+    this.mic = null;
+    oldMic?.stop();
+    if (oldSession) closeQuietly(oldSession);
+    const gen = ++this.generation;
+    const stale = () => gen !== this.generation || !this.active;
+    try {
+      let cfg = this.lastConfig;
+      if (!cfg || Date.now() - cfg.tokenFetchedAt > 20 * 60_000) {
+        const fresh = await call<Record<string, never>, { token: string; liveModel: string }>('getLiveToken', {}, TOKEN_TIMEOUT_MS);
+        if (stale()) return;
+        if (!fresh?.token || !fresh.liveModel) throw new Error('The server returned no Live token.');
+        cfg = { ...fresh, tokenFetchedAt: Date.now() };
+        this.lastConfig = cfg;
+      }
+      const opened = await this.openSocket(cfg, gen, true);
+      if (!opened || stale()) return;
+      this.connecting = false;
+      this.resumeAttempts = 0;
+      useAssistant.setState({ phase: 'listening' });
+      this.bumpIdle();
+    } catch (e) {
+      if (stale()) return;
+      log.warn('live: resume failed', { error: (e as Error)?.message });
+      this.resumable = false;
+      this.resumptionHandle = null;
+      this.stop('error', 'The assistant connection was lost. Press the button to talk again.', 'Connection lost');
+    }
+  }
+
+  async start(): Promise<boolean> {
+    if (this.active) return true;
+    this.active = true;
+    this.connecting = true;
+    this.resumptionHandle = null;
+    this.resumable = false;
+    this.resumeAttempts = 0;
+    const gen = ++this.generation;
+    const stale = () => gen !== this.generation;
+    useAssistant.setState({ phase: 'thinking', unavailable: null, heard: '', reply: '' });
+    useLiveStatus.setState({ connecting: true });
+    // Started inside the tap / button handler, so the audio context is unlocked right here.
+    this.stopTone();
+    this.stopTone = startConnectingTune();
+    let deadline: ReturnType<typeof setTimeout> | undefined;
+    try {
+      // One budget for token + socket + open: the tune never rings longer than this.
+      const timeout = new Promise<never>((_, rej) => {
+        deadline = setTimeout(() => rej(new Error(TIMEOUT_MSG)), CONNECT_TIMEOUT_MS);
+      });
+      const cfg = await Promise.race([call<Record<string, never>, { token: string; liveModel: string }>('getLiveToken', {}, TOKEN_TIMEOUT_MS), timeout]);
+      if (stale()) return false;
+      if (!cfg?.token || !cfg.liveModel) throw new Error('The server returned no Live token.');
+      this.lastConfig = { ...cfg, tokenFetchedAt: Date.now() };
+      const opened = await this.openSocket(cfg, gen, false);
+      if (!opened || stale()) return false;
+      clearTimeout(deadline);
+      if (stale()) return false;
+      // Connected: the tune stops now, then the "listening" earcon (never on top of each other).
+      this.connecting = false;
+      this.stopTone();
+      this.stopTone = () => {};
+      useLiveStatus.setState({ connecting: false });
+
+      // Automatically greet the user when connected.
+      try {
+        if (this.session) {
+          if (typeof this.session.sendClientContent === 'function') {
+            this.session.sendClientContent({ turns: 'Say a very short, warm hello in one brief phrase to let me know you are listening.', turnComplete: true });
+          } else {
+            (this.session as any).send({ clientContent: { turns: [{ role: 'user', parts: [{ text: 'Say a very short, warm hello in one brief phrase to let me know you are listening.' }] }], turnComplete: true } });
+          }
+        }
+      } catch (e) {
+        log.warn('could not send initial greeting', { error: e });
+      }
+
+      audioManager.setLiveSessionOpen(true);
+      earcon('listen');
+      haptics.play('listen');
+      log.info('live: session open', { model: cfg.liveModel, micRate: opened.mic.sampleRate });
       useAssistant.setState({ phase: 'listening' });
       this.bumpIdle();
       return true;
@@ -306,10 +412,31 @@ export class LiveSession {
   }
 
   private async onMessage(msg: LiveServerMessage) {
+    if (msg.sessionResumptionUpdate) {
+      const upd = msg.sessionResumptionUpdate;
+      if (upd.resumable && upd.newHandle) {
+        this.resumptionHandle = upd.newHandle;
+        this.resumable = true;
+      }
+    }
+    if (msg.goAway) {
+      log.info('live: server goAway received', { timeLeft: msg.goAway.timeLeft });
+      if (this.resumable && this.resumptionHandle && !this.goAwayTimer) {
+        this.goAwayTimer = setTimeout(() => {
+          this.goAwayTimer = undefined;
+          if (this.active && !this.pendingTools && !audioManager.livePcmPlaying()) void this.resumeSession();
+        }, 1500);
+      }
+    }
+
     const sc = msg.serverContent;
     if (sc?.interrupted) {
       audioManager.interruptPcm();
       audioManager.finishPcmTurn();
+      if (this.outText.trim()) {
+        pushThread('assistant', this.outText.trim());
+        this.outText = '';
+      }
     }
 
     // What the user said (transcribed by the Live API).
@@ -472,6 +599,12 @@ export class LiveSession {
     if (useLiveStatus.getState().connecting) useLiveStatus.setState({ connecting: false });
     clearTimeout(this.idleTimer);
     clearTimeout(this.wordsTimer);
+    clearTimeout(this.goAwayTimer);
+    this.goAwayTimer = undefined;
+    this.resumptionHandle = null;
+    this.resumable = false;
+    this.resumeAttempts = 0;
+    this.lastConfig = null;
     this.lastUserText = '';
     this.userUtterance = 0;
     this.stopTone();

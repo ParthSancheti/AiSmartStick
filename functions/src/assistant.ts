@@ -13,20 +13,21 @@ import type { Action, AssistantTurnRequest, AssistantTurnResponse, ToolResult, V
  * model Content of an in-progress turn is kept server-side (conversation.pendingJson).
  */
 const SYSTEM = (lang: string, ctx: AssistantTurnRequest['context'], userName: string) => `
-You are the voice assistant inside "AI Smart Stick", a smart white cane for a blind or low-vision person in India.
+You are "Saathi", the warm, perceptive, steady voice companion inside "AI Smart Stick", a smart white cane for a blind or low-vision person in India.
 The product is called AI Smart Stick. Never call yourself by any other product name.
 
-HOW TO ANSWER
-- Replies are spoken aloud. Keep them to one or two short sentences unless asked for more. No lists, no markdown, no emojis.
-- Language: ${lang === 'auto' ? 'reply in the language the user used (English, Hindi, or Hinglish written in Latin script).' : lang === 'hi' ? 'reply in simple Hindi.' : 'reply in simple Indian English.'}
+PERSONALITY & HOW TO ANSWER
+- Sound like an attentive, reassuring human companion walking alongside ${userName || 'the user'} — warm, confident, practical, never stiff or robotic.
+- Replies are spoken aloud. Keep everyday confirmations and walking alerts concise (1-2 clear sentences), and give rich, helpful spatial detail (2-4 natural sentences) when asked about surroundings, objects, signs, or plans. No lists, no markdown, no emojis.
+- Language: ${lang === 'auto' ? 'reply naturally in the language the user used (English, Hindi, or Hinglish written in Latin script).' : lang === 'hi' ? 'reply in warm, simple everyday Hindi.' : 'reply in warm, clear Indian English.'}
 - Use tools for anything about the stick, location, places, routes, camera, safety, calls, texts or settings. Never guess their results.
 
-  VISION (CRITICAL)
-  - When asked to open or start the camera preview, call open_camera.
-  - YOU HAVE A CAMERA. When asked what is in front of you, what the user is holding, or to read text/signs, you MUST call the appropriate vision tool (describe_scene, identify_object, read_text, read_sign).
-  - Call the tool before claiming camera access is unavailable. The tool returns a camera-based description in result.spoken; preserve its uncertainty and earlier-photo timing. If it fails, explain the actual error. Never invent visual details.
+VISION (CRITICAL)
+- When asked to open or start the camera preview, call open_camera.
+- YOU HAVE A CAMERA. When asked what is in front of you, what the user is holding, or to read text/signs, you MUST call the appropriate vision tool (describe_scene, identify_object, read_text, read_sign, describe_environment).
+- Call the tool before claiming camera access is unavailable. Use result.spoken naturally; preserve uncertainty or earlier-photo caveats when present. If it fails, explain briefly and offer to try again. Never invent visual details.
 
-  SAFETY RULES (strict)
+SAFETY RULES (strict)
 - Never say it is safe to cross a road, walk ahead, or that a path is clear. Describe what was observed and how certain it is; remind the user to use their cane and hearing.
 - If a vision result is uncertain or the image is poor, say so plainly.
 - Camera left/right is image position only. Never infer metres, steps, side clearance or a navigable bypass from a monocular photo. A front ultrasonic reading does not identify a camera object.
@@ -55,23 +56,83 @@ CURRENT CONTEXT (from the phone, may change)
 
 const functionDeclarations = TOOLS.map((t) => ({ name: t.name, description: t.description, parameters: toGeminiParameters(t.params) }));
 
-function client(version?: 'v1beta' | 'v1alpha') {
-  const key = GEMINI_API_KEY.value();
-  if (!key) throw new HttpsError('failed-precondition', 'Gemini is not configured on the server.');
+const KEY_COOLDOWN_MS = 60_000;
+const keyCooldownUntil = new Map<string, number>();
+let keyCursor = 0;
+
+/** Parses one or multiple Gemini API keys (comma, semicolon, or whitespace separated). */
+export function parseGeminiApiKeys(primary: string | undefined, extra?: string): string[] {
+  const combined = [primary, extra].filter((v): v is string => typeof v === 'string' && v.trim().length > 0).join('\n');
+  const seen = new Set<string>();
+  for (const token of combined.split(/[\s,;]+/)) {
+    const trimmed = token.trim();
+    if (trimmed && !seen.has(trimmed)) seen.add(trimmed);
+  }
+  return [...seen];
+}
+
+function availableGeminiKeys(): string[] {
+  const all = parseGeminiApiKeys(
+    GEMINI_API_KEY.value(),
+    [process.env.GEMINI_API_KEYS, process.env.GEMINI_BACKUP_API_KEY].filter(Boolean).join('\n'),
+  );
+  if (!all.length) throw new HttpsError('failed-precondition', 'Gemini is not configured on the server.');
+  if (all.length === 1) return all;
+  const now = Date.now();
+  const ordered: string[] = [];
+  for (let i = 0; i < all.length; i++) {
+    ordered.push(all[(keyCursor + i) % all.length]);
+  }
+  keyCursor = (keyCursor + 1) % all.length;
+  const healthy = ordered.filter((k) => (keyCooldownUntil.get(k) ?? 0) <= now);
+  return healthy.length ? healthy : ordered;
+}
+
+function clientForKey(key: string, version?: 'v1beta' | 'v1alpha') {
   return new GoogleGenAI({ apiKey: key, httpOptions: version ? { apiVersion: version } : undefined });
 }
 
+function client(version?: 'v1beta' | 'v1alpha') {
+  return clientForKey(availableGeminiKeys()[0], version);
+}
+
+function thinkingForModel(model: string): { thinkingLevel: ThinkingLevel } | undefined {
+  if (/flash-lite/i.test(model)) return { thinkingLevel: ThinkingLevel.MINIMAL };
+  if (/gemini-(3|4)/i.test(model)) return { thinkingLevel: ThinkingLevel.LOW };
+  return undefined;
+}
+
+function isRetryableKeyError(err: unknown): boolean {
+  const status = typeof (err as { status?: unknown })?.status === 'number' ? (err as { status: number }).status : undefined;
+  if (status === 429 || status === 503) return true;
+  const msg = String((err as Error)?.message ?? err);
+  return /\b(429|503)\b|UNAVAILABLE|RESOURCE_EXHAUSTED|quota|rate.?limit/i.test(msg);
+}
+
 async function generate(ai: GoogleGenAI, req: Parameters<GoogleGenAI['models']['generateContent']>[0]) {
-  try {
-    return await ai.models.generateContent(req);
-  } catch (e) {
-    const msg = String((e as Error).message ?? e);
-    if (/429|503|UNAVAILABLE|RESOURCE_EXHAUSTED/i.test(msg)) {
-      await new Promise((r) => setTimeout(r, 1200));
-      return ai.models.generateContent(req);
-    }
-    throw e;
+  const keys = availableGeminiKeys();
+  const attempts: { ai: GoogleGenAI; key: string }[] = [{ ai, key: keys[0] }];
+  for (let i = 1; i < keys.length; i++) {
+    attempts.push({ ai: clientForKey(keys[i]), key: keys[i] });
   }
+  let lastError: unknown;
+  for (let i = 0; i < attempts.length; i++) {
+    const attempt = attempts[i];
+    try {
+      return await attempt.ai.models.generateContent(req);
+    } catch (e) {
+      lastError = e;
+      if (!isRetryableKeyError(e)) throw e;
+      if (keys.length > 1) keyCooldownUntil.set(attempt.key, Date.now() + KEY_COOLDOWN_MS);
+      if (i + 1 < attempts.length) continue;
+      // Single-key transient 429/503 recovery: brief jittered retry once.
+      if (keys.length === 1) {
+        await new Promise((r) => setTimeout(r, 800));
+        return attempt.ai.models.generateContent(req);
+      }
+    }
+  }
+  throw lastError;
 }
 
 function validateRequest(d: unknown): AssistantTurnRequest {
@@ -134,15 +195,18 @@ export const assistantTurn = onCall({ ...CALLABLE, secrets: [GEMINI_API_KEY], ti
     if (pending.rounds > 4) throw new HttpsError('resource-exhausted', 'Too many tool steps for one request.');
   }
 
+  const flashModel = GEMINI_FLASH_MODEL.value();
+  const thinking = thinkingForModel(flashModel);
   const ai = client();
   const res = await generate(ai, {
-    model: GEMINI_FLASH_MODEL.value(),
+    model: flashModel,
     contents: [...history.slice(-14), ...pending.contents],
     config: {
       systemInstruction: SYSTEM(r.lang, r.context, userName),
       tools: [{ functionDeclarations: functionDeclarations as never }],
       temperature: 0.4,
       maxOutputTokens: 600,
+      ...(thinking ? { thinkingConfig: thinking } : {}),
     },
   });
 
@@ -188,7 +252,7 @@ export const assistantTurn = onCall({ ...CALLABLE, secrets: [GEMINI_API_KEY], ti
 const VISION_SCHEMA = {
   type: 'object',
   properties: {
-    spoken: { type: 'string', description: 'One or two short spoken sentences.' },
+    spoken: { type: 'string', description: 'Two to three clear, descriptive, natural spoken sentences covering key hazards, spatial layout, and helpful details without markdown.' },
     hazards: {
       type: 'array',
       items: {
@@ -212,11 +276,11 @@ const VISION_SCHEMA = {
 };
 
 export const VISION_TASK_INSTRUCTIONS: Record<VisionRequest['task'], string> = {
-  describe_scene: 'Describe visible obstacles, people, vehicles, stairs, curbs, doorways, poles and animals in this photo. Say left/center/right relative to the image. Use near/medium/far only as uncertain qualitative descriptions; these categories do not measure metres or steps. Set distance to unknown when unsure.',
-  read_text: 'Read the printed text in the image exactly, most prominent first. Put it in "text". Spoken: the text itself, shortened if long.',
-  identify_object: 'Identify the main object held or shown. For Indian banknotes, give the denomination. Put it in "object".',
-  read_sign: 'Read the sign or signboard. Put its text in "text".',
-  describe_environment: 'Describe the kind of place (indoor/outdoor, shop, street, station) in one sentence, plus any immediate hazards.',
+  describe_scene: 'Give a rich, calm, practical description for a blind person holding a smart cane. Lead with immediate hazards or steps in the path, then describe key obstacles, people, vehicles, doorways, furniture, curbs, stairs, poles and animals with clear left/center/right placement relative to the image and whether space beside them looks open or tight. Use near/medium/far only as uncertain qualitative descriptions; these categories do not measure metres or steps. Set distance to unknown when unsure.',
+  read_text: 'Read all visible printed or handwritten text accurately, most prominent and relevant first (names, timings, warnings, totals, expiry, dosage, or prices). Put the full text in "text". Spoken: a clear, natural reading of what it says.',
+  identify_object: 'Identify the main object clearly with useful details (type, color, shape, brand/label if readable, and whether it is open/closed or facing up). For Indian banknotes, state the exact denomination cleanly. Put the short name in "object".',
+  read_sign: 'Read the sign, signboard, notice, or shop front clearly, and note any arrow or entrance direction visible beside it. Put its text in "text".',
+  describe_environment: 'Describe the overall place and atmosphere clearly in 2-3 helpful sentences (indoor/outdoor, lighting, type of room/shop/street/station, seating or landmarks nearby, plus any immediate hazards). Set distance relative to the image and unknown when unsure.',
 };
 
 const UNSAFE_CLAIM = /\b(safe to (cross|walk|go)|path is clear|all clear|no obstacles|you can (cross|go|walk) (now|safely))\b/i;
@@ -261,32 +325,51 @@ export const assistantVision = onCall({ ...CALLABLE, secrets: [GEMINI_API_KEY], 
 
   const lang = r.lang === 'hi' ? 'simple Hindi' : 'simple Indian English';
   const sensorNote = visionSensorEvidenceNote(r.sensors);
-  const ai = client();
-  // One bounded attempt: retrying a slow image makes the photo older and can
-  // outlast the phone's callable deadline. Keep reasoning/output budgets explicit.
-  const res = await ai.models.generateContent({
-    model: GEMINI_VISION_MODEL.value(),
+  const visionModel = GEMINI_VISION_MODEL.value();
+  const thinking = thinkingForModel(visionModel);
+  const keys = availableGeminiKeys();
+  const promptText = `You help a blind person using the AI Smart Stick camera (compact wide lens mounted on a cane). ${VISION_TASK_INSTRUCTIONS[r.task]} ${r.hint ? `User hint: ${str(r.hint, 80)}.` : ''}
+${sensorNote}
+Rules: write "spoken" in ${lang}. Describe clearly what is visible in this photo without inventing anything unseen. Mention helpful context (surfaces, doorways, stairs, obstacles, signs, colors, people) and left/center/right image position; camera orientation and body-relative directions are not calibrated here. Never infer numeric metres/steps, side clearance, object speed, collision time or a navigable bypass from a photo. State uncertainty honestly and set "uncertain" true when unsure or the image is poor. NEVER say a path is clear or that it is safe to cross/walk; if nothing is visible, say nothing obvious is visible in this photo and to keep using the cane.`;
+
+  const callVision = async (aiClient: GoogleGenAI) => aiClient.models.generateContent({
+    model: visionModel,
     contents: [
       {
         role: 'user',
         parts: [
           { inlineData: { mimeType: 'image/jpeg', data: r.imageBase64 } },
-          {
-            text: `You help a blind person using the AI Smart Stick camera (low resolution, mounted on a cane). ${VISION_TASK_INSTRUCTIONS[r.task]} ${r.hint ? `User hint: ${str(r.hint, 80)}.` : ''}
-${sensorNote}
-Rules: write "spoken" in ${lang}. Describe this captured photo, not the current scene. Left/right means image position only; camera orientation and body-relative directions are not calibrated here. Never infer numeric metres/steps, side clearance, object speed, collision time or a navigable bypass from a photo. State uncertainty honestly and set "uncertain" true when unsure or the image is poor. NEVER say a path is clear or that it is safe to cross/walk; if nothing is visible, say nothing obvious is visible in this photo and to keep using the cane.`,
-          },
+          { text: promptText },
         ],
       },
     ],
-    config: { responseMimeType: 'application/json', responseJsonSchema: VISION_SCHEMA, temperature: 0.2,
-      maxOutputTokens: 1500, thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
+    config: { responseMimeType: 'application/json', responseJsonSchema: VISION_SCHEMA, temperature: 0.25,
+      maxOutputTokens: 1500, ...(thinking ? { thinkingConfig: thinking } : {}),
       httpOptions: { timeout: 20000, retryOptions: { attempts: 1 } } },
-  }).catch((error: unknown) => {
-    const failure = visionModelFailure(error);
+  });
+
+  // Single key stays one bounded request so slow upstream errors surface promptly;
+  // multi-key setups fail over immediately when one key hits quota/availability limits.
+  let res: Awaited<ReturnType<typeof callVision>> | undefined;
+  let lastError: unknown;
+  for (let i = 0; i < keys.length; i++) {
+    try {
+      res = await callVision(clientForKey(keys[i]));
+      break;
+    } catch (error: unknown) {
+      lastError = error;
+      if (keys.length > 1 && isRetryableKeyError(error)) {
+        keyCooldownUntil.set(keys[i], Date.now() + KEY_COOLDOWN_MS);
+        continue;
+      }
+      break;
+    }
+  }
+  if (!res) {
+    const failure = visionModelFailure(lastError);
     console.warn('vision_stage', { stage: 'model_failed', elapsedMs: Date.now() - startedAt, code: failure.code, reason: (failure.details as { reason: string }).reason });
     throw failure;
-  });
+  }
   console.info('vision_stage', { stage: 'model_ready', elapsedMs: Date.now() - startedAt, finishReason: res.candidates?.[0]?.finishReason });
 
   let out: VisionResult;
@@ -296,7 +379,7 @@ Rules: write "spoken" in ${lang}. Describe this captured photo, not the current 
     throw new HttpsError('internal', 'The vision model returned an unreadable answer.');
   }
   out.hazards = Array.isArray(out.hazards) ? out.hazards.slice(0, 8) : [];
-  out.spoken = str(out.spoken, 500) || 'I could not make out the photo.';
+  out.spoken = str(out.spoken, 750) || 'I could not make out the photo.';
   if (UNSAFE_CLAIM.test(out.spoken)) {
     out.spoken = `${out.spoken.replace(UNSAFE_CLAIM, 'I did not see anything obvious')}. The camera can miss things, so keep using your cane.`;
     out.uncertain = true;
@@ -309,32 +392,45 @@ Rules: write "spoken" in ${lang}. Describe this captured photo, not the current 
 
 export const getLiveToken = onCall({ ...CALLABLE, secrets: [GEMINI_API_KEY] }, async (request) => {
   const uid = requireAuth(request);
-  await quota(uid, 'live', 6, 300);
+  await quota(uid, 'live', 15, 300);
   const liveModel = GEMINI_LIVE_MODEL.value();
-  const ai = client('v1alpha');
+  const keys = availableGeminiKeys();
   const now = Date.now();
   let token = '';
-  try {
-    // One-use ephemeral token: the long-lived API key never leaves the server. The model is locked
-    // here, so a leaked token cannot be used with any other model.
-    const res = await ai.authTokens.create({
-      config: {
-        uses: 1,
-        expireTime: new Date(now + 30 * 60_000).toISOString(),
-        newSessionExpireTime: new Date(now + 2 * 60_000).toISOString(),
-        liveConnectConstraints: { model: liveModel },
+  let lastError: unknown;
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i];
+    const ai = clientForKey(key, 'v1beta');
+    try {
+      // One-use ephemeral token: the long-lived API key never leaves the server. The model is locked
+      // here, so a leaked token cannot be used with any other model.
+      const res = await ai.authTokens.create({
+        config: {
+          uses: 1,
+          expireTime: new Date(now + 30 * 60_000).toISOString(),
+          newSessionExpireTime: new Date(now + 2 * 60_000).toISOString(),
+          liveConnectConstraints: { model: liveModel },
           // Omitting this locks ALL unspecified setup fields to empty defaults: the
           // client tools, system instruction and transcription settings are ignored.
           // Lock the supplied model only; let the app supply its existing tool surface.
           lockAdditionalFields: [],
-        httpOptions: { apiVersion: 'v1alpha' },
-      },
-    });
-    token = res.name ?? '';
-  } catch (e) {
-    console.error('Failed to create ephemeral token:', e);
+          httpOptions: { apiVersion: 'v1beta' },
+        },
+      });
+      token = res.name ?? '';
+      if (token) break;
+    } catch (e) {
+      lastError = e;
+      if (keys.length > 1 && isRetryableKeyError(e)) {
+        keyCooldownUntil.set(key, Date.now() + KEY_COOLDOWN_MS);
+        continue;
+      }
+      break;
+    }
+  }
+  if (!token) {
+    console.error('Failed to create ephemeral token:', lastError);
     throw new HttpsError('internal', 'Could not generate Live session token.');
   }
-  if (!token) throw new HttpsError('internal', 'Could not generate Live session token.');
   return { token, liveModel, flashModel: GEMINI_FLASH_MODEL.value() };
 });

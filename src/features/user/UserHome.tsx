@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { BatteryFull, BatteryLow, BatteryCharging, Settings, Smartphone, Unlink, Moon, Sun, Footprints, MessageSquare, Map, ChevronRight, Activity, ShieldAlert, Heart, Flame, Phone, Zap, LogOut, Wand2, Link2, Headphones, Mic, StopCircle, Send, Plus, Bluetooth, Speaker, X, Camera } from 'lucide-react';
 
 import { useVoiceAssistant } from '../../hooks/useVoiceAssistant';
+import { useLiveStatus } from '../../core/ai/liveSession';
 import { useDevice, batteryHours, isLinked } from '../../core/store/device';
 import { useSession } from '../../core/store/session';
 import { useUI } from '../../core/store/ui';
@@ -903,21 +904,24 @@ function LiveAiSubpage({ open, onClose }: { open: boolean; onClose: () => void }
 
 function LiveAiPage({ onClose }: { onClose: () => void }) {
   const ai = useVoiceAssistant();
+  const liveConnecting = useLiveStatus((s) => s.connecting);
   // Opening the assistant starts it: no extra tap needed.
   const autoStarted = useRef(false);
   useEffect(() => {
     if (autoStarted.current) return;
     autoStarted.current = true;
-    if (ai.phase === 'idle') void ai.start();
+    if (ai.phase === 'idle' || ai.phase === 'error') void ai.start();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const sosPhase = useSafety((x) => x.phase);
   const netState = useDevice((x) => x.internet);
   const navActive = useNavView((x) => x.active);
   const listening = ai.phase === 'listening';
-  const toggle = () => (listening ? ai.cancel() : ai.start());
+  const sessionRunning = listening || ai.phase === 'speaking' || ai.phase === 'thinking' || ai.phase === 'vision';
+  const toggle = () => (sessionRunning ? ai.cancel() : ai.start());
   const status =
-    ai.phase === 'listening' ? ai.heard || 'Listening…'
+    liveConnecting ? 'Connecting…'
+    : ai.phase === 'listening' ? ai.heard || 'Listening…'
     : ai.phase === 'thinking' ? 'Thinking…'
     : ai.phase === 'vision' ? 'Looking through the stick camera…'
     : ai.phase === 'error' ? (ai.unavailable ? `Didn't work: ${ai.unavailable}` : 'That did not work. Try again.')
@@ -949,17 +953,17 @@ function LiveAiPage({ onClose }: { onClose: () => void }) {
           {status}
         </p>
         <div className="flex flex-1 items-center justify-center py-6">
-          <button type="button" className="rounded-full active:scale-[0.97]" aria-label={listening ? 'Stop listening' : 'Start talking'} onClick={toggle}>
+          <button type="button" className="rounded-full active:scale-[0.97]" aria-label={sessionRunning ? 'Stop assistant' : 'Start talking'} onClick={toggle}>
             <AiOrb size={220} phase={orbPhaseFor({ assistant: ai.phase, sosActive: sosPhase === 'active' || sosPhase === 'countdown', internet: netState, navigating: navActive, unavailable: ai.unavailable })} />
           </button>
         </div>
       </div>
 
       <div className="relative z-10 flex shrink-0 flex-col items-center gap-2 px-6 pt-4" style={{ paddingBottom: 'calc(var(--sab) + 24px)' }}>
-        <button type="button" onClick={toggle} className={`grid h-[72px] w-[72px] place-items-center rounded-full shadow-lg ${listening ? 'bg-sos text-white' : 'bg-white text-black'}`} aria-label={listening ? 'Stop' : 'Tap to talk'}>
-          {listening ? <StopCircle size={32} /> : <Mic size={32} />}
+        <button type="button" onClick={toggle} className={`grid h-[72px] w-[72px] place-items-center rounded-full shadow-lg ${sessionRunning ? 'bg-sos text-white' : 'bg-white text-black'}`} aria-label={sessionRunning ? 'Stop' : 'Tap to talk'}>
+          {sessionRunning ? <StopCircle size={32} /> : <Mic size={32} />}
         </button>
-        <span className="text-[14px] font-medium text-white/60">{listening ? 'Stop' : 'Tap to talk'}</span>
+        <span className="text-[14px] font-medium text-white/60">{sessionRunning ? 'Stop' : 'Tap to talk'}</span>
       </div>
     </>
   );

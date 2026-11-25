@@ -1,5 +1,6 @@
 import { onCall } from 'firebase-functions/v2/https';
 import { CALLABLE, GEMINI_API_KEY, GEMINI_LIVE_MODEL, GEMINI_VISION_MODEL, MAPS_SERVER_KEY, quota } from './common';
+import { parseGeminiApiKeys } from './assistant';
 
 /**
  * serverPing: the Server test page in the app asks "is the server there, and is it set up?".
@@ -78,7 +79,11 @@ export async function liveChecks(mapsKey: string, geminiKey: string, visionModel
 
 export const serverPing = onCall({ cors: true, enforceAppCheck: false, secrets: [MAPS_SERVER_KEY, GEMINI_API_KEY] }, async (req) => {
   const mapsKey = MAPS_SERVER_KEY.value() ?? '';
-  const geminiKey = GEMINI_API_KEY.value() ?? '';
+  const geminiKeys = parseGeminiApiKeys(
+    GEMINI_API_KEY.value(),
+    [process.env.GEMINI_API_KEYS, process.env.GEMINI_BACKUP_API_KEY].filter(Boolean).join('\n'),
+  );
+  const geminiKey = geminiKeys[0] ?? '';
   const visionModel = GEMINI_VISION_MODEL.value();
   const out: Record<string, unknown> = {
     ok: true,
@@ -89,6 +94,7 @@ export const serverPing = onCall({ cors: true, enforceAppCheck: false, secrets: 
     appCheckRequired: CALLABLE.enforceAppCheck,
     mapsKeySet: !!mapsKey,
     geminiKeySet: !!geminiKey,
+    geminiKeyCount: geminiKeys.length,
     liveModel: GEMINI_LIVE_MODEL.value(),
     visionModel,
   };

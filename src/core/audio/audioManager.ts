@@ -303,6 +303,7 @@ function drainPcm() {
 function schedulePcm(base64: string, sampleRate: number) {
   const ctx = getAudioCtx();
   if (!ctx) return;
+  if (ctx.state === 'suspended') void ctx.resume().catch(() => undefined);
   let bin: string;
   try { bin = atob(base64); } catch { return; }
   const n = bin.length >> 1;

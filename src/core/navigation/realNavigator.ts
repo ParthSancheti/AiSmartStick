@@ -37,7 +37,7 @@ const ARRIVE_M = 15;
 const PRE_ANNOUNCE_M = 30;
 const NOW_M = 8;
 const GPS_MANEUVER_ACCURACY_M = 15;
-const REROUTE_RETRY_MS = 20_000;
+const REROUTE_RETRY_MS = 12_000;
 const GPS_DIRECTION_ACCURACY_M = 40;
 const GPS_UNAVAILABLE_TEXT = 'Waiting for a fresh GPS position. Walking directions are paused.';
 const GPS_INACCURATE_TEXT = 'GPS accuracy is too low for turn instructions. Waiting for a more accurate position.';
@@ -88,7 +88,7 @@ const START_ACCURACY_M = 100;
  */
 const SETTLE_AFTER_MS = 30_000;
 const SETTLED_ACCURACY_M = 500;
-const PENDING_RETRY_MS = 20_000;
+const PENDING_RETRY_MS = 6_000;
 export const WAITING_FOR_GPS_TEXT = 'Waiting for your GPS position. Directions start automatically.';
 export const NEED_PRECISE_TEXT = 'Precise location is needed for walking directions. Turn on Precise location for this app.';
 
@@ -222,6 +222,7 @@ export function startRealNavigation(place: PlaceResult, opts: { announce?: boole
   if (!fix) return Promise.reject(new Error('location-unavailable'));
   const generation = ++navigationGeneration;
   const promise = computeStart(place, fix, generation, opts);
+  void ensureLocation({ request: false }).catch(() => undefined);
   const request = { generation, place, promise };
   startingRoute = request;
   clearTimeout(arrivalTimer);
@@ -277,13 +278,18 @@ async function computeStart(place: PlaceResult, fix: Fix, generation: number, op
   saveActive(place);
   // Spoken start for every entry point (map tap, voice, resume): where, how far, first instruction.
   const mins = Math.max(1, Math.round(route.durationS / 60));
-  const currentFix = freshFix() ?? fix;
+  const live = freshFix();
+  const currentFix = live ?? fix;
   const first = fixIsFresh(currentFix) && currentFix.accuracyM <= GPS_DIRECTION_ACCURACY_M ? route.steps[0]?.instruction : undefined;
   if (opts.announce !== false) announce(
     { en: `Walking to ${place.name}, ${Math.round(route.distanceM / 10) * 10} metres, about ${mins} minute${mins === 1 ? '' : 's'}.${first ? ` ${first}.` : ''}`, hi: `${place.name} तक पैदल, ${Math.round(route.distanceM / 10) * 10} मीटर, लगभग ${mins} मिनट।${first ? ` ${first}.` : ''}` },
     { nav: true, dedupeKey: 'nav-start', isCurrent: () => directionIsCurrent(started) },
   );
-  onLocation(currentFix);
+  // If the original fix aged out while computing the route over mobile data,
+  // avoid crashing straight into NAVIGATION_ERROR before the active GPS stream ticks.
+  if (live) onLocation(live);
+  else if (fixIsFresh(fix)) onLocation(fix);
+  else void ensureLocation({ request: false }).catch(() => undefined);
   return route;
 }
 
@@ -343,9 +349,10 @@ async function computeReroute(a: Active, fix: Fix) {
     const current = freshFix();
     if (current) onLocation(current);
     else pauseForGps(null);
-    announce({ en: 'New route found.', hi: 'New route found.' }, { high: true, dedupeKey: 'nav-reroute', isCurrent: () => directionIsCurrent(replacement) });
+    announce({ en: 'New route found.', hi: 'नया रास्ता मिल गया।' }, { high: true, dedupeKey: 'nav-reroute', isCurrent: () => directionIsCurrent(replacement) });
   } catch {
     if (active !== a || generation !== navigationGeneration || useNavView.getState().arrived) return;
+    a.lastReroute = Date.now() - (REROUTE_RETRY_MS - 4000);
     useNavView.setState({ rerouting: false, error: 'Could not get a new route. Directions may be out of date.', state: 'NAVIGATION_ERROR' });
     cancelInvalidAnnouncements();
   }
@@ -389,7 +396,7 @@ function onLocation(fix: Fix) {
     const arrivalIsCurrent = () => !startingRoute && active === a && useNavView.getState().arrived && !!freshFix() && routeManeuverAllowed();
     void stickNavCue('arrive', arrivalIsCurrent);
     earcon('arrive');
-    announce({ en: `You have arrived near ${a.place.name}. Please confirm the entrance with the camera or someone nearby.`, hi: `You have arrived near ${a.place.name}.` }, { high: true, isCurrent: arrivalIsCurrent });
+    announce({ en: `You have arrived near ${a.place.name}. Please confirm the entrance with the camera or someone nearby.`, hi: `आप ${a.place.name} के पास पहुँच गए हैं। कृपया कैमरे या पास के किसी व्यक्ति से दरवाज़े की पुष्टि करें।` }, { high: true, isCurrent: arrivalIsCurrent });
     logEvent({ kind: 'navigation', severity: 'success', title: `Arrived near ${a.place.name}`, detail: `Walked about ${Math.round(total)} m` });
     const done = a;
     arrivalTimer = setTimeout(() => active === done && stopRealNavigation('arrived'), 8000);
@@ -481,7 +488,7 @@ function onLocation(fix: Fix) {
     if (toNext <= preAnnounceM && !maneuverNow && a.preAnnounced !== nextIdx) {
       a.preAnnounced = nextIdx;
       const upcomingIsCurrent = () => directionIsCurrent(a) && a.preAnnounced === nextIdx && useNavView.getState().next?.stepIdx === nextIdx && useNavView.getState().state === 'APPROACHING_MANEUVER';
-      announce({ en: `In ${Math.round(toNext / 5) * 5 || 5} meters, ${nextStep.instruction}`, hi: `In ${Math.round(toNext / 5) * 5 || 5} meters, ${nextStep.instruction}` }, { nav: true, dedupeKey: 'nav-next', isCurrent: upcomingIsCurrent });
+      announce({ en: `In ${Math.round(toNext / 5) * 5 || 5} meters, ${nextStep.instruction}`, hi: `${Math.round(toNext / 5) * 5 || 5} मीटर में, ${nextStep.instruction}` }, { nav: true, dedupeKey: 'nav-next', isCurrent: upcomingIsCurrent });
       void stickNavCue('upcoming', () => directionIsCurrent(a) && a.preAnnounced === nextIdx);
     }
     if (maneuverNow && a.nowAnnounced !== nextIdx) {

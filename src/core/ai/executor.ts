@@ -22,7 +22,7 @@ import type { VisionRequest, VisionResult, VisionTask } from '../../../shared/as
 import { loadMessages } from './history';
 import { useAssistant } from '../store/assistant';
 import { resolveLang } from './voiceOut';
-import { fuseScene, measuredSuffix, sensorContext, SPOKEN_SENSOR_FRESH_MS } from '../vision/fusion';
+import { fuseScene, measuredSuffix, SCENE_PHOTO_FRESH_MS, sensorContext, SPOKEN_SENSOR_FRESH_MS } from '../vision/fusion';
 import { offerDestination, startNavigationTo, navigatingTo, pendingOffer } from './navIntent';
 import { liveAudioActive } from '../audio/audioManager';
 import { routeManeuverAllowed } from '../guidance/guidanceState';
@@ -136,7 +136,7 @@ async function runVisionInner(task: VisionTask, hint?: string): Promise<VisionRe
   res.fused = fuseScene(res, sensors, respondedAt, frame.ts);
   const photoAgeMs = respondedAt - frame.ts;
   if ((task === 'describe_scene' || task === 'describe_environment')
-    && (!Number.isFinite(photoAgeMs) || photoAgeMs < 0 || photoAgeMs >= SPOKEN_SENSOR_FRESH_MS)) {
+    && (!Number.isFinite(photoAgeMs) || photoAgeMs < 0 || photoAgeMs >= SCENE_PHOTO_FRESH_MS)) {
     res.spoken = lang === 'hi'
       ? `पहले ली गई तस्वीर में: ${res.spoken} अभी का दृश्य बदल सकता है।`
       : `In the earlier photo: ${res.spoken} The current scene may have changed.`;

@@ -12,6 +12,12 @@ import { useLocation, LOCATION_STALE_MS } from '../location/locationService';
  */
 const CONF = { low: 0.4, medium: 0.7, high: 0.9 } as const;
 export const SPOKEN_SENSOR_FRESH_MS = 1000;
+/**
+ * Captured-photo + cloud-vision latency budget before labelling a scene description
+ * as an "earlier photo". Normal live captures take ~1-5 s; ultrasonic sensor freshness
+ * remains strictly SPOKEN_SENSOR_FRESH_MS (1000 ms).
+ */
+export const SCENE_PHOTO_FRESH_MS = 15_000;
 
 function freshAge(at: number | null, now: number, maxAgeMs: number): boolean {
   return at !== null && Number.isFinite(at) && Number.isFinite(now)

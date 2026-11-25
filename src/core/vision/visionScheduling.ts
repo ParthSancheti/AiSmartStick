@@ -10,8 +10,9 @@ export function visionCaptureRequired(input: {
   navigationActive: boolean;
   walkingSessionActive: boolean;
   awarenessCm: number;
+  cameraPreviewOpen?: boolean;
 }) {
-  if (input.navigationActive || input.walkingSessionActive) return true;
+  if (input.cameraPreviewOpen || input.navigationActive || input.walkingSessionActive) return true;
   const ctx = input.context;
   if (ctx.motion === 'WALKING' || ctx.motion === 'SWINGING' || ctx.motion === 'RAPID_MOTION') return true;
   const freshRange = ctx.ultrasonic.state === 'valid' && ctx.ultrasonic.ageMs >= 0

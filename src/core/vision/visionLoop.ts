@@ -14,6 +14,7 @@ import { getSettings } from '../store/session';
 import { SENSITIVITY } from '../telemetry/obstaclePolicy';
 import { visionCaptureRequired, VISION_SCHEDULING } from './visionScheduling';
 import { useUI } from '../store/ui';
+import { isLiveStreamRunning } from '../camera/liveStream';
 
 /** Upper bound on the stick camera pull rate: ~4 fps leaves room for telemetry on the ESP32's one HTTP task. */
 const MIN_FRAME_INTERVAL_MS = VISION_SCHEDULING.frameIntervalMs;
@@ -174,8 +175,13 @@ export class VisionEngine {
     const context = getCurrentSensorContext(thresholds.warningCm);
     const nav = useNavView.getState();
     const walking = useWalking.getState();
-    if (!visionCaptureRequired({ context, navigationActive: nav.active && !nav.arrived,
-      walkingSessionActive: !!walking.current && !walking.paused, awarenessCm: thresholds.awarenessCm })) {
+    if (!visionCaptureRequired({
+      context,
+      navigationActive: nav.active && !nav.arrived,
+      walkingSessionActive: !!walking.current && !walking.paused,
+      awarenessCm: thresholds.awarenessCm,
+      cameraPreviewOpen: useUI.getState().cameraOpen === true || isLiveStreamRunning(),
+    })) {
       // Stationary, no nearby range or reliable approach: no camera/worker work this iteration.
       this.loopId = setTimeout(() => void this.loop(gen), IDLE_CHECK_MS);
       return;

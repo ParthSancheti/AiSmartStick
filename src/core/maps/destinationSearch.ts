@@ -64,6 +64,7 @@ const msgOf = (e: unknown) => String((e as Error)?.message ?? '');
 const persistent = (e: unknown) => {
   const c = codeOf(e);
   if (c === 'not-found') return !/place not found|no walking route/i.test(msgOf(e)); // "not deployed" vs a real answer
+  if (c === 'failed-precondition' && /no home address|not saved/i.test(msgOf(e))) return false;
   return ['unauthenticated', 'permission-denied', 'failed-precondition'].includes(c);
 };
 /** Transient: a timeout (cold start) or a server-side hiccup. ("unavailable" = network blip: no backoff.) */
@@ -446,7 +447,13 @@ async function browserRoute(origin: { lat: number; lng: number }, place: PlaceRe
     res = await new lib.DirectionsService().route({ origin, destination, travelMode: 'WALKING' as google.maps.TravelMode, region: 'in' });
   } catch (e) {
     if (/ZERO_RESULTS/.test(`${codeOf(e)} ${msgOf(e)}`)) throw NO_ROUTE();
-    throw e;
+    // Some POI/neighborhood placeIds are not routable directly; retry with coordinates if available.
+    if (id && Number.isFinite(place.lat) && Number.isFinite(place.lng) && (place.lat !== 0 || place.lng !== 0)
+      && /NOT_FOUND|INVALID_REQUEST/i.test(`${codeOf(e)} ${msgOf(e)}`)) {
+      res = await new lib.DirectionsService().route({ origin, destination: { lat: place.lat, lng: place.lng }, travelMode: 'WALKING' as google.maps.TravelMode, region: 'in' });
+    } else {
+      throw e;
+    }
   }
   const leg = res.routes?.[0]?.legs?.[0];
   if (!leg) throw NO_ROUTE();
@@ -470,8 +477,11 @@ const serverNoRoute = (e: unknown) => codeOf(e) === 'not-found' && /no walking r
  * DirectionsService (hedged), else OpenStreetMap. A real "no route" from Google ends it ('no-route').
  */
 export async function routeWalking(origin: { lat: number; lng: number }, place: PlaceResult): Promise<RouteResult> {
-  // Google place ids (and 'home', which the server resolves itself) by id; dropped pins and OSM places by lat/lng.
-  const destination = place.placeId && !isOsmPlaceId(place.placeId) ? { placeId: place.placeId } : { lat: place.lat, lng: place.lng };
+  // Google place ids by id; local 'home' (when coordinates exist), dropped pins, and OSM places by lat/lng.
+  const hasCoords = Number.isFinite(place.lat) && Number.isFinite(place.lng) && (place.lat !== 0 || place.lng !== 0);
+  const destination = place.placeId && !isOsmPlaceId(place.placeId) && !(place.placeId === 'home' && hasCoords)
+    ? { placeId: place.placeId }
+    : { lat: place.lat, lng: place.lng };
   const r = await hedged(
     () => server('route', () => walkingRoute({ origin, destination })),
     () => browser('directions', () => browserRoute(origin, place)),

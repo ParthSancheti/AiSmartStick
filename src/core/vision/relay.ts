@@ -12,6 +12,8 @@ export const BUSY_RETRIES = 3;
 export const BUSY_WAIT_MS = 350;
 /** While the live stream runs, a busy camera means "wait for its next frame" (at most this long). */
 export const STREAM_FRAME_WAIT_MS = 1500;
+/** Fallback ceiling when direct capture collides with an already-visible live preview. */
+const PREVIEW_FALLBACK_MAX_AGE_MS = 5000;
 
 const isBusy = (e: unknown) => /camera: busy|\b409\b/i.test((e as Error)?.message ?? '');
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -55,6 +57,12 @@ export async function captureFrame(origin: VisionFrame['origin'], sceneHint?: nu
       }
     }
   } catch (e) {
+    // If direct capture lost the camera lock (busy/timeout) while the live preview already
+    // holds a recent frame, reuse that visible frame instead of claiming the camera failed.
+    if (real) {
+      const s = latestStreamFrame(PREVIEW_FALLBACK_MAX_AGE_MS);
+      if (s) return publish(s.blob, -1, s.capturedAt, origin);
+    }
     useDevice.setState({ camera: { ...useDevice.getState().camera, status: 'error' } });
     throw e;
   }
