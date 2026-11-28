@@ -39,12 +39,12 @@ export function setImuCalibration(cal: ImuCalibration | null) {
   imu.setCalibration(cal);
 }
 
-let lastRawImu: TelemetryPacket['imu'] | null = null;
+let lastRawImu: (TelemetryPacket['imu'] & { at: number }) | null = null;
 let rejecting = false;
 /** Zero the stick orientation at the current pose (user holds it upright, then taps Calibrate). */
 export function calibrateImuFromLatest(): ImuCalibration | null {
-  if (!lastRawImu) return null;
-  return imu.calibrateFrom({ ...lastRawImu, at: Date.now() });
+  if (!lastRawImu || Date.now() - lastRawImu.at > STALE_MS.imu) return null;
+  return imu.calibrateFrom(lastRawImu);
 }
 
 export function resetPipeline() {
@@ -144,7 +144,7 @@ export function ingestPacket(p: TelemetryPacket, receivedAt: number, timing?: Pa
   }
   lastSeq = p.seq;
   lastUptime = p.uptimeMs;
-  lastRawImu = p.imu;
+  lastRawImu = { ...p.imu, at: sensorAt };
 
   // The stick's sampleAgeMs is measured when it builds the response, before transport delay.
   // Charge the full request duration conservatively: response-generation time is not known.

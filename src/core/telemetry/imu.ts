@@ -17,6 +17,7 @@ export interface ImuRaw {
 export interface ImuCalibration {
   pitch0: number;
   roll0: number;
+  xUpMount?: boolean;
 }
 
 const DEG = 180 / Math.PI;
@@ -37,6 +38,7 @@ export class ImuFilter {
 
   setCalibration(cal: ImuCalibration | null) {
     this.cal = cal;
+    this.reset();
   }
 
   reset() {
@@ -46,12 +48,23 @@ export class ImuFilter {
 
   /** Returns the zero reference that makes the current raw reading 0/0. */
   calibrateFrom(raw: ImuRaw): ImuCalibration | null {
-    const o = this.rawAngles(raw);
+    // On the sideways board, gravity points along +X while the stick is upright.
+    if (raw.ok && raw.ax != null && raw.ay != null && raw.az != null &&
+        raw.ax > 0.85 * Math.hypot(raw.ax, raw.ay, raw.az)) {
+      const o = orientationFromAccel(raw.az, -raw.ay, raw.ax);
+      return { pitch0: o.pitch, roll0: o.roll, xUpMount: true };
+    }
+    const o = this.rawAngles(raw, false);
     return o ? { pitch0: o.pitch, roll0: o.roll } : null;
   }
 
-  private rawAngles(raw: ImuRaw) {
+  private rawAngles(raw: ImuRaw, xUp = this.cal?.xUpMount) {
     if (!raw.ok) return null;
+    if (xUp) {
+      if (raw.ax == null || raw.ay == null || raw.az == null ||
+          !(Math.hypot(raw.ax, raw.ay, raw.az) > 0.2)) return null;
+      return orientationFromAccel(raw.az, -raw.ay, raw.ax);
+    }
     if (raw.pitch != null && raw.roll != null && Number.isFinite(raw.pitch) && Number.isFinite(raw.roll)) return { pitch: raw.pitch, roll: raw.roll };
     if (raw.ax != null && raw.ay != null && raw.az != null) {
       const g = Math.sqrt(raw.ax ** 2 + raw.ay ** 2 + raw.az ** 2);

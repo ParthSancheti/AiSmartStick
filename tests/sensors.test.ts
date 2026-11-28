@@ -25,6 +25,18 @@ describe('UltrasonicFilter', () => {
 });
 
 describe('ImuFilter', () => {
+  it('zeros the X-up stick and reports forward and right tilts on distinct axes', () => {
+    const f = new ImuFilter();
+    const pose = { ax: 1, ay: 0, az: 0, pitch: -90, roll: 0, ok: true, at: 1 };
+    const cal = f.calibrateFrom(pose);
+    expect(cal?.xUpMount).toBe(true);
+    f.setCalibration(cal);
+    expect(f.update(pose)).toMatchObject({ pitch: 0, roll: 0 });
+    f.reset();
+    expect(f.update({ ...pose, ax: 0.94, az: -0.34 })).toMatchObject({ pitch: 19.9, roll: 0 });
+    f.reset();
+    expect(f.update({ ...pose, ax: 0.94, ay: -0.34 })).toMatchObject({ pitch: 0, roll: 19.9 });
+  });
   it('computes orientation from gravity', () => {
     const o = orientationFromAccel(0, 0, 1);
     expect(o.pitch).toBeCloseTo(0);
