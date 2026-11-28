@@ -32,7 +32,7 @@ vi.mock('@google/genai', () => ({
           close: vi.fn(),
         };
         m.sessions.push(s);
-        queueMicrotask(() => params.callbacks?.onopen?.());
+        queueMicrotask(() => params.callbacks?.onmessage?.({ setupComplete: {} }));
         return s;
       }),
     };

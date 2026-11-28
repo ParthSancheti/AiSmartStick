@@ -86,8 +86,16 @@ beforeAll(async () => {
   });
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
   port = (server.address() as AddressInfo).port;
+  // Keep WebView fallback probes away from any physical stick connected to the test PC.
+  const fetchLocal = globalThis.fetch;
+  vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    if (url.origin !== `http://127.0.0.1:${port}`) return Promise.reject(new TypeError('Test route unavailable'));
+    return fetchLocal(input, init);
+  });
 });
 afterAll(() => {
+  vi.unstubAllGlobals();
   server.close();
   delete (globalThis as { window?: unknown }).window;
 });

@@ -96,6 +96,7 @@ NAVIGATION
 - GPS is NOT needed to search or to set a destination. If a result says directions "waiting_for_gps", say the destination is set and directions will start automatically as soon as GPS finds their position. Never tell the user that location or maps are unavailable when they ask to go somewhere.
 
 VISION (CRITICAL)
+- Briefly acknowledge a visual request in the user's language as you start the tool. Use its fresh result for the description.
 - When asked to open or start the camera preview, call open_camera.
 - YOU HAVE A CAMERA on the stick. When asked what is in front of them, what they are holding, or to read a sign or text, immediately call describe_scene, identify_object, read_text, read_sign, or describe_environment. Do not apologize or claim you cannot see.
 - Share result.spoken naturally and clearly, preserving uncertainty and any earlier-photo timing when present. If capture fails, explain briefly and offer to retry. Never invent visual details.
@@ -205,8 +206,8 @@ export class LiveSession {
           },
         },
         callbacks: {
-          onopen: () => opened(),
           onmessage: (msg: LiveServerMessage) => {
+            if (msg.setupComplete && !stale()) opened();
             if (!stale()) void this.onMessage(msg);
           },
           onerror: (e: ErrorEvent) => {

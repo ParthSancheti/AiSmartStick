@@ -99,7 +99,7 @@ async function openSession(model = 'models/live-test') {
   vi.mocked(api.call).mockResolvedValueOnce({ token: 'auth_tokens/ephemeral', liveModel: model });
   mockConnect.mockImplementationOnce(({ callbacks }) => {
     onMessage = callbacks.onmessage;
-    callbacks.onopen();
+    callbacks.onmessage({ setupComplete: {} });
     return Promise.resolve({ sendRealtimeInput: mockSend, sendToolResponse: mockToolResponse, close: mockClose });
   });
   expect(await liveSession.start()).toBe(true);
@@ -441,7 +441,7 @@ describe('Gemini Live session', () => {
     (navigator.mediaDevices.getUserMedia as ReturnType<typeof vi.fn>).mockRejectedValueOnce(Object.assign(new Error('Permission denied'), { name: 'NotAllowedError' }));
     vi.mocked(api.call).mockResolvedValueOnce({ token: 't', liveModel: 'm' });
     mockConnect.mockImplementationOnce(({ callbacks }) => {
-      callbacks.onopen();
+      callbacks.onmessage({ setupComplete: {} });
       return Promise.resolve({ sendRealtimeInput: mockSend, sendToolResponse: mockToolResponse, close: mockClose });
     });
     expect(await liveSession.start()).toBe(false);
